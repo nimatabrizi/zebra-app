@@ -1112,3 +1112,5 @@ const pendingRequests = bookedAppointments.filter(app => {
     </div>
   );
 }
+
+// Vercel şifreleri için yeni tetikleme
