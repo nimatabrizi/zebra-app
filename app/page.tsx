@@ -126,7 +126,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
   const [takvimSelectedDate, setTakvimSelectedDate] = useState(new Date());
 
-  const formatDateStr = (date) => {
+  const formatDateStr = (date: any) => {
     if (!date) return '';
     return `${date.getDate().toString().padStart(2, '0')}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getFullYear()}`;
   };
