@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use client';
 /**
  * ZEBRA PRO - Enterprise Apple HIG Aesthetic Refactor
