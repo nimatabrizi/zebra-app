@@ -97,12 +97,10 @@ export default function CekimRaporuPanel({ appointments }: Props) {
   });
 
   useEffect(() => {
-    if (reportDetailAppointment) {
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = '';
-      };
-    }
+    document.body.style.overflow = reportDetailAppointment ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [reportDetailAppointment]);
 
   const shiftReportPeriod = (direction: number) => {

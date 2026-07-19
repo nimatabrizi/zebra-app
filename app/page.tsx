@@ -12,7 +12,7 @@
  * * Structural Preservation (100% INTACT):
  * - Backend data flow, multi-user scaffolding, Supabase integrations, and custom slots (15:00 - 18:00) preserved perfectly.
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import { 
   Search, Plus, LayoutGrid, Briefcase, Camera, Megaphone, CalendarCheck, Building2, Globe, 
@@ -41,13 +41,62 @@ export default function App() {
   const [role, setRole] = useState(''); 
 const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 const [activeTab, setActiveTab] = useState('genel');
   const [fullName, setFullName] = useState(''); // Gerçek isim veritabanından çekilip buraya yazılacak
   const [currentUserId, setCurrentUserId] = useState(''); // Auth / profiles UUID
   const [isPilot, setIsPilot] = useState(false); // YENİ: Pilot yetkisi
+  const isLoggedInRef = useRef(false);
+  const currentUserIdRef = useRef('');
+  const rememberMeRef = useRef(false);
+
+  useEffect(() => {
+    isLoggedInRef.current = isLoggedIn;
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
+  useEffect(() => {
+    rememberMeRef.current = rememberMe;
+  }, [rememberMe]);
+
+  const REMEMBER_ME_KEY = 'zebra_remember_me';
+  const TAB_SESSION_KEY = 'zebra_session_active';
+
+  const clearProfileCache = () => {
+    localStorage.removeItem('zebra_auth_status');
+    localStorage.removeItem('zebra_user_role');
+    localStorage.removeItem('zebra_username');
+    localStorage.removeItem('zebra_fullname');
+    localStorage.removeItem('zebra_is_pilot');
+  };
+
+  /** Beni hatırla / sekme oturumu tercihlerini uygula */
+  const applyRememberPreference = (shouldRemember) => {
+    if (typeof window === 'undefined') return;
+    if (shouldRemember) {
+      localStorage.setItem(REMEMBER_ME_KEY, 'true');
+      sessionStorage.removeItem(TAB_SESSION_KEY);
+    } else {
+      localStorage.removeItem(REMEMBER_ME_KEY);
+      sessionStorage.setItem(TAB_SESSION_KEY, 'true');
+    }
+  };
+
+  const canRestoreSession = () => {
+    if (typeof window === 'undefined') return false;
+    return (
+      localStorage.getItem(REMEMBER_ME_KEY) === 'true' ||
+      sessionStorage.getItem(TAB_SESSION_KEY) === 'true'
+    );
+  };
+
+  const shouldPersistProfileCache = () =>
+    typeof window !== 'undefined' && localStorage.getItem(REMEMBER_ME_KEY) === 'true';
   
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 const [notifications, setNotifications] = useState<any[]>([]);
@@ -87,19 +136,20 @@ const [notifications, setNotifications] = useState<any[]>([]);
     setNotifications(prev =>
       prev.map(n => (isNotificationForMe(n) ? { ...n, is_read: true } : n))
     );
-    if (currentUserId) {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', currentUserId)
-        .eq('is_read', false);
-    }
-    if (fullName) {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', fullName)
-        .eq('is_read', false);
+
+    // UUID + legacy isim anahtarları tek sorguda (mükerrer / yarım güncelleme yok)
+    const userKeys = [...new Set([currentUserId, fullName].filter(Boolean))];
+    if (userKeys.length === 0) return;
+
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .in('user_id', userKeys)
+      .eq('is_read', false);
+
+    if (error) {
+      console.error('Bildirimler okundu işaretlenemedi:', error.message, error);
+      showToast('Bildirimler güncellenirken bir hata oluştu.');
     }
   };
 
@@ -340,6 +390,51 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     }
 
     return ownerRoleDisplayName(ownerRole) || pilotStr || fullName || '';
+  };
+
+  /** profiles.id (UUID) — tam isim ile */
+  const resolveProfileIdByName = async (name) => {
+    const label = String(name || '').trim();
+    if (!label) return null;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('tam_isim', label)
+      .maybeSingle();
+    if (error) console.error('Profil UUID çözülemedi:', error.message);
+    if (data?.id) return data.id;
+
+    const { data: fuzzy } = await supabase
+      .from('profiles')
+      .select('id')
+      .ilike('tam_isim', label)
+      .limit(1)
+      .maybeSingle();
+    return fuzzy?.id || null;
+  };
+
+  /** Pilot profil UUID — owner_role veya isim ile */
+  const resolvePilotProfileId = async (pilotField) => {
+    const ownerRole = ownerRoleFromPilot(pilotField);
+    if (ownerRole === 'fatima' || ownerRole === 'selim') {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', ownerRole)
+        .limit(1)
+        .maybeSingle();
+      if (data?.id) return data.id;
+    }
+    return resolveProfileIdByName(pilotField);
+  };
+
+  /** Danışman profil UUID — isim, yoksa created_by */
+  const resolveDanismanProfileId = async (danismanIsmi, createdBy = null) => {
+    const byName = await resolveProfileIdByName(danismanIsmi);
+    if (byName) return byName;
+    if (createdBy) return createdBy;
+    return null;
   };
 
   /**
@@ -716,13 +811,15 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     }
     setActiveTab(nextTab);
 
-    // Profil önbelleği her zaman yazılır; Auth oturumu cookie + persistSession ile tutulur
-    if (options.persist !== false) {
+    // Beni hatırla: profil önbelleğini localStorage'a yaz; aksi halde temizle
+    if (options.persist) {
       localStorage.setItem('zebra_auth_status', 'true');
       localStorage.setItem('zebra_user_role', appRole);
       localStorage.setItem('zebra_username', profile.kullanici_adi || profile.tam_isim);
       localStorage.setItem('zebra_fullname', profile.tam_isim);
       localStorage.setItem('zebra_is_pilot', String(pilot));
+    } else {
+      clearProfileCache();
     }
 
     setIsLoading(false);
@@ -737,7 +834,16 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
       if (session?.user) {
-        await applyProfileSession(session.user.id, { persist: true });
+        // Cookie kalmış olabilir; Beni hatırla / sekme oturumu yoksa temizle
+        if (!canRestoreSession()) {
+          await supabase.auth.signOut();
+          clearProfileCache();
+          setIsLoading(false);
+          return;
+        }
+        await applyProfileSession(session.user.id, {
+          persist: shouldPersistProfileCache(),
+        });
       } else {
         setIsLoading(false);
       }
@@ -747,6 +853,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
+
       if (event === 'SIGNED_OUT') {
         setIsLoggedIn(false);
         setRole('');
@@ -755,9 +862,33 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         setIsPilot(false);
         return;
       }
-      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-        // SIGNED_IN handleLogin içinde de işlenir; TOKEN_REFRESHED için profil koru
-        if (event === 'TOKEN_REFRESHED' && isLoggedIn) return;
+
+      if (!session?.user) return;
+
+      // SIGNED_IN / INITIAL_SESSION: Beni hatırla tercihine göre persist
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (event === 'INITIAL_SESSION' && !canRestoreSession()) {
+          await supabase.auth.signOut();
+          return;
+        }
+        const persist =
+          rememberMeRef.current || shouldPersistProfileCache();
+        await applyProfileSession(session.user.id, { persist });
+        return;
+      }
+
+      // TOKEN_REFRESHED: UI oturumu yoksa veya kullanıcı değiştiyse profili senkronize et
+      if (event === 'TOKEN_REFRESHED') {
+        if (!canRestoreSession() && !isLoggedInRef.current) {
+          await supabase.auth.signOut();
+          return;
+        }
+        const alreadySynced =
+          isLoggedInRef.current && currentUserIdRef.current === session.user.id;
+        if (alreadySynced) return;
+        await applyProfileSession(session.user.id, {
+          persist: shouldPersistProfileCache(),
+        });
       }
     });
 
@@ -793,6 +924,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
+    // SIGNED_IN dinleyicisinden önce tercihi yaz (yarış önleme)
+    applyRememberPreference(rememberMe);
+
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password: cleanPassword,
@@ -801,22 +935,21 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     if (authError || !authData.user) {
       console.error('Auth giriş hatası:', authError);
       showToast('Hatalı giriş! Tam isim veya WhatsApp numarası yanlış.');
+      localStorage.removeItem(REMEMBER_ME_KEY);
+      sessionStorage.removeItem(TAB_SESSION_KEY);
       setIsLoading(false);
       return;
     }
 
-    // Oturum her zaman kalıcı; yalnızca manuel Çıkış Yap ile sonlanır
-    await applyProfileSession(authData.user.id, { persist: true });
+    await applyProfileSession(authData.user.id, { persist: rememberMe });
   };
 
   // 3. GÜVENLİ ÇIKIŞ
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem('zebra_auth_status');
-    localStorage.removeItem('zebra_user_role');
-    localStorage.removeItem('zebra_username');
-    localStorage.removeItem('zebra_fullname');
-    localStorage.removeItem('zebra_is_pilot');
+    clearProfileCache();
+    localStorage.removeItem(REMEMBER_ME_KEY);
+    sessionStorage.removeItem(TAB_SESSION_KEY);
     setIsLoggedIn(false);
     setIsPilot(false);
     setIsMobileMenuOpen(false);
@@ -886,12 +1019,21 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     await fetchAppointments();
 
-    await supabase.from('notifications').insert([{
-      user_id: selectedPilot,
-      title: 'Yeni Çekim Talebi',
-      message: `${fullName}, ${formatDateStr(selectedDate)} için sizden ${locationStr} çekimi talebinde bulundu, onayınızı bekliyor.`
-    }]);
-    await fetchNotifications();
+    const pilotUserId = await resolvePilotProfileId(selectedPilot);
+    if (pilotUserId) {
+      const { error: notifError } = await supabase.from('notifications').insert([{
+        user_id: pilotUserId,
+        title: 'Yeni Çekim Talebi',
+        message: `${fullName}, ${formatDateStr(selectedDate)} için sizden ${locationStr} çekimi talebinde bulundu, onayınızı bekliyor.`,
+      }]);
+      if (notifError) {
+        console.error('Pilot bildirimi yazılamadı:', notifError.message, notifError);
+      } else {
+        await fetchNotifications();
+      }
+    } else {
+      console.warn('Pilot UUID bulunamadı, bildirim atlanıyor:', selectedPilot);
+    }
 
     setIsSubmitting(false);
     setShowSuccessModal(true);
@@ -922,10 +1064,14 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     await fetchAppointments();
 
-    await notifyAppointmentApproved(req);
+    const notified = await notifyAppointmentApproved(req);
 
     setProcessingId(null);
-    showToast("Çekim onaylandı. Danışman ve broker'lara bildirim gönderildi.");
+    if (notified) {
+      showToast("Çekim onaylandı. Danışman ve broker'lara bildirim gönderildi.");
+    } else {
+      showToast('Çekim onaylandı, ancak bildirim gönderilemedi.');
+    }
   };
 
   // 4. GÜNCELLEME: Yönetici reddettiğinde Danışmana kalıcı bildirim atar
@@ -941,15 +1087,23 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
-    await fetchAppointments(); 
-    
-    // Danışmana özel kalıcı red bildirimi veritabanına yazılıyor
-    await supabase.from('notifications').insert([{
-      user_id: req.danismanIsmi,
-      title: 'Talebiniz Reddedildi',
-      message: `${req.tarih} tarihli talebiniz reddedildi. Sebep: ${rejectReason}`
-    }]);
-    await fetchNotifications();
+    await fetchAppointments();
+
+    const ownerUuid = await resolveDanismanProfileId(req.danismanIsmi, req.createdBy);
+    if (ownerUuid) {
+      const { error: notifError } = await supabase.from('notifications').insert([{
+        user_id: ownerUuid,
+        title: 'Talebiniz Reddedildi',
+        message: `${req.tarih} tarihli talebiniz reddedildi. Sebep: ${rejectReason}`,
+      }]);
+      if (notifError) {
+        console.error('Red bildirimi yazılamadı:', notifError.message, notifError);
+      } else {
+        await fetchNotifications();
+      }
+    } else {
+      console.warn('Danışman UUID bulunamadı, red bildirimi atlanıyor:', req.danismanIsmi);
+    }
 
     setProcessingId(null); 
     setRejectingId(null); 
@@ -1095,7 +1249,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     const oldStatus = normalizeStatus(editingAppointment.status);
     const newStatus = normalizeStatus(editForm.status);
     const statusChanged = oldStatus !== newStatus;
-    const danismanUserId = editingAppointment.danismanIsmi || editForm.danismanIsmi;
+    const danismanIsmi = editingAppointment.danismanIsmi || editForm.danismanIsmi;
     const konumLabel = editForm.konum.trim() || editingAppointment.konum || 'Portföy';
     const actorLabel =
       role === 'broker'
@@ -1137,28 +1291,36 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
           if (newStatus === 'confirmed') {
             await notifyAppointmentApproved({
               ...editingAppointment,
-              danismanIsmi: danismanUserId || editingAppointment.danismanIsmi,
+              danismanIsmi: danismanIsmi || editingAppointment.danismanIsmi,
               tarih: editForm.tarih || editingAppointment.tarih,
               konum: konumLabel,
               pilot: effectivePilot || editingAppointment.pilot,
               ownerRole,
               createdBy: editingAppointment.createdBy,
             });
-          } else if (danismanUserId) {
-            const notif = {
-              user_id: danismanUserId,
-              title: 'Talebiniz Reddedildi',
-              message: `${konumLabel} için çekim talebiniz ${actorLabel} tarafından reddedilmiştir.${
-                editForm.reddedilmeSebebi
-                  ? ` Sebep: ${String(editForm.reddedilmeSebebi).trim()}`
-                  : ''
-              }`,
-            };
-            const { error: notifError } = await supabase.from('notifications').insert([notif]);
-            if (notifError) {
-              console.error('Bildirim yazılamadı:', notifError.message, notifError);
+          } else if (danismanIsmi || editingAppointment.createdBy) {
+            const ownerUuid = await resolveDanismanProfileId(
+              danismanIsmi,
+              editingAppointment.createdBy
+            );
+            if (ownerUuid) {
+              const notif = {
+                user_id: ownerUuid,
+                title: 'Talebiniz Reddedildi',
+                message: `${konumLabel} için çekim talebiniz ${actorLabel} tarafından reddedilmiştir.${
+                  editForm.reddedilmeSebebi
+                    ? ` Sebep: ${String(editForm.reddedilmeSebebi).trim()}`
+                    : ''
+                }`,
+              };
+              const { error: notifError } = await supabase.from('notifications').insert([notif]);
+              if (notifError) {
+                console.error('Bildirim yazılamadı:', notifError.message, notifError);
+              } else {
+                await fetchNotifications();
+              }
             } else {
-              await fetchNotifications();
+              console.warn('Danışman UUID bulunamadı, red bildirimi atlanıyor:', danismanIsmi);
             }
           }
         } catch (notifErr) {
