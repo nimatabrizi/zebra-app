@@ -28,7 +28,7 @@ type Appointment = {
   aciklama?: string;
   pilot?: string;
   ownerRole?: string;
-  owner?: string;
+  owner?: string | null;
   status: string;
   reddedilmeSebebi?: string;
   isManual?: boolean;
