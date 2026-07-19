@@ -1,6 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
+"use client";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createClient } from "./utils/supabase/client";
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+/**
+ * Browser Supabase client (singleton via @supabase/ssr).
+ * Session cookies persist for 1 year; persistSession is enabled.
+ */
+export const supabase = createClient();
