@@ -186,12 +186,12 @@ export default function CekimRaporuPanel({ appointments }: Props) {
           </p>
         </div>
 
-        <div className="flex flex-col xl:flex-row xl:items-center gap-4 xl:gap-6">
-          <div className="inline-flex p-1 rounded-xl bg-[#1C1C1E] border border-white/5 self-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+          <div className="lg:col-span-3 flex w-full h-12 items-center p-1 rounded-xl bg-[#1C1C1E] border border-white/5">
             <button
               type="button"
               onClick={() => setReportMode('weekly')}
-              className={`px-4 h-10 rounded-lg text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
+              className={`flex-1 h-full flex items-center justify-center px-4 rounded-lg text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
                 ${reportMode === 'weekly' ? 'bg-white text-black shadow-sm' : 'text-[#86868B] hover:text-white'}`}
             >
               Haftalık
@@ -199,39 +199,36 @@ export default function CekimRaporuPanel({ appointments }: Props) {
             <button
               type="button"
               onClick={() => setReportMode('monthly')}
-              className={`px-4 h-10 rounded-lg text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
+              className={`flex-1 h-full flex items-center justify-center px-4 rounded-lg text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
                 ${reportMode === 'monthly' ? 'bg-white text-black shadow-sm' : 'text-[#86868B] hover:text-white'}`}
             >
               Aylık
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-[#161616] border border-white/5 rounded-xl px-2 py-1.5 self-start">
+          <div className="lg:col-span-4 flex w-full h-12 items-center justify-between bg-[#161616] border border-white/5 rounded-xl px-2">
             <button
               type="button"
               onClick={() => shiftReportPeriod(-1)}
-              className="w-9 h-9 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95"
+              className="w-9 h-9 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95 shrink-0"
               title="Önceki dönem"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <div className="min-w-[160px] sm:min-w-[200px] text-center px-2">
-              <p className="text-[13px] font-medium text-white tracking-tight">{reportRangeLabel}</p>
-              <p className="text-[10px] text-[#86868B] uppercase tracking-wide mt-0.5">
-                {reportMode === 'weekly' ? 'Hafta' : 'Ay'}
-              </p>
+            <div className="flex-1 text-center px-2 min-w-0">
+              <p className="text-[13px] font-medium text-white tracking-tight truncate">{reportRangeLabel}</p>
             </div>
             <button
               type="button"
               onClick={() => shiftReportPeriod(1)}
-              className="w-9 h-9 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95"
+              className="w-9 h-9 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95 shrink-0"
               title="Sonraki dönem"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="inline-flex flex-wrap p-1 rounded-xl bg-[#1C1C1E] border border-white/5 gap-0.5">
+          <div className="lg:col-span-5 flex w-full h-12 items-center p-1 rounded-xl bg-[#1C1C1E] border border-white/5 gap-0.5">
             {[
               { id: 'all' as const, label: 'Tümü' },
               { id: 'fatima' as const, label: 'Fatima Bayramova' },
@@ -241,7 +238,7 @@ export default function CekimRaporuPanel({ appointments }: Props) {
                 key={opt.id}
                 type="button"
                 onClick={() => setReportPilot(opt.id)}
-                className={`px-3 sm:px-4 h-10 rounded-lg text-[12px] sm:text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
+                className={`flex-1 h-full flex items-center justify-center px-2 sm:px-3 rounded-lg text-[12px] sm:text-[13px] font-medium whitespace-nowrap transition-all cursor-pointer active:scale-[0.98]
                   ${reportPilot === opt.id ? 'bg-white text-black shadow-sm' : 'text-[#86868B] hover:text-white'}`}
               >
                 {opt.label}
@@ -250,10 +247,10 @@ export default function CekimRaporuPanel({ appointments }: Props) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
           {reportPilot === 'all' ? (
             <>
-              <div className="bg-[#161616] border border-white/5 rounded-2xl p-5 sm:p-6">
+              <div className="col-span-2 md:col-span-1 bg-[#161616] border border-white/5 rounded-2xl p-5 sm:p-6">
                 <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide">
                   {reportMode === 'weekly' ? 'Bu Hafta' : 'Bu Ay'} Toplam Çekim
                 </p>
@@ -261,7 +258,7 @@ export default function CekimRaporuPanel({ appointments }: Props) {
                   {cekimRaporu.total}
                 </p>
               </div>
-              <div className="bg-[#161616] border border-white/5 rounded-2xl p-5 sm:p-6">
+              <div className="col-span-1 bg-[#161616] border border-white/5 rounded-2xl p-5 sm:p-6">
                 <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide">
                   Fatima Bayramova
                 </p>
@@ -269,7 +266,7 @@ export default function CekimRaporuPanel({ appointments }: Props) {
                   {cekimRaporu.fatimaCount}
                 </p>
               </div>
-              <div className="bg-[#161616] border border-white/5 rounded-2xl p-5 sm:p-6">
+              <div className="col-span-1 bg-[#161616] border border-white/5 rounded-2xl p-5 sm:p-6">
                 <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide">
                   Mehmet Selim İdiz
                 </p>
@@ -279,7 +276,7 @@ export default function CekimRaporuPanel({ appointments }: Props) {
               </div>
             </>
           ) : (
-            <div className="bg-[#161616] border border-white/5 rounded-2xl p-5 sm:p-6 sm:col-span-3">
+            <div className="col-span-2 md:col-span-3 bg-[#161616] border border-white/5 rounded-2xl p-5 sm:p-6">
               <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide">
                 {reportPilot === 'fatima' ? 'Fatima Bayramova' : 'Mehmet Selim İdiz'}{' '}
                 {reportMode === 'weekly' ? 'Bu Haftaki' : 'Bu Ayki'} Çekim Sayısı

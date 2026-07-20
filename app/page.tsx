@@ -1528,7 +1528,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Tam İsim"
                 autoComplete="username"
-                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-out text-[14px]"
+                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-out text-base md:text-sm"
                 required
               />
             </div>
@@ -1540,7 +1540,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="WhatsApp Numarası"
                 autoComplete="current-password"
-                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-out text-[14px]"
+                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-out text-base md:text-sm"
                 required
               />
             </div>
@@ -1577,6 +1577,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   today.setHours(0, 0, 0, 0);
 
   const todayStr = todayDateObj.toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const nameKey = fullName?.toLocaleLowerCase('tr-TR') ?? '';
+  const canShowNewCekimBtn =
+    nameKey.includes('fatima') || nameKey.includes('mehmet selim');
   const currentHour = new Date().getHours();
   let greeting = "";
   if (currentHour >= 6 && currentHour < 12) greeting = "Günaydın";
@@ -2259,6 +2262,17 @@ const pendingRequests = bookedAppointments.filter(app => {
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            {canShowNewCekimBtn && (
+              <button
+                type="button"
+                onClick={openManualModal}
+                className="inline-flex items-center gap-2 h-10 px-4 shrink-0 text-[#86868B] hover:text-white bg-[#161616] border border-white/5 rounded-full transition-all duration-300 shadow-sm active:scale-95 cursor-pointer text-[13px] font-medium"
+              >
+                <Plus className="w-4 h-4" strokeWidth={2.5} />
+                Yeni Çekim Ekle
+              </button>
+            )}
+
             <div className="hidden md:block text-right mr-2">
               <p className="text-[13px] font-medium text-white">{todayStr}</p>
             </div>
@@ -2371,11 +2385,11 @@ const pendingRequests = bookedAppointments.filter(app => {
                       {formatDateStr(takvimSelectedDate)} Randevuları
                     </h3>
                     {role !== 'yonetici' && (
-                      <div className="inline-flex p-1 rounded-xl bg-[#1C1C1E] border border-white/5 self-start">
+                      <div className="flex w-full p-1 rounded-xl bg-[#1C1C1E] border border-white/5">
                         <button
                           type="button"
                           onClick={() => setDayListFilter('all')}
-                          className={`px-4 h-9 rounded-lg text-[12px] sm:text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
+                          className={`flex-1 px-4 py-2.5 rounded-lg text-[12px] sm:text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
                             ${dayListFilter === 'all' ? 'bg-white text-black shadow-sm' : 'text-[#86868B] hover:text-white'}`}
                         >
                           Tümü
@@ -2383,7 +2397,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                         <button
                           type="button"
                           onClick={() => setDayListFilter('confirmed')}
-                          className={`px-4 h-9 rounded-lg text-[12px] sm:text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
+                          className={`flex-1 px-4 py-2.5 rounded-lg text-[12px] sm:text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
                             ${dayListFilter === 'confirmed' ? 'bg-white text-black shadow-sm' : 'text-[#86868B] hover:text-white'}`}
                         >
                           Sadece Onaylananlar
