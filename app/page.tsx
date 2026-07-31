@@ -31,6 +31,18 @@ import {
   canCreateManualAppointment,
   manualEntryDisplayName,
 } from '../lib/authIdentity';
+import {
+  formatAppointmentRow,
+  isConfirmedStatus as isConfirmedStatusUtil,
+  isPendingStatus as isPendingStatusUtil,
+  isRejectedStatus as isRejectedStatusUtil,
+  groupAppointmentsByIlce,
+  normalizeAppointmentStatus,
+  ownerRoleFromPilot as ownerRoleFromPilotUtil,
+  ownerRoleDisplayName as ownerRoleDisplayNameUtil,
+} from '../lib/appointmentUtils';
+import { DEFAULT_IL, TURKEY_ILLER, getIlceler } from '../lib/turkeyLocations';
+import { APPOINTMENT_STATUS_LABELS } from '../types/appointments';
 import CekimRaporuPanel from '../components/CekimRaporuPanel';
 
 export default function App() {
@@ -163,25 +175,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
     if (data) {
-      const formatted = data.map((row) => {
-        return {
-          id: row.id.toString(),
-          danismanIsmi: row.danisman_ismi,
-          tarih: toDisplayDate(row.tarih),
-          saatBlok: row.saat_blok,
-          konum: row.konum,
-          portfoyTuru: row.portfoy_turu,
-          aciklama: row.aciklama,
-          pilot: row.pilot,
-          ownerRole: row.owner_role,
-          status: row.status,
-          reddedilmeSebebi: row.reddedilme_sebebi,
-          isManual: row.is_manual === true,
-          createdByRole: row.created_by_role || null,
-          createdBy: row.created_by || null,
-        };
-      });
-      setBookedAppointments(formatted);
+      setBookedAppointments(data.map((row) => formatAppointmentRow(row)));
     }
   };
 
@@ -192,13 +186,33 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     }
   }, [isLoggedIn]);
 
+  // Location-first talep formu (tarih/saat yok)
+  const [requestIl, setRequestIl] = useState(DEFAULT_IL);
+  const [requestIlce, setRequestIlce] = useState('');
+  const [requestSemt, setRequestSemt] = useState('');
+  const [danismanNotu, setDanismanNotu] = useState('');
+  const [portfolioType, setPortfolioType] = useState('');
+  const [selectedPilot, setSelectedPilot] = useState(null);
+
+  // Soruştur
+  const [inquiryIl, setInquiryIl] = useState(DEFAULT_IL);
+  const [inquiryIlce, setInquiryIlce] = useState('');
+  const [inquiryResults, setInquiryResults] = useState(null);
+  const [inquiryDone, setInquiryDone] = useState(false);
+
+  // Pilot teklif (aşama 2)
+  const [offeringId, setOfferingId] = useState(null);
+  const [offerTarih, setOfferTarih] = useState('');
+  const [offerSaatBlok, setOfferSaatBlok] = useState('');
+  const [offerCalMonth, setOfferCalMonth] = useState(new Date().getMonth());
+  const [offerCalYear, setOfferCalYear] = useState(new Date().getFullYear());
+
+  // Takvim / slot (yönetici paneli — talep formundan bağımsız)
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTimeBlock, setSelectedTimeBlock] = useState(null);
   const [locationStr, setLocationStr] = useState('');
-  const [portfolioType, setPortfolioType] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedPilot, setSelectedPilot] = useState(null);
-  
+
   const [processingId, setProcessingId] = useState(null);
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -216,7 +230,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     portfoyTuru: '',
     aciklama: '',
     pilot: '',
-    status: 'pending',
+    status: 'pilot_bekleniyor',
     reddedilmeSebebi: '',
   });
   const [isEditSaving, setIsEditSaving] = useState(false);
@@ -293,12 +307,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   };
 
   /** Formdaki pilot ismi → owner_role enum */
-  const ownerRoleFromPilot = (pilotName: string) => {
-    const key = (pilotName || '').trim().toLocaleUpperCase('tr-TR');
-    if (key.includes('FATİMA') || key.includes('FATIMA')) return 'fatima';
-    if (key.includes('SELİM') || key.includes('SELIM')) return 'selim';
-    return null;
-  };
+  const ownerRoleFromPilot = (pilotName: string) => ownerRoleFromPilotUtil(pilotName);
 
   const showToast = (msg: any) => {
     setToastMessage(msg);
@@ -306,11 +315,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   };
 
   /** owner_role → kartta gösterilecek işlem sorumlusu adı */
-  const ownerRoleDisplayName = (ownerRole) => {
-    if (ownerRole === 'fatima') return 'Fatima Bayramova';
-    if (ownerRole === 'selim') return 'Mehmet Selim İdiz';
-    return null;
-  };
+  const ownerRoleDisplayName = (ownerRole) => ownerRoleDisplayNameUtil(ownerRole);
 
   /** Türkçe ayrılma eki: Fatima Bayramova'dan, Mehmet Selim İdiz'den */
   const withTurkishAblative = (name) => {
@@ -663,11 +668,14 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       konum: manualForm.konum.trim(),
       portfoy_turu: manualForm.portfoyTuru.trim() || null,
       aciklama: manualForm.aciklama.trim() || null,
-      status: 'confirmed',
+      status: 'kesinlesti',
       source: 'other',
       is_manual: true,
       created_by_role: role,
       reddedilme_sebebi: null,
+      il: 'İzmir',
+      ilce: 'Belirsiz',
+      pilot_id: (await resolvePilotProfileId(effectivePilot)) || ownerRole,
     };
 
     const { error } = await supabase.from('appointments').insert([payload]);
@@ -685,11 +693,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     showToast('Çekim başarıyla eklendi');
   };
 
-  const isRejectedStatus = (status) => status === 'rejected' || status === 'Reddedildi';
-  const isPendingStatus = (status) => status === 'pending' || status === 'Bekliyor';
-  // DB: confirmed — kullanıcı dili: approved / Onaylandı
-  const isConfirmedStatus = (status) =>
-    status === 'confirmed' || status === 'Onaylandı' || status === 'approved';
+  const isRejectedStatus = (status) => isRejectedStatusUtil(status);
+  const isPendingStatus = (status) => isPendingStatusUtil(status);
+  const isConfirmedStatus = (status) => isConfirmedStatusUtil(status);
 
   /** Broker / yönetici: frontend'de created_by / owner_role / status filtresi yok */
   const seesAllAppointments = role === 'broker' || role === 'yonetici';
@@ -697,6 +703,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const bookingStats = useMemo(() => {
     const stats = {};
     bookedAppointments.forEach(app => {
+      if (!app.tarih || !app.saatBlok) return;
       // Slot doluluk: reddedilenler slotu bloklamaz
       if (isConfirmedStatus(app.status) || isPendingStatus(app.status)) {
         if (!stats[app.tarih]) stats[app.tarih] = {};
@@ -711,6 +718,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const calendarDayMarkers = useMemo(() => {
     const markers = {};
     bookedAppointments.forEach(app => {
+      if (!app.tarih) return;
       if (!markers[app.tarih]) {
         markers[app.tarih] = { hasActive: false, hasRejected: false, hasPending: false };
       }
@@ -732,8 +740,10 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       // broker + yonetici: tüm kayıtlar, tüm statüler — ekstra filtre yok
     } else if (role === 'selim' || role === 'fatima' || isPilot) {
       filtered = filtered.filter(app => app.pilot === fullName);
-      // Arşiv: bekleyenler "Çekim Talepleri"nde; burada onay/ret
-      filtered = filtered.filter(app => !isPendingStatus(app.status));
+      // Arşiv: yalnızca pilot_bekleniyor "Çekim Talepleri"nde
+      filtered = filtered.filter(
+        (app) => normalizeAppointmentStatus(app.status) !== 'pilot_bekleniyor'
+      );
     } else {
       filtered = filtered.filter(app => app.danismanIsmi === fullName);
     }
@@ -962,9 +972,20 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setCurrentUserId('');
   };
 
-  const isFormValid = selectedDate && selectedTimeBlock && locationStr && portfolioType && description && selectedPilot;
+  const isFormValid =
+    Boolean(requestIl) &&
+    Boolean(requestIlce) &&
+    Boolean(selectedPilot);
 
-// 2. GÜNCELLEME: Form gönderildiğinde yeni appointments şemasına insert
+  const resetRequestForm = () => {
+    setRequestIl(DEFAULT_IL);
+    setRequestIlce('');
+    setRequestSemt('');
+    setDanismanNotu('');
+    setPortfolioType('');
+    setSelectedPilot(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!isFormValid) return;
@@ -987,17 +1008,33 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
+    const pilotUserId = await resolvePilotProfileId(selectedPilot);
+    if (!pilotUserId) {
+      showToast('Pilot profili bulunamadı. Yöneticiye başvurun.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const locationLabel = [requestIl, requestIlce, requestSemt.trim()]
+      .filter(Boolean)
+      .join(' / ');
+
     const payload = {
       created_by: userId,
       owner_role: ownerRole,
       danisman_ismi: fullName,
-      tarih: toIsoDate(selectedDate),
-      saat_blok: selectedTimeBlock,
-      konum: locationStr,
-      portfoy_turu: portfolioType,
-      aciklama: description,
+      tarih: null,
+      saat_blok: null,
+      il: requestIl,
+      ilce: requestIlce,
+      semt: requestSemt.trim() || null,
+      konum: locationLabel,
+      portfoy_turu: portfolioType.trim() || null,
+      aciklama: danismanNotu.trim() || null,
+      danisman_notu: danismanNotu.trim() || null,
       pilot: selectedPilot,
-      status: 'pending',
+      pilot_id: pilotUserId,
+      status: 'pilot_bekleniyor',
       source: 'app',
     };
 
@@ -1019,20 +1056,15 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     await fetchAppointments();
 
-    const pilotUserId = await resolvePilotProfileId(selectedPilot);
-    if (pilotUserId) {
-      const { error: notifError } = await supabase.from('notifications').insert([{
-        user_id: pilotUserId,
-        title: 'Yeni Çekim Talebi',
-        message: `${fullName}, ${formatDateStr(selectedDate)} için sizden ${locationStr} çekimi talebinde bulundu, onayınızı bekliyor.`,
-      }]);
-      if (notifError) {
-        console.error('Pilot bildirimi yazılamadı:', notifError.message, notifError);
-      } else {
-        await fetchNotifications();
-      }
+    const { error: notifError } = await supabase.from('notifications').insert([{
+      user_id: pilotUserId,
+      title: 'Yeni Çekim Talebi',
+      message: `${fullName}, ${locationLabel} bölgesi için çekim talebi oluşturdu. Tarih önerinizi bekliyor.`,
+    }]);
+    if (notifError) {
+      console.error('Pilot bildirimi yazılamadı:', notifError.message, notifError);
     } else {
-      console.warn('Pilot UUID bulunamadı, bildirim atlanıyor:', selectedPilot);
+      await fetchNotifications();
     }
 
     setIsSubmitting(false);
@@ -1040,32 +1072,127 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     setTimeout(() => {
       setShowSuccessModal(false);
-      setSelectedDate(null);
-      setSelectedTimeBlock(null);
-      setLocationStr('');
-      setPortfolioType('');
-      setDescription('');
-      setSelectedPilot(null);
+      resetRequestForm();
     }, 3000);
   };
 
-  // 3. GÜNCELLEME: Yönetici onayladığında Danışmana kalıcı bildirim atar
-  const handleApprove = async (req) => {
+  /** Aşama 2 — Pilot tarih/saat teklif eder */
+  const handlePilotOffer = async (req) => {
+    if (!offerTarih || !offerSaatBlok) {
+      showToast('Teklif için tarih ve saat bloğu seçin.');
+      return;
+    }
     setProcessingId(req.id);
-    
-    const { error } = await supabase.from('appointments').update({ status: 'confirmed' }).eq('id', req.id);
+
+    const { error } = await supabase
+      .from('appointments')
+      .update({
+        tarih: offerTarih,
+        saat_blok: offerSaatBlok,
+        status: 'danisman_onayi_bekliyor',
+      })
+      .eq('id', req.id);
 
     if (error) {
-      console.error("Onaylama hatası:", error);
-      showToast("Onaylama sırasında bir hata oluştu.");
+      console.error('Teklif gönderme hatası:', error);
+      showToast(error.message || 'Teklif gönderilirken bir hata oluştu.');
       setProcessingId(null);
       return;
     }
 
     await fetchAppointments();
 
-    const notified = await notifyAppointmentApproved(req);
+    const ownerUuid = await resolveDanismanProfileId(req.danismanIsmi, req.createdBy);
+    if (ownerUuid) {
+      const dateLabel = toDisplayDate(offerTarih);
+      const { error: notifError } = await supabase.from('notifications').insert([{
+        user_id: ownerUuid,
+        title: 'Çekim Teklifi Hazır',
+        message: `${req.ilce || req.konum} için ${dateLabel} • ${offerSaatBlok.split(' (')[0]} teklif edildi. Onayınızı bekliyor.`,
+      }]);
+      if (notifError) {
+        console.error('Danışman teklif bildirimi yazılamadı:', notifError.message, notifError);
+      } else {
+        await fetchNotifications();
+      }
+    }
 
+    setProcessingId(null);
+    setOfferingId(null);
+    setOfferTarih('');
+    setOfferSaatBlok('');
+    showToast('Teklif danışmana gönderildi.');
+  };
+
+  /** Aşama 3 — Danışman teklifi kesinleştirir */
+  const handleDanismanConfirm = async (req) => {
+    setProcessingId(req.id);
+
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'kesinlesti' })
+      .eq('id', req.id);
+
+    if (error) {
+      console.error('Kesinleştirme hatası:', error);
+      showToast(error.message || 'Kesinleştirme sırasında bir hata oluştu.');
+      setProcessingId(null);
+      return;
+    }
+
+    await fetchAppointments();
+
+    const pilotUserId =
+      req.pilotId ||
+      (await resolvePilotProfileId(req.pilot));
+    if (pilotUserId) {
+      const dateLabel = req.tarih || '';
+      const { error: notifError } = await supabase.from('notifications').insert([{
+        user_id: pilotUserId,
+        title: 'Randevu Kesinleşti',
+        message: `${req.danismanIsmi}, ${dateLabel} • ${(req.saatBlok || '').split(' (')[0]} teklifinizi onayladı. Randevu kesinleşti.`,
+      }]);
+      if (notifError) {
+        console.error('Pilot kesinleşme bildirimi yazılamadı:', notifError.message, notifError);
+      } else {
+        await fetchNotifications();
+      }
+    }
+
+    // Broker bildirimleri (eski onay akışı)
+    await notifyAppointmentApproved({ ...req, status: 'kesinlesti' });
+
+    setProcessingId(null);
+    showToast('Randevu kesinleşti.');
+  };
+
+  /** Broker hızlı onay (eski davranış → kesinlesti; tarih zaten varsa) */
+  const handleApprove = async (req) => {
+    if (req.status === 'pilot_bekleniyor' || !req.tarih) {
+      setOfferingId(req.id);
+      setOfferTarih('');
+      setOfferSaatBlok('');
+      const now = new Date();
+      setOfferCalMonth(now.getMonth());
+      setOfferCalYear(now.getFullYear());
+      return;
+    }
+    setProcessingId(req.id);
+
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'kesinlesti' })
+      .eq('id', req.id);
+
+    if (error) {
+      console.error('Onaylama hatası:', error);
+      showToast('Onaylama sırasında bir hata oluştu.');
+      setProcessingId(null);
+      return;
+    }
+
+    await fetchAppointments();
+    const notified = await notifyAppointmentApproved(req);
     setProcessingId(null);
     if (notified) {
       showToast("Çekim onaylandı. Danışman ve broker'lara bildirim gönderildi.");
@@ -1074,15 +1201,17 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     }
   };
 
-  // 4. GÜNCELLEME: Yönetici reddettiğinde Danışmana kalıcı bildirim atar
   const handleRejectSubmit = async (req) => {
     setProcessingId(req.id);
-    
-    const { error } = await supabase.from('appointments').update({ status: 'rejected', reddedilme_sebebi: rejectReason }).eq('id', req.id);
+
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'iptal', reddedilme_sebebi: rejectReason })
+      .eq('id', req.id);
 
     if (error) {
-      console.error("Reddetme hatası:", error);
-      showToast("Reddetme sırasında bir hata oluştu.");
+      console.error('Reddetme hatası:', error);
+      showToast('Reddetme sırasında bir hata oluştu.');
       setProcessingId(null);
       return;
     }
@@ -1093,8 +1222,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     if (ownerUuid) {
       const { error: notifError } = await supabase.from('notifications').insert([{
         user_id: ownerUuid,
-        title: 'Talebiniz Reddedildi',
-        message: `${req.tarih} tarihli talebiniz reddedildi. Sebep: ${rejectReason}`,
+        title: 'Talebiniz İptal Edildi',
+        message: `${req.il || ''} ${req.ilce || req.konum || ''} talebiniz iptal edildi. Sebep: ${rejectReason}`,
       }]);
       if (notifError) {
         console.error('Red bildirimi yazılamadı:', notifError.message, notifError);
@@ -1105,10 +1234,26 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       console.warn('Danışman UUID bulunamadı, red bildirimi atlanıyor:', req.danismanIsmi);
     }
 
-    setProcessingId(null); 
-    setRejectingId(null); 
+    setProcessingId(null);
+    setRejectingId(null);
     setRejectReason('');
-    showToast("Talep reddedildi ve danışmana bildirildi.");
+    setOfferingId(null);
+    showToast('Talep iptal edildi ve danışmana bildirildi.');
+  };
+
+  const runRegionInquiry = () => {
+    if (!inquiryIl || !inquiryIlce) {
+      showToast('Soruşturmak için il ve ilçe seçin.');
+      return;
+    }
+    const results = bookedAppointments.filter(
+      (app) =>
+        isConfirmedStatus(app.status) &&
+        app.il === inquiryIl &&
+        app.ilce === inquiryIlce
+    );
+    setInquiryResults(results);
+    setInquiryDone(true);
   };
 
   const openEditModal = (app) => {
@@ -1125,11 +1270,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       portfoyTuru: app.portfoyTuru || '',
       aciklama: app.aciklama || '',
       pilot: app.pilot || '',
-      status: isRejectedStatus(app.status)
-        ? 'rejected'
-        : isConfirmedStatus(app.status)
-          ? 'confirmed'
-          : 'pending',
+      status: normalizeAppointmentStatus(app.status),
       reddedilmeSebebi: app.reddedilmeSebebi || '',
     });
     setIsEditCalendarOpen(false);
@@ -1155,7 +1296,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       portfoyTuru: '',
       aciklama: '',
       pilot: '',
-      status: 'pending',
+      status: 'pilot_bekleniyor',
       reddedilmeSebebi: '',
     });
   };
@@ -1198,7 +1339,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setEditForm((prev) => {
       const next = { ...prev, [field]: value };
       // Ret dışı status'ta sebep temizlensin
-      if (field === 'status' && value !== 'rejected') {
+      if (field === 'status' && value !== 'iptal') {
         next.reddedilmeSebebi = '';
       }
       return next;
@@ -1234,17 +1375,12 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
-    if (editForm.status === 'rejected' && !String(editForm.reddedilmeSebebi || '').trim()) {
-      showToast('Reddedildi durumu için red sebebi girin.');
+    if ((editForm.status === 'iptal' || editForm.status === 'rejected') && !String(editForm.reddedilmeSebebi || '').trim()) {
+      showToast('İptal durumu için sebep girin.');
       return;
     }
 
-    const normalizeStatus = (s) => {
-      if (isConfirmedStatus(s)) return 'confirmed';
-      if (isRejectedStatus(s)) return 'rejected';
-      if (isPendingStatus(s)) return 'pending';
-      return String(s || '');
-    };
+    const normalizeStatus = (s) => normalizeAppointmentStatus(s);
 
     const oldStatus = normalizeStatus(editingAppointment.status);
     const newStatus = normalizeStatus(editForm.status);
@@ -1259,24 +1395,22 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setIsEditSaving(true);
 
     try {
-      const payload = {
-        tarih: editForm.tarih, // YYYY-MM-DD
-        saat_blok: editForm.saatBlok,
-        konum: editForm.konum.trim(),
-        portfoy_turu: editForm.portfoyTuru.trim(),
-        aciklama: editForm.aciklama.trim(),
-        pilot: effectivePilot,
-        owner_role: ownerRole,
-        status: editForm.status,
-        reddedilme_sebebi:
-          editForm.status === 'rejected'
-            ? String(editForm.reddedilmeSebebi).trim()
-            : null,
-      };
-
       const { error } = await supabase
         .from('appointments')
-        .update(payload)
+        .update({
+          tarih: editForm.tarih || null,
+          saat_blok: editForm.saatBlok || null,
+          konum: editForm.konum.trim(),
+          portfoy_turu: editForm.portfoyTuru.trim() || null,
+          aciklama: editForm.aciklama.trim() || null,
+          pilot: effectivePilot,
+          owner_role: ownerRole,
+          status: newStatus,
+          reddedilme_sebebi:
+            newStatus === 'iptal'
+              ? String(editForm.reddedilmeSebebi || '').trim()
+              : null,
+        })
         .eq('id', editingAppointment.id);
 
       if (error) {
@@ -1286,9 +1420,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       }
 
       // Statü değiştiyse bildirim
-      if (statusChanged && (newStatus === 'confirmed' || newStatus === 'rejected')) {
+      if (statusChanged && (newStatus === 'kesinlesti' || newStatus === 'iptal')) {
         try {
-          if (newStatus === 'confirmed') {
+          if (newStatus === 'kesinlesti') {
             await notifyAppointmentApproved({
               ...editingAppointment,
               danismanIsmi: danismanIsmi || editingAppointment.danismanIsmi,
@@ -1306,8 +1440,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
             if (ownerUuid) {
               const notif = {
                 user_id: ownerUuid,
-                title: 'Talebiniz Reddedildi',
-                message: `${konumLabel} için çekim talebiniz ${actorLabel} tarafından reddedilmiştir.${
+                title: 'Talebiniz İptal Edildi',
+                message: `${konumLabel} için çekim talebiniz ${actorLabel} tarafından iptal edilmiştir.${
                   editForm.reddedilmeSebebi
                     ? ` Sebep: ${String(editForm.reddedilmeSebebi).trim()}`
                     : ''
@@ -1342,18 +1476,18 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   // --- APPLE HIG UI RENDERERS ---
   const getStatusBadge = (status) => {
     const baseClass = "px-3 py-1 rounded-xl text-[11px] font-medium tracking-wide uppercase border flex items-center shadow-sm shrink-0";
-    switch(status) {
-      case 'Bekliyor':
-      case 'pending':
-        return <span className={`${baseClass} bg-[#1C1C1E] text-[#E5B540] border-[#E5B540]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#E5B540] mr-2"></div>Bekliyor</span>;
-      case 'Onaylandı':
-      case 'confirmed':
-        return <span className={`${baseClass} bg-[#1C1C1E] text-[#34C759] border-[#34C759]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#34C759] mr-2"></div>Onaylandı</span>;
-      case 'Reddedildi':
-      case 'rejected':
-        return <span className={`${baseClass} bg-[#1C1C1E] text-[#FF3B30] border-[#FF3B30]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] mr-2"></div>Reddedildi</span>;
-      default: return null;
+    const n = normalizeAppointmentStatus(status);
+    if (n === 'pilot_bekleniyor' || n === 'danisman_onayi_bekliyor') {
+      const label = APPOINTMENT_STATUS_LABELS[n];
+      return <span className={`${baseClass} bg-[#1C1C1E] text-[#E5B540] border-[#E5B540]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#E5B540] mr-2"></div>{label}</span>;
     }
+    if (n === 'kesinlesti') {
+      return <span className={`${baseClass} bg-[#1C1C1E] text-[#34C759] border-[#34C759]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#34C759] mr-2"></div>Kesinleşti</span>;
+    }
+    if (n === 'iptal') {
+      return <span className={`${baseClass} bg-[#1C1C1E] text-[#FF3B30] border-[#FF3B30]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] mr-2"></div>İptal</span>;
+    }
+    return null;
   };
 
   const renderAppointmentRow = (app) => {
@@ -1379,19 +1513,19 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
           <div className="flex items-center space-x-6 min-w-0 flex-1">
             <div className="flex flex-col shrink-0 text-center w-16">
               <span className={`text-sm font-medium ${isRejected ? 'text-[#FF3B30]/80' : 'text-white'}`}>
-                {app.tarih.substring(0,5)}
+                {app.tarih ? String(app.tarih).substring(0, 5) : '—'}
               </span>
               <span className={`text-[11px] font-medium mt-1 uppercase tracking-wide ${isRejected ? 'text-[#FF3B30]/55' : 'text-[#86868B]'}`}>
-                {app.saatBlok.split(' (')[0]}
+                {app.saatBlok ? String(app.saatBlok).split(' (')[0] : (app.ilce || 'Bekliyor')}
               </span>
             </div>
             <div className={`w-px h-8 mx-2 hidden sm:block ${isRejected ? 'bg-[#FF3B30]/20' : 'bg-white/5'}`}></div>
             <div className="flex flex-col min-w-0 flex-1">
               <span className={`text-[15px] font-medium truncate ${isRejected ? 'text-[#FF3B30]/90' : 'text-white'}`}>
-                {app.konum}
+                {app.il && app.ilce ? `${app.il} / ${app.ilce}${app.semt ? ` / ${app.semt}` : ''}` : (app.konum || 'Konum yok')}
               </span>
               <span className={`text-[13px] truncate mt-1 ${isRejected ? 'text-[#FF3B30]/50' : 'text-[#86868B]'}`}>
-                {app.portfoyTuru}
+                {app.portfoyTuru || app.danismanNotu || '—'}
                 {usesManagerShell(role) ? ` • Danışman: ${app.danismanIsmi}` : ` • Pilot: ${app.pilot}`}
                 {role === 'broker' && (() => {
                   const owner = app.ownerRole || ownerRoleFromPilot(app.pilot);
@@ -1591,12 +1725,26 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const weekDays = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
 const pendingRequests = bookedAppointments.filter(app => {
-    const isPending = app.status === 'Bekliyor' || app.status === 'pending';
-    if (!isPending) return false;
+    const isWaitingPilot = normalizeAppointmentStatus(app.status) === 'pilot_bekleniyor';
+    if (!isWaitingPilot) return false;
     if (!canApproveAppointments(role)) return false;
-    if (isPilot) return app.pilot === fullName;
+    if (role === 'selim' || role === 'fatima' || isPilot) {
+      return app.ownerRole === role || app.pilot === fullName;
+    }
     return true; // broker: tüm bekleyenler
   });
+
+  const pendingByIlce = groupAppointmentsByIlce(pendingRequests);
+
+  const danismanConfirmRequests = bookedAppointments.filter(
+    (app) =>
+      role === 'danisman' &&
+      normalizeAppointmentStatus(app.status) === 'danisman_onayi_bekliyor' &&
+      (app.createdBy === currentUserId || app.danismanIsmi === fullName)
+  );
+
+  const requestIlceler = getIlceler(requestIl);
+  const inquiryIlceler = getIlceler(inquiryIl);
   return (
     <div className="min-h-screen flex font-sans antialiased text-[#EDEDED] overflow-hidden selection:bg-white/20 selection:text-white bg-[#0A0A0A]">
       
@@ -1848,15 +1996,16 @@ const pendingRequests = bookedAppointments.filter(app => {
                       onChange={(e) => handleEditFormChange('status', e.target.value)}
                       className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px] cursor-pointer"
                     >
-                      <option value="pending">Bekliyor</option>
-                      <option value="confirmed">Onaylandı</option>
-                      <option value="rejected">Reddedildi</option>
+                      <option value="pilot_bekleniyor">Pilot Bekleniyor</option>
+                      <option value="danisman_onayi_bekliyor">Danışman Onayı</option>
+                      <option value="kesinlesti">Kesinleşti</option>
+                      <option value="iptal">İptal</option>
                     </select>
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
                   </div>
                 </div>
 
-                {editForm.status === 'rejected' && (
+                {editForm.status === 'iptal' && (
                   <div>
                     <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Red Sebebi</label>
                     <textarea
@@ -2431,7 +2580,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                 <div className="mb-10 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div>
                     <h1 className="text-3xl font-medium tracking-tight text-white">Çekim Talepleri</h1>
-                    <p className="text-[#86868B] mt-2 text-[15px]">Onay bekleyen yeni talepleri inceleyin.</p>
+                    <p className="text-[#86868B] mt-2 text-[15px]">İlçeye göre gruplanmış taleplere tarih/saat teklif edin.</p>
                   </div>
                   {canCreateManualAppointment(role) && (
                     <button
@@ -2445,6 +2594,8 @@ const pendingRequests = bookedAppointments.filter(app => {
                   )}
                 </div>
                 
+                <p className="text-[#86868B] text-[14px] mb-6">Talepler ilçeye göre gruplanır. Tarih/saat teklif ederek danışmana gönderin.</p>
+
                 {pendingRequests.length === 0 ? (
                   <div className="bg-[#111111] border border-white/5 rounded-2xl p-20 flex flex-col items-center justify-center text-center w-full">
                     <div className="w-16 h-16 bg-[#1C1C1E] rounded-full flex items-center justify-center mb-6">
@@ -2454,52 +2605,122 @@ const pendingRequests = bookedAppointments.filter(app => {
                     <p className="text-[#86868B] text-[14px]">Şu an bekleyen güncel talep bulunmuyor.</p>
                   </div>
                 ) : (
-                  <div className="flex flex-col space-y-4 w-full">
-                    {pendingRequests.map(req => (
-                      <div key={req.id} className="bg-[#161616] border border-white/5 rounded-2xl p-6 sm:p-8 flex flex-col shadow-sm transition-all duration-300 w-full">
-                        <div className="flex justify-between items-start mb-6">
-                          <div>
-                            <h3 className="text-[17px] font-medium text-white">{req.danismanIsmi}</h3>
-                            <p className="text-[12px] text-[#86868B] mt-1 font-medium">{req.tarih} • {req.saatBlok.split(' (')[0]}</p>
-                          </div>
-                          {getStatusBadge(req.status)}
-                        </div>
-                        <div className="space-y-3 mb-6">
-                          <div className="flex items-start text-[14px]"><MapPin className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" /><span className="text-white truncate">{req.konum}</span></div>
-                          <div className="flex items-start text-[14px]"><Building2 className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" /><span className="text-white truncate">{req.portfoyTuru}</span></div>
-                          <div className="flex items-start text-[14px]"><ImageIcon className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" /><span className="text-white truncate">{req.pilot}</span></div>
-                          <div className="flex items-start text-[13px] bg-[#1C1C1E] p-4 rounded-xl border border-white/5 mt-4"><AlignLeft className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" /><p className="text-[#86868B] leading-relaxed">{req.aciklama}</p></div>
-                        </div>
-                        {rejectingId === req.id ? (
-                          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 mt-auto">
-                            <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reddetme sebebi..." className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px] mb-4 custom-scrollbar" />
-                            <div className="flex space-x-3">
-                              <button onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] text-white rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer">İptal</button>
-                              <button disabled={processingId === req.id || !rejectReason.trim()} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] font-medium hover:bg-[#FF3B30]/10 transition-all disabled:opacity-50 flex items-center justify-center cursor-pointer">
-                                {processingId === req.id ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : "Reddet"}
-                              </button>
+                  <div className="flex flex-col space-y-8 w-full">
+                    {Object.entries(pendingByIlce).map(([ilce, reqs]) => (
+                      <div key={ilce} className="space-y-4">
+                        <h2 className="text-[15px] font-medium text-white flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-[#86868B]" />
+                          {ilce}
+                          <span className="text-[12px] text-[#86868B] font-normal">({reqs.length})</span>
+                        </h2>
+                        {reqs.map((req) => {
+                          const districtConfirmed = bookedAppointments.filter(
+                            (a) =>
+                              isConfirmedStatus(a.status) &&
+                              a.ilce === req.ilce &&
+                              a.il === req.il
+                          );
+                          const canAct =
+                            role === 'broker' ||
+                            role === req.ownerRole ||
+                            (isPilot && req.pilot === fullName);
+                          return (
+                            <div key={req.id} className="bg-[#161616] border border-white/5 rounded-2xl p-6 sm:p-8 flex flex-col shadow-sm w-full">
+                              <div className="flex justify-between items-start mb-4 gap-3">
+                                <div>
+                                  <h3 className="text-[17px] font-medium text-white">{req.danismanIsmi}</h3>
+                                  <p className="text-[12px] text-[#86868B] mt-1 font-medium">
+                                    {req.il} / {req.ilce}{req.semt ? ` / ${req.semt}` : ''}
+                                  </p>
+                                </div>
+                                {getStatusBadge(req.status)}
+                              </div>
+                              <div className="space-y-3 mb-4">
+                                {req.portfoyTuru && (
+                                  <div className="flex items-start text-[14px]"><Building2 className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" /><span className="text-white truncate">{req.portfoyTuru}</span></div>
+                                )}
+                                {(req.danismanNotu || req.aciklama) && (
+                                  <div className="flex items-start text-[13px] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
+                                    <AlignLeft className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" />
+                                    <p className="text-[#86868B] leading-relaxed">{req.danismanNotu || req.aciklama}</p>
+                                  </div>
+                                )}
+                                {districtConfirmed.length > 0 && (
+                                  <div className="text-[12px] text-[#86868B] bg-[#1C1C1E]/60 border border-white/5 rounded-xl p-3">
+                                    Bu ilçede {districtConfirmed.length} kesinleşmiş iş var
+                                    {districtConfirmed.slice(0, 3).map((a) => (
+                                      <span key={a.id} className="block mt-1 text-white/80">• {a.tarih || '—'} {(a.saatBlok || '').split(' (')[0]} — {a.pilot}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {rejectingId === req.id ? (
+                                <div className="animate-in fade-in duration-300">
+                                  <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reddetme sebebi..." className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px] mb-4" />
+                                  <div className="flex space-x-3">
+                                    <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] text-white rounded-xl text-[14px] font-medium cursor-pointer">Vazgeç</button>
+                                    <button type="button" disabled={processingId === req.id || !rejectReason.trim()} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] font-medium disabled:opacity-50 cursor-pointer flex items-center justify-center">
+                                      {processingId === req.id ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Reddet'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : offeringId === req.id ? (
+                                <div className="space-y-4 border-t border-white/5 pt-4">
+                                  <p className="text-[12px] font-medium text-[#86868B]">TARİH VE SAAT TEKLİF ET</p>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="block text-[12px] text-[#86868B] mb-2">Tarih (YYYY-MM-DD)</label>
+                                      <input
+                                        type="date"
+                                        value={offerTarih}
+                                        onChange={(e) => setOfferTarih(e.target.value)}
+                                        className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                                      />
+                                    </div>
+                                    <div className="relative">
+                                      <label className="block text-[12px] text-[#86868B] mb-2">Saat Bloğu</label>
+                                      <select
+                                        value={offerSaatBlok}
+                                        onChange={(e) => setOfferSaatBlok(e.target.value)}
+                                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                                      >
+                                        <option value="">Seçin</option>
+                                        {TIME_BLOCKS.map((b) => (
+                                          <option key={b} value={b}>{b}</option>
+                                        ))}
+                                      </select>
+                                      <ChevronDown className="absolute right-4 top-[42px] w-4 h-4 text-[#86868B] pointer-events-none" />
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-3">
+                                    <button type="button" onClick={() => { setOfferingId(null); setOfferTarih(''); setOfferSaatBlok(''); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
+                                    <button type="button" disabled={processingId === req.id || !offerTarih || !offerSaatBlok} onClick={() => handlePilotOffer(req)} className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium disabled:opacity-50 cursor-pointer flex items-center justify-center">
+                                      {processingId === req.id ? <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> : 'Teklifi Gönder'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : canAct ? (
+                                <div className="flex space-x-3 mt-auto">
+                                  <button type="button" onClick={() => setRejectingId(req.id)} className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] cursor-pointer">Reddet</button>
+                                  <button type="button" onClick={() => handleApprove(req)} className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 cursor-pointer">
+                                    Tarih Teklif Et
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="mt-auto pt-4 text-[13px] font-medium text-[#E5B540] flex items-center">
+                                  <AlertCircle className="w-4 h-4 mr-2 shrink-0" />
+                                  Sadece atanmış medya sorumlusu (pilot) bu talebi işleyebilir.
+                                </div>
+                              )}
                             </div>
-                          </div>
-                       ) : (
-                          isPilot ? (
-                            <div className="flex space-x-3 mt-auto">
-                              <button onClick={() => setRejectingId(req.id)} className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer">Reddet</button>
-                              <button disabled={processingId === req.id} onClick={() => handleApprove(req)} className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 transition-all cursor-pointer flex items-center justify-center">
-                                {processingId === req.id ? <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div> : "Onayla"}
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="mt-auto pt-4 text-[13px] font-medium text-[#E5B540] flex items-center">
-                              <AlertCircle className="w-4 h-4 mr-2 shrink-0" />
-                              Sadece atanmış medya sorumlusu (pilot) bu talebi onaylayabilir.
-                            </div>
-                          )
-                        )}
+                          );
+                        })}
                       </div>
                     ))}
                   </div>
                 )}
-                
+
                 {/* ARCHIVE COMPONENT FOR MANAGER */}
                 <div className="pt-16 mt-8 border-t border-white/5">
                   <h2 className="text-2xl font-medium tracking-tight text-white mb-8 flex items-center">
@@ -2521,177 +2742,225 @@ const pendingRequests = bookedAppointments.filter(app => {
               <div className="animate-in fade-in duration-700 w-full">
                 <div className="mb-10">
                   <h1 className="text-3xl font-medium tracking-tight text-white">Randevu Talebi Oluştur</h1>
-                  <p className="text-[#86868B] mt-2 text-[15px]">Müsait tarihi seçin ve talebinizi iletin.</p>
+                  <p className="text-[#86868B] mt-2 text-[15px]">Bölge ve pilot seçin — tarih/saat pilot tarafından teklif edilecek.</p>
                 </div>
-                
-                <div className="space-y-8 w-full">
-                  {/* STEP 1: CALENDAR */}
-                  <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 shadow-sm w-full">
-                    <div className="flex items-center justify-between mb-6">
-                      <h2 className="text-lg font-medium text-white">
-                        {monthNames[viewMonth]} {viewYear}
-                      </h2>
-                      <div className="flex space-x-2">
-                        <button onClick={handlePrevMonth} className="w-9 h-9 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95"><ChevronLeft className="w-4 h-4" /></button>
-                        <button onClick={handleNextMonth} className="w-9 h-9 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95"><ChevronRight className="w-4 h-4" /></button>
+
+                {/* Onay bekleyen teklifler */}
+                {danismanConfirmRequests.length > 0 && (
+                  <div className="mb-10 space-y-4">
+                    <h2 className="text-xl font-medium text-white">Onayınızı Bekleyen Teklifler</h2>
+                    {danismanConfirmRequests.map((req) => (
+                      <div key={req.id} className="bg-[#161616] border border-[#E5B540]/20 rounded-2xl p-6 space-y-4">
+                        <div className="flex justify-between items-start gap-4">
+                          <div>
+                            <p className="text-[17px] font-medium text-white">
+                              {req.il} / {req.ilce}{req.semt ? ` / ${req.semt}` : ''}
+                            </p>
+                            <p className="text-[13px] text-[#86868B] mt-1">
+                              Teklif: {req.tarih || '—'} • {(req.saatBlok || '').split(' (')[0] || '—'} • {req.pilot}
+                            </p>
+                          </div>
+                          {getStatusBadge(req.status)}
+                        </div>
+                        {(req.danismanNotu || req.aciklama) && (
+                          <p className="text-[13px] text-[#86868B] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
+                            {req.danismanNotu || req.aciklama}
+                          </p>
+                        )}
+                        <div className="flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setRejectingId(req.id)}
+                            className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer"
+                          >
+                            Reddet
+                          </button>
+                          <button
+                            type="button"
+                            disabled={processingId === req.id}
+                            onClick={() => handleDanismanConfirm(req)}
+                            className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 transition-all cursor-pointer flex items-center justify-center"
+                          >
+                            {processingId === req.id ? (
+                              <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              'Kesinleştir'
+                            )}
+                          </button>
+                        </div>
+                        {rejectingId === req.id && (
+                          <div className="space-y-3">
+                            <textarea
+                              value={rejectReason}
+                              onChange={(e) => setRejectReason(e.target.value)}
+                              placeholder="Reddetme sebebi..."
+                              className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                            />
+                            <div className="flex gap-3">
+                              <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
+                              <button type="button" disabled={!rejectReason.trim() || processingId === req.id} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] cursor-pointer disabled:opacity-50">İptal Et</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 w-full mb-8">
+                  <h3 className="text-[12px] font-medium text-[#86868B] mb-6">KONUM VE DETAYLAR</h3>
+                  <form onSubmit={handleSubmit} className="space-y-6 w-full">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">İl</label>
+                        <div className="relative">
+                          <select
+                            value={requestIl}
+                            onChange={(e) => { setRequestIl(e.target.value); setRequestIlce(''); }}
+                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                          >
+                            {TURKEY_ILLER.map((il) => (
+                              <option key={il} value={il}>{il}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">İlçe</label>
+                        <div className="relative">
+                          <select
+                            value={requestIlce}
+                            onChange={(e) => setRequestIlce(e.target.value)}
+                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                          >
+                            <option value="">İlçe seçin</option>
+                            {requestIlceler.map((ilce) => (
+                              <option key={ilce} value={ilce}>{ilce}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Semt (opsiyonel)</label>
+                        <input
+                          type="text"
+                          value={requestSemt}
+                          onChange={(e) => setRequestSemt(e.target.value)}
+                          placeholder="Örn. Alsancak"
+                          className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px]"
+                        />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
-                      {weekDays.map(day => (
-                        <div key={day} className="text-center text-[11px] font-medium text-[#86868B] uppercase tracking-wide py-2">{day}</div>
-                      ))}
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Portföy Türü (opsiyonel)</label>
+                      <input
+                        type="text"
+                        value={portfolioType}
+                        onChange={(e) => setPortfolioType(e.target.value)}
+                        placeholder="3+1 Lüks Daire"
+                        className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 py-3.5 focus:outline-none focus:border-white/20 text-[14px]"
+                      />
                     </div>
 
-                    <div className="grid grid-cols-7 gap-1 sm:gap-2">
-                      {Array.from({ length: getFirstDayOfMonth(viewMonth, viewYear) }).map((_, i) => (<div key={`empty-${i}`} className="h-10 sm:h-12"></div>))}
-                      
-                      {Array.from({ length: getDaysInMonth(viewMonth, viewYear) }).map((_, i) => {
-                        const dayNumber = i + 1;
-                        const currentDateObj = new Date(viewYear, viewMonth, dayNumber);
-                        const dateStr = formatDateStr(currentDateObj);
-                        
-                        const bookedSlotsForDay = bookingStats[dateStr] || {};
-                        const blocks = ['Sabah (09:00 - 12:00)', 'Öğlen (12:00 - 15:00)', 'Öğleden Sonra (15:00 - 18:00)'];
-                        const isFullyBooked = blocks.every(b => (bookedSlotsForDay[b] || []).length >= 2);
-                        
-                        // Constraints: Disable past and today dates
-                        const isPastOrToday = currentDateObj <= today;
-                        const isSelected = selectedDate && dayNumber === selectedDate.getDate() && viewMonth === selectedDate.getMonth() && viewYear === selectedDate.getFullYear();
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Danışman Notu</label>
+                      <textarea
+                        value={danismanNotu}
+                        onChange={(e) => setDanismanNotu(e.target.value)}
+                        placeholder="Çekim notları, erişim bilgisi..."
+                        className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-28 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                      />
+                    </div>
 
-                        return (
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-3 ml-1">Drone Pilotu</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {['FATİMA BAYRAMOVA', 'MEHMET SELİM İDİZ'].map((pilot) => (
                           <button
-                            key={dayNumber}
-                            disabled={isPastOrToday}
-                            onClick={() => { setSelectedDate(currentDateObj); setSelectedTimeBlock(null); setSelectedPilot(null); }}
-                            className={`
-                              relative h-10 sm:h-12 w-full rounded-xl flex flex-col items-center justify-center text-[14px] sm:text-[15px] font-medium transition-all duration-300
-                              ${isPastOrToday ? 'opacity-30 cursor-not-allowed pointer-events-none text-[#86868B] bg-neutral-800/30' : 'cursor-pointer active:scale-[0.98]'}
-                              ${!isPastOrToday && !isSelected ? 'bg-[#1C1C1E] text-white hover:bg-white/10' : ''}
-                              ${isSelected ? 'bg-white text-black font-medium shadow-xl' : ''}
-                            `}
+                            key={pilot}
+                            type="button"
+                            onClick={() => setSelectedPilot(pilot)}
+                            className={`w-full flex items-center p-4 rounded-xl transition-all duration-300 text-left cursor-pointer active:scale-[0.98]
+                              ${selectedPilot === pilot ? 'bg-white shadow-lg' : 'bg-[#1C1C1E] hover:bg-[#2C2C2E]'}`}
                           >
-                            <span>{dayNumber}</span>
-                            {!isPastOrToday && isFullyBooked && !isSelected && <div className="absolute bottom-1.5 w-1 h-1 rounded-full bg-[#666666]"></div>}
-                            {!isPastOrToday && isFullyBooked && isSelected && <div className="absolute bottom-1.5 w-1 h-1 rounded-full bg-[#666666]"></div>}
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 ${selectedPilot === pilot ? 'bg-[#F2F2F7]' : 'bg-[#2C2C2E]'}`}>
+                              <User className={`w-4 h-4 ${selectedPilot === pilot ? 'text-black' : 'text-white'}`} />
+                            </div>
+                            <p className={`text-[14px] font-medium ${selectedPilot === pilot ? 'text-black' : 'text-white'}`}>{pilot}</p>
                           </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* STEP 2: TIME BLOCKS */}
-                  <div className={`transition-all duration-500 ease-out overflow-hidden w-full ${selectedDate ? 'opacity-100 max-h-96' : 'opacity-0 max-h-0'}`}>
-                    <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 w-full">
-                      <h3 className="text-[12px] font-medium text-[#86868B] mb-6">SAAT BLOĞU SEÇİN</h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {['Sabah (09:00 - 12:00)', 'Öğlen (12:00 - 15:00)', 'Öğleden Sonra (15:00 - 18:00)'].map(block => {
-                          const selectedDateStr = formatDateStr(selectedDate);
-                          const bookedPilotsInBlock = bookingStats[selectedDateStr]?.[block] || [];
-                          const isBlockFullyBooked = bookedPilotsInBlock.length >= 2;
-                          const blockName = block.split(' (')[0];
-                          const blockTime = '(' + block.split(' (')[1];
-
-                          return (
-                            <button
-                              key={block}
-                              onClick={() => {
-                                if (isBlockFullyBooked) return showToast('Tüm pilotlar doludur.');
-                                setSelectedTimeBlock(block);
-                                setSelectedPilot(null); 
-                              }}
-                              className={`
-                                w-full px-5 py-4 rounded-xl border transition-all duration-300 ease-out flex justify-between sm:justify-start lg:justify-between items-center min-h-[64px]
-                                ${isBlockFullyBooked 
-                                  ? 'bg-[#1C1C1E] border-transparent text-[#666666] cursor-not-allowed opacity-50' 
-                                  : selectedTimeBlock === block 
-                                    ? 'bg-white border-white text-black shadow-lg cursor-pointer active:scale-95' 
-                                    : 'bg-[#1C1C1E] border-transparent text-white hover:bg-[#2C2C2E] cursor-pointer active:scale-[0.98]'}
-                              `}
-                            >
-                              <div className="flex items-center">
-                                <div className={`hidden sm:flex w-4 h-4 rounded-full border-[1.5px] mr-3 items-center justify-center transition-colors shrink-0
-                                  ${isBlockFullyBooked ? 'border-[#666666]/30' : selectedTimeBlock === block ? 'border-black' : 'border-[#666666]'}
-                                `}>
-                                  {selectedTimeBlock === block && !isBlockFullyBooked && <div className="w-2 h-2 rounded-full bg-black" />}
-                                </div>
-                                <span className="text-[14px] font-medium truncate mr-2">{blockName}</span>
-                              </div>
-                              <span className={`text-[12px] whitespace-nowrap shrink-0 ${selectedTimeBlock === block ? 'opacity-80 font-medium' : 'opacity-50'}`}>{blockTime}</span>
-                            </button>
-                          )
-                        })}
+                        ))}
                       </div>
                     </div>
-                  </div>
 
-                  {/* STEP 3: DETAILS FORM */}
-                  <div className={`transition-all duration-700 ease-out w-full ${selectedTimeBlock ? 'opacity-100 max-h-[1200px]' : 'opacity-0 max-h-0 pointer-events-none'}`}>
-                    <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 w-full">
-                      <h3 className="text-[12px] font-medium text-[#86868B] mb-6">DETAYLARI GİRİN</h3>
-                      <form onSubmit={handleSubmit} className="space-y-6 w-full">
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 w-full">
-                          <div className="w-full">
-                            <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Portföy Konumu</label>
-                            <input type="text" value={locationStr} onChange={(e) => setLocationStr(e.target.value)} placeholder="Folkart Towers, B Kule" className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 py-3.5 focus:outline-none focus:border-white/20 transition-all text-[14px] cursor-pointer" />
-                          </div>
-                          <div className="w-full">
-                            <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Portföy Türü</label>
-                            <input type="text" value={portfolioType} onChange={(e) => setPortfolioType(e.target.value)} placeholder="3+1 Lüks Daire" className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 py-3.5 focus:outline-none focus:border-white/20 transition-all text-[14px] cursor-pointer" />
-                          </div>
-                        </div>
+                    <button
+                      type="submit"
+                      disabled={!isFormValid || isSubmitting}
+                      className={`w-full py-4 rounded-xl font-medium text-[15px] transition-all flex justify-center
+                        ${isFormValid ? 'bg-white text-black hover:bg-gray-200 active:scale-[0.98] cursor-pointer' : 'bg-[#1C1C1E] text-[#666666] cursor-not-allowed'}`}
+                    >
+                      {isSubmitting ? <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" /> : 'Randevu Talebi Gönder'}
+                    </button>
+                  </form>
+                </div>
 
-                        <div className="w-full">
-                          <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Çekim Açıklaması</label>
-                          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Geniş açı lens kullanılmalı..." className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-32 resize-none focus:outline-none focus:border-white/20 transition-all text-[14px] custom-scrollbar cursor-pointer" />
-                        </div>
-
-                        <div className="w-full">
-                          <label className="block text-[12px] font-medium text-[#86868B] mb-3 ml-1">Medya Sorumlusu (Pilot)</label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {['FATİMA BAYRAMOVA', 'MEHMET SELİM İDİZ'].map(pilot => {
-                              const isPilotBooked = selectedTimeBlock && bookingStats[formatDateStr(selectedDate)]?.[selectedTimeBlock]?.includes(pilot);
-
-                              return (
-                                <button
-                                  key={pilot}
-                                  type="button"
-                                  disabled={isPilotBooked}
-                                  onClick={() => setSelectedPilot(pilot)}
-                                  className={`w-full flex items-center p-4 rounded-xl transition-all duration-300 text-left
-                                    ${isPilotBooked 
-                                      ? 'bg-[#1C1C1E] opacity-40 cursor-not-allowed' 
-                                      : selectedPilot === pilot 
-                                        ? 'bg-white shadow-lg cursor-pointer active:scale-[0.98]' 
-                                        : 'bg-[#1C1C1E] hover:bg-[#2C2C2E] cursor-pointer active:scale-[0.98]'}
-                                  `}
-                                >
-                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 ${selectedPilot === pilot ? 'bg-[#F2F2F7]' : 'bg-[#2C2C2E]'}`}>
-                                    <User className={`w-4 h-4 ${selectedPilot === pilot ? 'text-black' : 'text-white'}`} />
-                                  </div>
-                                  <div>
-                                    <p className={`text-[14px] font-medium ${selectedPilot === pilot ? 'text-black' : 'text-white'}`}>{pilot}</p>
-                                  </div>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="pt-4 w-full">
-                          <button
-                            type="submit"
-                            disabled={!isFormValid || isSubmitting}
-                            className={`w-full py-4 rounded-xl font-medium text-[15px] transition-all duration-300 ease-out flex justify-center
-                              ${isFormValid ? 'bg-white text-black hover:bg-gray-200 active:scale-[0.98] cursor-pointer' : 'bg-[#1C1C1E] text-[#666666] cursor-not-allowed'}`}
-                          >
-                            {isSubmitting ? <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin"></div> : "Randevu Talebi Gönder"}
-                          </button>
-                        </div>
-                      </form>
+                {/* Soruştur */}
+                <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 w-full mb-8">
+                  <h3 className="text-[12px] font-medium text-[#86868B] mb-2">BÖLGE SORUŞTUR</h3>
+                  <p className="text-[13px] text-[#86868B] mb-6">Seçtiğiniz bölgedeki kesinleşmiş çekimleri görün.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="relative">
+                      <select
+                        value={inquiryIl}
+                        onChange={(e) => { setInquiryIl(e.target.value); setInquiryIlce(''); setInquiryDone(false); }}
+                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                      >
+                        {TURKEY_ILLER.map((il) => (
+                          <option key={il} value={il}>{il}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
                     </div>
+                    <div className="relative">
+                      <select
+                        value={inquiryIlce}
+                        onChange={(e) => { setInquiryIlce(e.target.value); setInquiryDone(false); }}
+                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                      >
+                        <option value="">İlçe seçin</option>
+                        {inquiryIlceler.map((ilce) => (
+                          <option key={ilce} value={ilce}>{ilce}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={runRegionInquiry}
+                      className="h-12 rounded-xl bg-white text-black text-[14px] font-medium hover:bg-gray-200 cursor-pointer active:scale-[0.98]"
+                    >
+                      Soruştur
+                    </button>
                   </div>
+                  {inquiryDone && (
+                    <div className="space-y-3 mt-4">
+                      {(inquiryResults || []).length === 0 ? (
+                        <p className="text-[14px] text-[#86868B]">Bu bölgede kesinleşmiş çekim yok.</p>
+                      ) : (
+                        (inquiryResults || []).map((app) => (
+                          <div key={app.id} className="flex items-center justify-between gap-3 bg-[#1C1C1E] border border-white/5 rounded-xl px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="text-[14px] text-white truncate">{app.tarih || '—'} • {(app.saatBlok || '').split(' (')[0]}</p>
+                              <p className="text-[12px] text-[#86868B] truncate">{app.pilot}{app.semt ? ` • ${app.semt}` : ''}</p>
+                            </div>
+                            {getStatusBadge(app.status)}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* ARCHIVE COMPONENT FOR CONSULTANT */}
