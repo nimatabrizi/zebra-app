@@ -14,6 +14,7 @@
  */
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { 
   Search, Plus, LayoutGrid, Briefcase, Camera, Megaphone, CalendarCheck, Building2, Globe, 
   LineChart, Map, Mail, X, ChevronDown, LogOut, ChevronLeft, ChevronRight, Clock, 
@@ -42,11 +43,19 @@ import {
   ownerRoleDisplayName as ownerRoleDisplayNameUtil,
 } from '../lib/appointmentUtils';
 import { DEFAULT_IL, TURKEY_ILLER, getIlceler } from '../lib/turkeyLocations';
+import { TIME_SLOT_OPTIONS } from '../lib/timeSlots';
 import { APPOINTMENT_STATUS_LABELS } from '../types/appointments';
+import {
+  formatNotificationRow,
+  isNotificationOwnedBy,
+} from '../lib/notifications';
 import CekimRaporuPanel from '../components/CekimRaporuPanel';
+import SmartSchedulingAssistant from '../components/SmartSchedulingAssistant';
+import WeatherBadge from '../components/WeatherBadge';
 
 export default function App() {
   // --- PRESERVED LOGIC & STATE MANAGEMENT ---
+  const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -111,22 +120,22 @@ const [activeTab, setActiveTab] = useState('genel');
     typeof window !== 'undefined' && localStorage.getItem(REMEMBER_ME_KEY) === 'true';
   
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-const [notifications, setNotifications] = useState<any[]>([]);
+  const isNotificationOpenRef = useRef(false);
+  const showToastRef = useRef(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
 
-  // Supabase'den kişiye özel bildirimleri çeken motor
-// Supabase'den kişiye özel bildirimleri çeken motor (İçi dolu ve eksiksiz)
+  useEffect(() => {
+    isNotificationOpenRef.current = isNotificationOpen;
+  }, [isNotificationOpen]);
+
   const fetchNotifications = async () => {
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
       .order('created_at', { ascending: false });
-      
+
     if (!error && data) {
-      const formattedNotifs = data.map(n => ({
-        ...n,
-        created_at: new Date(n.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
-      }));
-      setNotifications(formattedNotifs);
+      setNotifications(data.map((n) => formatNotificationRow(n)));
     }
   };
 
@@ -137,19 +146,93 @@ const [notifications, setNotifications] = useState<any[]>([]);
     }
   }, [isLoggedIn, fullName, currentUserId]);
 
+  /**
+   * Gerçek zamanlı bildirimler — INSERT/UPDATE/DELETE
+   * Sayfa yenilemeden zil rozeti + panel güncellenir.
+   */
+  useEffect(() => {
+    if (!isLoggedIn || (!currentUserId && !fullName)) return;
+
+    const channelName = `zebra-notifications:${currentUserId || fullName}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications' },
+        (payload) => {
+          const row = payload.new;
+          if (!row || !isNotificationOwnedBy(row, currentUserId, fullName)) return;
+          const formatted = formatNotificationRow(row);
+          setNotifications((prev) => {
+            if (prev.some((n) => String(n.id) === String(formatted.id))) return prev;
+            return [formatted, ...prev];
+          });
+          if (!isNotificationOpenRef.current) {
+            showToastRef.current?.(String(formatted.title || 'Yeni bildirim'));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notifications' },
+        (payload) => {
+          const row = payload.new;
+          if (!row) return;
+          if (!isNotificationOwnedBy(row, currentUserId, fullName)) {
+            setNotifications((prev) =>
+              prev.filter((n) => String(n.id) !== String(row.id))
+            );
+            return;
+          }
+          const formatted = formatNotificationRow(row);
+          setNotifications((prev) => {
+            const idx = prev.findIndex((n) => String(n.id) === String(formatted.id));
+            if (idx === -1) return [formatted, ...prev];
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...formatted };
+            return next;
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'notifications' },
+        (payload) => {
+          const row = payload.old;
+          if (!row?.id) return;
+          setNotifications((prev) =>
+            prev.filter((n) => String(n.id) !== String(row.id))
+          );
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Bildirim Realtime kanal hatası');
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isLoggedIn, currentUserId, fullName]);
+
   const isNotificationForMe = (n) =>
-    (currentUserId && n.user_id === currentUserId) ||
-    (fullName && n.user_id === fullName);
+    isNotificationOwnedBy(n, currentUserId, fullName);
 
   const userNotifications = notifications.filter(isNotificationForMe);
-  const unreadCount = userNotifications.filter(n => !n.is_read).length;
+  const unreadCount = userNotifications.filter((n) => !n.is_read).length;
 
-  const markAllAsRead = async () => {
-    setNotifications(prev =>
-      prev.map(n => (isNotificationForMe(n) ? { ...n, is_read: true } : n))
+  /** Panel açılınca tüm okunmamışları DB'de is_read=true yap (liste silinmez) */
+  const markUnreadAsRead = async () => {
+    const unread = notifications.filter(
+      (n) => isNotificationForMe(n) && !n.is_read
+    );
+    if (unread.length === 0) return;
+
+    setNotifications((prev) =>
+      prev.map((n) => (isNotificationForMe(n) ? { ...n, is_read: true } : n))
     );
 
-    // UUID + legacy isim anahtarları tek sorguda (mükerrer / yarım güncelleme yok)
     const userKeys = [...new Set([currentUserId, fullName].filter(Boolean))];
     if (userKeys.length === 0) return;
 
@@ -161,7 +244,57 @@ const [notifications, setNotifications] = useState<any[]>([]);
 
     if (error) {
       console.error('Bildirimler okundu işaretlenemedi:', error.message, error);
-      showToast('Bildirimler güncellenirken bir hata oluştu.');
+    }
+  };
+
+  useEffect(() => {
+    if (!isNotificationOpen) return;
+    void markUnreadAsRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNotificationOpen]);
+
+  /** Bildirim kartı → ilgili sekme */
+  const resolveNotificationTab = (notif) => {
+    if (notif?.link_tab) return notif.link_tab;
+    const title = String(notif?.title || '').toLocaleLowerCase('tr-TR');
+    const msg = String(notif?.message || '').toLocaleLowerCase('tr-TR');
+    const blob = `${title} ${msg}`;
+
+    if (
+      blob.includes('teklif') ||
+      blob.includes('kesinleştirmenizi') ||
+      blob.includes('kesinlestirmenizi')
+    ) {
+      return role === 'danisman' ? 'teklif-onay' : 'cekim';
+    }
+    if (
+      blob.includes('yarın') ||
+      blob.includes('yarin') ||
+      blob.includes('bugün çekim') ||
+      blob.includes('bugun cekim') ||
+      blob.includes('hatırlat') ||
+      blob.includes('hatirlat')
+    ) {
+      return 'takvim';
+    }
+    if (blob.includes('talep') || blob.includes('iptal')) {
+      return role === 'danisman' ? 'randevu' : 'cekim';
+    }
+    if (blob.includes('kesinleş') || blob.includes('kesinles')) {
+      return 'takvim';
+    }
+    if (usesManagerShell(role)) return 'cekim';
+    return 'takvim';
+  };
+
+  const handleNotificationClick = (notif) => {
+    const tab = resolveNotificationTab(notif);
+    setIsNotificationOpen(false);
+    navigateToTab(tab);
+    try {
+      router.replace(`/?tab=${encodeURIComponent(tab)}`);
+    } catch {
+      /* SPA fallback: navigateToTab already updated history */
     }
   };
 
@@ -186,6 +319,32 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     }
   }, [isLoggedIn]);
 
+  /**
+   * Gerçek zamanlı randevular — listeler / takvim / teklifler yenilemesiz.
+   */
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const channel = supabase
+      .channel(`zebra-appointments:${currentUserId || 'anon'}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments' },
+        () => {
+          void fetchAppointments();
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Randevu Realtime kanal hatası');
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isLoggedIn, currentUserId]);
+
   // Location-first talep formu (tarih/saat yok)
   const [requestIl, setRequestIl] = useState(DEFAULT_IL);
   const [requestIlce, setRequestIlce] = useState('');
@@ -194,9 +353,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const [portfolioType, setPortfolioType] = useState('');
   const [selectedPilot, setSelectedPilot] = useState(null);
 
-  // Soruştur
-  const [inquiryIl, setInquiryIl] = useState(DEFAULT_IL);
-  const [inquiryIlce, setInquiryIlce] = useState('');
+  // Soruştur (formdaki il/ilçe ile aynı alanlar kullanılır)
   const [inquiryResults, setInquiryResults] = useState(null);
   const [inquiryDone, setInquiryDone] = useState(false);
 
@@ -204,6 +361,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const [offeringId, setOfferingId] = useState(null);
   const [offerTarih, setOfferTarih] = useState('');
   const [offerSaatBlok, setOfferSaatBlok] = useState('');
+  const [isOfferCalendarOpen, setIsOfferCalendarOpen] = useState(false);
   const [offerCalMonth, setOfferCalMonth] = useState(new Date().getMonth());
   const [offerCalYear, setOfferCalYear] = useState(new Date().getFullYear());
 
@@ -232,6 +390,10 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     pilot: '',
     status: 'pilot_bekleniyor',
     reddedilmeSebebi: '',
+    il: DEFAULT_IL,
+    ilce: '',
+    semt: '',
+    danismanNotu: '',
   });
   const [isEditSaving, setIsEditSaving] = useState(false);
   const [isEditCalendarOpen, setIsEditCalendarOpen] = useState(false);
@@ -248,7 +410,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const [manualForm, setManualForm] = useState({
     tarih: '',
     saatBlok: '',
-    konum: '',
+    il: DEFAULT_IL,
+    ilce: '',
+    semt: '',
     portfoyTuru: '',
     aciklama: '',
     danismanIsmi: '',
@@ -256,11 +420,6 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   });
 
   const PILOT_OPTIONS = ['FATİMA BAYRAMOVA', 'MEHMET SELİM İDİZ'];
-  const TIME_BLOCKS = [
-    'Sabah (09:00 - 12:00)',
-    'Öğlen (12:00 - 15:00)',
-    'Öğleden Sonra (15:00 - 18:00)',
-  ];
 
   const [currentDate] = useState(new Date());
   const [viewMonth, setViewMonth] = useState(currentDate.getMonth());
@@ -313,6 +472,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+  showToastRef.current = showToast;
 
   /** owner_role → kartta gösterilecek işlem sorumlusu adı */
   const ownerRoleDisplayName = (ownerRole) => ownerRoleDisplayNameUtil(ownerRole);
@@ -363,11 +523,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     return `${danisman} ${pilotLabel} ${dateLabel} tarihinde çekim randevusu aldı.`;
   };
 
-  /** Danışman (randevu sahibi) bildirimi: eski standart onay metni */
+  /** Danışman (randevu sahibi) bildirimi: kesinleşme metni */
   const buildOwnerApprovedMessage = (tarih, konum) => {
     const dateLabel = toDisplayDate(tarih) || String(tarih || '').trim();
     const konumLabel = String(konum || '').trim() || 'Portföy';
-    return `${dateLabel} tarihli ${konumLabel} çekim talebiniz onaylandı.`;
+    return `${dateLabel} tarihli ${konumLabel} çekim talebiniz kesinleşti.`;
   };
 
   /** profiles'tan pilot tam adı */
@@ -443,8 +603,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   };
 
   /**
-   * Onaylandı: danışman + tüm broker'lara (UUID) bildirim.
-   * Sahip → standart onay metni; diğer broker'lar → çekim randevusu metni.
+   * Kesinleşti: danışman + tüm broker'lara (UUID) bildirim.
+   * Sahip → standart kesinleşme metni; diğer broker'lar → çekim randevusu metni.
    */
   const notifyAppointmentApproved = async (appointment) => {
     const danismanIsmi = String(appointment?.danismanIsmi || '').trim();
@@ -508,7 +668,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     brokerIds.forEach((id) => recipientIds.add(id));
 
     if (recipientIds.size === 0) {
-      console.warn('Onay bildirimi: alıcı bulunamadı', { danismanIsmi, createdBy });
+      console.warn('Kesinleşme bildirimi: alıcı bulunamadı', { danismanIsmi, createdBy });
       return false;
     }
 
@@ -520,14 +680,14 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       const isOwner = ownerId && uid === ownerId;
       return {
         user_id: uid,
-        title: isOwner ? 'Talebiniz Onaylandı' : 'Yeni Onaylanan Çekim',
+        title: isOwner ? 'Talebiniz Kesinleşti' : 'Yeni Kesinleşen Çekim',
         message: isOwner ? ownerMessage : brokerMessage,
       };
     });
 
     const { error: notifError } = await supabase.from('notifications').insert(rows);
     if (notifError) {
-      console.error('Onay bildirimleri yazılamadı:', notifError.message, notifError);
+      console.error('Kesinleşme bildirimleri yazılamadı:', notifError.message, notifError);
       return false;
     }
     await fetchNotifications();
@@ -541,8 +701,24 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       const owner = app.ownerRole || ownerRoleFromPilot(app.pilot);
       return owner === role;
     }
+    if (role === 'danisman') {
+      const isOwner =
+        app.createdBy === currentUserId || app.danismanIsmi === fullName;
+      return (
+        isOwner &&
+        normalizeAppointmentStatus(app.status) === 'pilot_bekleniyor'
+      );
+    }
     return false;
   };
+
+  const isDanismanLocationEdit =
+    role === 'danisman' &&
+    editingAppointment &&
+    normalizeAppointmentStatus(editingAppointment.status) === 'pilot_bekleniyor';
+
+  const editIlceler = getIlceler(editForm.il);
+  const manualIlceler = getIlceler(manualForm.il);
 
   /** Manuel formda kilitli pilot adı */
   const lockedPilotForRole = (appRole) => {
@@ -577,7 +753,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setManualForm({
       tarih: '',
       saatBlok: '',
-      konum: '',
+      il: DEFAULT_IL,
+      ilce: '',
+      semt: '',
       portfoyTuru: '',
       aciklama: '',
       danismanIsmi: '',
@@ -600,9 +778,27 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setManualForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleManualCalendarSelect = (dateObj) => {
-    handleManualFormChange('tarih', toIsoDate(dateObj));
-    setIsManualCalendarOpen(false);
+  const handleManualCalendarSelectIso = (iso) => {
+    handleManualFormChange('tarih', iso);
+  };
+
+  const openManualSmartCalendar = () => {
+    if (!manualForm.il || !manualForm.ilce) {
+      showToast('Önce il ve ilçe seçin — takvim hava ve aynı bölge önerilerini buna göre gösterir.');
+      return;
+    }
+    if (manualForm.tarih) {
+      const [y, m] = manualForm.tarih.split('-').map(Number);
+      if (y && m) {
+        setManualCalYear(y);
+        setManualCalMonth(m - 1);
+      }
+    } else {
+      const now = new Date();
+      setManualCalYear(now.getFullYear());
+      setManualCalMonth(now.getMonth());
+    }
+    setIsManualCalendarOpen(true);
   };
 
   const handleManualCalPrevMonth = () => {
@@ -630,8 +826,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       role === 'broker' ? manualForm.pilot : lockedPilotForRole(role);
     const ownerRole = ownerRoleFromPilot(effectivePilot);
 
-    if (!manualForm.tarih || !manualForm.saatBlok || !manualForm.konum.trim()) {
-      showToast('Tarih, saat ve konum zorunludur.');
+    if (!manualForm.tarih || !manualForm.saatBlok || !manualForm.il || !manualForm.ilce) {
+      showToast('Tarih, saat, il ve ilçe zorunludur.');
       return;
     }
     if (!manualForm.danismanIsmi.trim()) {
@@ -657,15 +853,24 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
-    // DB enum: confirmed (= onaylanmış / approved)
+    const locationLabel = [manualForm.il, manualForm.ilce, manualForm.semt.trim()]
+      .filter(Boolean)
+      .join(' / ');
+    const pilotUserId = await resolvePilotProfileId(effectivePilot);
+    const danismanUuid = await resolveDanismanProfileId(manualForm.danismanIsmi.trim());
+
     const payload = {
       created_by: userId,
       owner_role: ownerRole,
       danisman_ismi: manualForm.danismanIsmi.trim(),
       pilot: effectivePilot,
+      pilot_id: pilotUserId || ownerRole,
       tarih: manualForm.tarih,
       saat_blok: manualForm.saatBlok,
-      konum: manualForm.konum.trim(),
+      il: manualForm.il,
+      ilce: manualForm.ilce,
+      semt: manualForm.semt.trim() || null,
+      konum: locationLabel,
       portfoy_turu: manualForm.portfoyTuru.trim() || null,
       aciklama: manualForm.aciklama.trim() || null,
       status: 'kesinlesti',
@@ -673,9 +878,6 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       is_manual: true,
       created_by_role: role,
       reddedilme_sebebi: null,
-      il: 'İzmir',
-      ilce: 'Belirsiz',
-      pilot_id: (await resolvePilotProfileId(effectivePilot)) || ownerRole,
     };
 
     const { error } = await supabase.from('appointments').insert([payload]);
@@ -687,10 +889,35 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
+    const dateLabel = toDisplayDate(manualForm.tarih);
+    const notifRows = [];
+    if (danismanUuid) {
+      notifRows.push({
+        user_id: danismanUuid,
+        title: 'Yeni Kesinleşmiş Çekim',
+        message: `${locationLabel} için ${dateLabel} • ${manualForm.saatBlok} çekimi kesinleşti (${effectivePilot}).`,
+      });
+    }
+    if (pilotUserId) {
+      notifRows.push({
+        user_id: pilotUserId,
+        title: 'Yeni Kesinleşmiş Çekim',
+        message: `${manualForm.danismanIsmi.trim()} — ${locationLabel} için ${dateLabel} • ${manualForm.saatBlok} çekimi takviminize eklendi.`,
+      });
+    }
+    if (notifRows.length > 0) {
+      const { error: notifError } = await supabase.from('notifications').insert(notifRows);
+      if (notifError) {
+        console.error('Manuel çekim bildirimleri yazılamadı:', notifError.message, notifError);
+      } else {
+        await fetchNotifications();
+      }
+    }
+
     await fetchAppointments();
     setIsManualSaving(false);
     setIsManualModalOpen(false);
-    showToast('Çekim başarıyla eklendi');
+    showToast('Çekim kesinleşti ve bildirimler gönderildi');
   };
 
   const isRejectedStatus = (status) => isRejectedStatusUtil(status);
@@ -759,12 +986,22 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       // broker + yonetici: o günün randevuları
     } else if (role === 'selim' || role === 'fatima' || isPilot) {
       filtered = filtered.filter(app => app.pilot === fullName);
+    } else if (role === 'danisman') {
+      // Takım şeffaflığı: o gündeki tüm danışmanların aktif talepleri
+      filtered = filtered.filter((app) => {
+        const st = normalizeAppointmentStatus(app.status);
+        return (
+          st === 'kesinlesti' ||
+          st === 'pilot_bekleniyor' ||
+          st === 'danisman_onayi_bekliyor'
+        );
+      });
     } else {
       filtered = filtered.filter(app => app.danismanIsmi === fullName);
     }
 
-    // Segmented filter: Tümü | Sadece Onaylananlar
-    // yonetici: filtre gizli; kalıcı olarak yalnızca onaylılar
+    // Segmented filter: Tümü | Sadece Kesinleşmişler
+    // yonetici: filtre gizli; kalıcı olarak yalnızca kesinleşmişler
     const effectiveDayFilter =
       role === 'yonetici' ? 'confirmed' : dayListFilter;
     if (effectiveDayFilter === 'confirmed') {
@@ -776,6 +1013,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return rank(a.status) - rank(b.status) || Number(b.id) - Number(a.id);
     });
   }, [bookedAppointments, selectedTakvimDateStr, role, fullName, isPilot, seesAllAppointments, dayListFilter]);
+
+  const offeringRequest = useMemo(
+    () => bookedAppointments.find((a) => a.id === offeringId) || null,
+    [bookedAppointments, offeringId]
+  );
 
   const toggleRow = (id) => setExpandedRows(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]);
 
@@ -810,7 +1052,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       typeof window !== 'undefined'
         ? new URLSearchParams(window.location.search).get('tab')
         : null;
-    const allowedTabs = ['genel', 'takvim', 'cekim', 'randevu', 'cekim-raporu'];
+    const allowedTabs = ['genel', 'takvim', 'cekim', 'randevu', 'teklif-onay', 'cekim-raporu'];
     let nextTab =
       (tabFromUrl && allowedTabs.includes(tabFromUrl) && tabFromUrl) ||
       options.tab ||
@@ -909,11 +1151,29 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Mobil menü açıkken arkada kaydırmayı engelleme
+  // Mobil menü / modal açıkken arkada kaydırmayı engelleme
   useEffect(() => {
-    document.body.style.overflow = (isMobileMenuOpen || isNotificationOpen || !!editingAppointment || isManualModalOpen) ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [isMobileMenuOpen, isNotificationOpen, editingAppointment, isManualModalOpen]);
+    const lock =
+      isMobileMenuOpen ||
+      isNotificationOpen ||
+      !!editingAppointment ||
+      isManualModalOpen ||
+      isManualCalendarOpen ||
+      isOfferCalendarOpen ||
+      isEditCalendarOpen;
+    document.body.style.overflow = lock ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [
+    isMobileMenuOpen,
+    isNotificationOpen,
+    editingAppointment,
+    isManualModalOpen,
+    isManualCalendarOpen,
+    isOfferCalendarOpen,
+    isEditCalendarOpen,
+  ]);
 
   // 2. SUPABASE AUTH GİRİŞ (tam_isim + whatsapp_number)
   const handleLogin = async (e) => {
@@ -975,6 +1235,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const isFormValid =
     Boolean(requestIl) &&
     Boolean(requestIlce) &&
+    Boolean(portfolioType.trim()) &&
     Boolean(selectedPilot);
 
   const resetRequestForm = () => {
@@ -988,7 +1249,12 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!isFormValid) return;
+    if (!isFormValid) {
+      if (!portfolioType.trim()) {
+        showToast('Portföy bilgileri zorunludur.');
+      }
+      return;
+    }
     setIsSubmitting(true);
 
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -1029,7 +1295,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       ilce: requestIlce,
       semt: requestSemt.trim() || null,
       konum: locationLabel,
-      portfoy_turu: portfolioType.trim() || null,
+      portfoy_turu: portfolioType.trim(),
       aciklama: danismanNotu.trim() || null,
       danisman_notu: danismanNotu.trim() || null,
       pilot: selectedPilot,
@@ -1079,7 +1345,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   /** Aşama 2 — Pilot tarih/saat teklif eder */
   const handlePilotOffer = async (req) => {
     if (!offerTarih || !offerSaatBlok) {
-      showToast('Teklif için tarih ve saat bloğu seçin.');
+      showToast('Teklif için tarih ve saat seçin.');
       return;
     }
     setProcessingId(req.id);
@@ -1108,7 +1374,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       const { error: notifError } = await supabase.from('notifications').insert([{
         user_id: ownerUuid,
         title: 'Çekim Teklifi Hazır',
-        message: `${req.ilce || req.konum} için ${dateLabel} • ${offerSaatBlok.split(' (')[0]} teklif edildi. Onayınızı bekliyor.`,
+        message: `${req.ilce || req.konum} için ${dateLabel} • ${offerSaatBlok} teklif edildi. Kesinleştirmenizi bekliyor.`,
       }]);
       if (notifError) {
         console.error('Danışman teklif bildirimi yazılamadı:', notifError.message, notifError);
@@ -1150,7 +1416,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       const { error: notifError } = await supabase.from('notifications').insert([{
         user_id: pilotUserId,
         title: 'Randevu Kesinleşti',
-        message: `${req.danismanIsmi}, ${dateLabel} • ${(req.saatBlok || '').split(' (')[0]} teklifinizi onayladı. Randevu kesinleşti.`,
+        message: `${req.danismanIsmi}, ${dateLabel} • ${req.saatBlok || ''} teklifinizi kesinleştirdi. Randevu kesinleşti.`,
       }]);
       if (notifError) {
         console.error('Pilot kesinleşme bildirimi yazılamadı:', notifError.message, notifError);
@@ -1159,19 +1425,20 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       }
     }
 
-    // Broker bildirimleri (eski onay akışı)
+    // Broker bildirimleri (kesinleşme akışı)
     await notifyAppointmentApproved({ ...req, status: 'kesinlesti' });
 
     setProcessingId(null);
     showToast('Randevu kesinleşti.');
   };
 
-  /** Broker hızlı onay (eski davranış → kesinlesti; tarih zaten varsa) */
+  /** Broker hızlı kesinleştirme (tarih zaten varsa → kesinlesti) */
   const handleApprove = async (req) => {
     if (req.status === 'pilot_bekleniyor' || !req.tarih) {
       setOfferingId(req.id);
       setOfferTarih('');
       setOfferSaatBlok('');
+      setIsOfferCalendarOpen(false);
       const now = new Date();
       setOfferCalMonth(now.getMonth());
       setOfferCalYear(now.getFullYear());
@@ -1185,8 +1452,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       .eq('id', req.id);
 
     if (error) {
-      console.error('Onaylama hatası:', error);
-      showToast('Onaylama sırasında bir hata oluştu.');
+      console.error('Kesinleştirme hatası:', error);
+      showToast('Kesinleştirme sırasında bir hata oluştu.');
       setProcessingId(null);
       return;
     }
@@ -1195,9 +1462,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     const notified = await notifyAppointmentApproved(req);
     setProcessingId(null);
     if (notified) {
-      showToast("Çekim onaylandı. Danışman ve broker'lara bildirim gönderildi.");
+      showToast("Çekim kesinleşti. Danışman ve broker'lara bildirim gönderildi.");
     } else {
-      showToast('Çekim onaylandı, ancak bildirim gönderilemedi.');
+      showToast('Çekim kesinleşti, ancak bildirim gönderilemedi.');
     }
   };
 
@@ -1242,16 +1509,23 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   };
 
   const runRegionInquiry = () => {
-    if (!inquiryIl || !inquiryIlce) {
+    if (!requestIl || !requestIlce) {
       showToast('Soruşturmak için il ve ilçe seçin.');
       return;
     }
-    const results = bookedAppointments.filter(
-      (app) =>
-        isConfirmedStatus(app.status) &&
-        app.il === inquiryIl &&
-        app.ilce === inquiryIlce
-    );
+    const activeStatuses = new Set([
+      'pilot_bekleniyor',
+      'danisman_onayi_bekliyor',
+      'kesinlesti',
+    ]);
+    const results = bookedAppointments.filter((app) => {
+      const st = normalizeAppointmentStatus(app.status);
+      return (
+        activeStatuses.has(st) &&
+        app.il === requestIl &&
+        app.ilce === requestIlce
+      );
+    });
     setInquiryResults(results);
     setInquiryDone(true);
   };
@@ -1262,6 +1536,12 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
     const iso = displayDateToIso(app.tarih);
+    const currentStatus = normalizeAppointmentStatus(app.status);
+    const canReoffer =
+      currentStatus === 'iptal' &&
+      (role === 'broker' || role === 'selim' || role === 'fatima');
+    // Reddedilmiş kaydı açınca varsayılan: yeniden teklif (tarih/saat seçilince kaydet)
+    const initialStatus = canReoffer ? 'danisman_onayi_bekliyor' : currentStatus;
     setEditingAppointment(app);
     setEditForm({
       tarih: iso,
@@ -1270,8 +1550,12 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       portfoyTuru: app.portfoyTuru || '',
       aciklama: app.aciklama || '',
       pilot: app.pilot || '',
-      status: normalizeAppointmentStatus(app.status),
-      reddedilmeSebebi: app.reddedilmeSebebi || '',
+      status: initialStatus,
+      reddedilmeSebebi: canReoffer ? '' : app.reddedilmeSebebi || '',
+      il: app.il || DEFAULT_IL,
+      ilce: app.ilce || '',
+      semt: app.semt || '',
+      danismanNotu: app.danismanNotu || app.aciklama || '',
     });
     setIsEditCalendarOpen(false);
     if (iso) {
@@ -1298,6 +1582,10 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       pilot: '',
       status: 'pilot_bekleniyor',
       reddedilmeSebebi: '',
+      il: DEFAULT_IL,
+      ilce: '',
+      semt: '',
+      danismanNotu: '',
     });
   };
 
@@ -1312,9 +1600,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setIsEditCalendarOpen(true);
   };
 
-  const handleEditCalendarSelect = (dateObj) => {
-    handleEditFormChange('tarih', toIsoDate(dateObj));
-    setIsEditCalendarOpen(false);
+  const handleEditCalendarSelectIso = (iso) => {
+    handleEditFormChange('tarih', iso);
   };
 
   const handleEditCalPrevMonth = () => {
@@ -1355,14 +1642,55 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
-    if (!editForm.tarih || !editForm.saatBlok || !editForm.konum || !editForm.pilot) {
-      showToast('Tarih, saat, konum ve pilot zorunludur.');
+    const isDanismanEdit =
+      role === 'danisman' &&
+      normalizeAppointmentStatus(editingAppointment.status) === 'pilot_bekleniyor';
+
+    const normalizeStatus = (s) => normalizeAppointmentStatus(s);
+    const oldStatus = normalizeStatus(editingAppointment.status);
+    let newStatus = isDanismanEdit
+      ? 'pilot_bekleniyor'
+      : normalizeStatus(editForm.status);
+
+    // İptal kaydı + tarih/saat dolu + hâlâ iptal seçiliyse → otomatik yeniden teklif
+    const canReofferRole =
+      role === 'broker' || role === 'selim' || role === 'fatima';
+    if (
+      oldStatus === 'iptal' &&
+      canReofferRole &&
+      editForm.tarih &&
+      editForm.saatBlok &&
+      newStatus === 'iptal'
+    ) {
+      newStatus = 'danisman_onayi_bekliyor';
+    }
+
+    if (isDanismanEdit) {
+      if (!editForm.il || !editForm.ilce || !editForm.pilot) {
+        showToast('İl, ilçe ve pilot zorunludur.');
+        return;
+      }
+    } else if (newStatus === 'pilot_bekleniyor') {
+      if (!editForm.pilot && role === 'broker') {
+        showToast('Pilot seçin.');
+        return;
+      }
+    } else if (!editForm.tarih || !editForm.saatBlok) {
+      showToast(
+        oldStatus === 'iptal'
+          ? 'Yeniden teklif için tarih ve saat seçin.'
+          : 'Tarih ve saat zorunludur.'
+      );
+      return;
+    } else if (!editForm.pilot && role === 'broker') {
+      showToast('Pilot seçin.');
       return;
     }
 
-    // Pilot değişimi: yalnızca broker (RLS WITH CHECK — selim/fatima owner_role değiştiremez)
     const effectivePilot =
-      role === 'broker' ? editForm.pilot : editingAppointment.pilot;
+      role === 'broker' || role === 'danisman'
+        ? editForm.pilot
+        : editingAppointment.pilot || editForm.pilot;
     const ownerRole = ownerRoleFromPilot(effectivePilot);
 
     if (!ownerRole) {
@@ -1375,18 +1703,20 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
-    if ((editForm.status === 'iptal' || editForm.status === 'rejected') && !String(editForm.reddedilmeSebebi || '').trim()) {
+    if ((newStatus === 'iptal' || newStatus === 'rejected') && !String(editForm.reddedilmeSebebi || '').trim()) {
       showToast('İptal durumu için sebep girin.');
       return;
     }
-
-    const normalizeStatus = (s) => normalizeAppointmentStatus(s);
-
-    const oldStatus = normalizeStatus(editingAppointment.status);
-    const newStatus = normalizeStatus(editForm.status);
     const statusChanged = oldStatus !== newStatus;
     const danismanIsmi = editingAppointment.danismanIsmi || editForm.danismanIsmi;
-    const konumLabel = editForm.konum.trim() || editingAppointment.konum || 'Portföy';
+    const locationLabel = [editForm.il, editForm.ilce, (editForm.semt || '').trim()]
+      .filter(Boolean)
+      .join(' / ');
+    const konumLabel =
+      locationLabel ||
+      (editForm.konum || '').trim() ||
+      editingAppointment.konum ||
+      'Portföy';
     const actorLabel =
       role === 'broker'
         ? (fullName || 'Broker')
@@ -1395,22 +1725,43 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setIsEditSaving(true);
 
     try {
+      const pilotUserId = await resolvePilotProfileId(effectivePilot);
+      const updatePayload = isDanismanEdit
+        ? {
+            il: editForm.il,
+            ilce: editForm.ilce,
+            semt: (editForm.semt || '').trim() || null,
+            konum: locationLabel,
+            danisman_notu: (editForm.danismanNotu || '').trim() || null,
+            aciklama: (editForm.danismanNotu || '').trim() || null,
+            pilot: effectivePilot,
+            pilot_id: pilotUserId || ownerRole,
+            owner_role: ownerRole,
+            status: 'pilot_bekleniyor',
+          }
+        : {
+            tarih: editForm.tarih || null,
+            saat_blok: editForm.saatBlok || null,
+            il: editForm.il || editingAppointment.il || DEFAULT_IL,
+            ilce: editForm.ilce || editingAppointment.ilce || 'Belirsiz',
+            semt: (editForm.semt || '').trim() || editingAppointment.semt || null,
+            konum: locationLabel || (editForm.konum || '').trim(),
+            portfoy_turu: (editForm.portfoyTuru || '').trim() || null,
+            aciklama: (editForm.aciklama || '').trim() || null,
+            danisman_notu: (editForm.danismanNotu || '').trim() || null,
+            pilot: effectivePilot,
+            pilot_id: pilotUserId || ownerRole,
+            owner_role: ownerRole,
+            status: newStatus,
+            reddedilme_sebebi:
+              newStatus === 'iptal'
+                ? String(editForm.reddedilmeSebebi || '').trim()
+                : null,
+          };
+
       const { error } = await supabase
         .from('appointments')
-        .update({
-          tarih: editForm.tarih || null,
-          saat_blok: editForm.saatBlok || null,
-          konum: editForm.konum.trim(),
-          portfoy_turu: editForm.portfoyTuru.trim() || null,
-          aciklama: editForm.aciklama.trim() || null,
-          pilot: effectivePilot,
-          owner_role: ownerRole,
-          status: newStatus,
-          reddedilme_sebebi:
-            newStatus === 'iptal'
-              ? String(editForm.reddedilmeSebebi || '').trim()
-              : null,
-        })
+        .update(updatePayload)
         .eq('id', editingAppointment.id);
 
       if (error) {
@@ -1419,8 +1770,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         return;
       }
 
-      // Statü değiştiyse bildirim
-      if (statusChanged && (newStatus === 'kesinlesti' || newStatus === 'iptal')) {
+      if (statusChanged) {
         try {
           if (newStatus === 'kesinlesti') {
             await notifyAppointmentApproved({
@@ -1432,7 +1782,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
               ownerRole,
               createdBy: editingAppointment.createdBy,
             });
-          } else if (danismanIsmi || editingAppointment.createdBy) {
+          } else if (newStatus === 'iptal' && (danismanIsmi || editingAppointment.createdBy)) {
             const ownerUuid = await resolveDanismanProfileId(
               danismanIsmi,
               editingAppointment.createdBy
@@ -1456,6 +1806,34 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
             } else {
               console.warn('Danışman UUID bulunamadı, red bildirimi atlanıyor:', danismanIsmi);
             }
+          } else if (
+            oldStatus === 'iptal' &&
+            newStatus === 'danisman_onayi_bekliyor'
+          ) {
+            const ownerUuid = await resolveDanismanProfileId(
+              danismanIsmi,
+              editingAppointment.createdBy
+            );
+            if (ownerUuid) {
+              const dateLabel = toDisplayDate(editForm.tarih);
+              const { error: notifError } = await supabase.from('notifications').insert([{
+                user_id: ownerUuid,
+                title: 'Çekim Teklifi Hazır',
+                message: `${editForm.ilce || konumLabel} için ${dateLabel} • ${editForm.saatBlok || ''} teklif edildi. Kesinleştirmenizi bekliyor.`,
+              }]);
+              if (notifError) {
+                console.error('Yeniden teklif bildirimi yazılamadı:', notifError.message, notifError);
+              } else {
+                await fetchNotifications();
+              }
+            } else {
+              console.warn(
+                'Yeniden teklif: danışman UUID bulunamadı',
+                danismanIsmi,
+                editingAppointment.createdBy
+              );
+              showToast('Teklif kaydedildi; danışman bildirimi iletilemedi (profil bulunamadı).');
+            }
           }
         } catch (notifErr) {
           console.error('Bildirim hatası:', notifErr);
@@ -1463,8 +1841,25 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       }
 
       await fetchAppointments();
+      const reoffered =
+        oldStatus === 'iptal' && newStatus === 'danisman_onayi_bekliyor';
+      setIsEditCalendarOpen(false);
       setEditingAppointment(null);
-      showToast('Başarıyla güncellendi');
+      setEditForm({
+        tarih: '',
+        saatBlok: '',
+        konum: '',
+        portfoyTuru: '',
+        aciklama: '',
+        pilot: '',
+        status: 'pilot_bekleniyor',
+        reddedilmeSebebi: '',
+        il: DEFAULT_IL,
+        ilce: '',
+        semt: '',
+        danismanNotu: '',
+      });
+      showToast(reoffered ? 'Teklif danışmana iletildi' : 'Başarıyla güncellendi');
     } catch (err) {
       console.error('Güncelleme istisnası:', err);
       showToast('Güncelleme sırasında beklenmeyen bir hata oluştu.');
@@ -1511,13 +1906,26 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
           onClick={() => isRejected && toggleRow(app.id)}
         >
           <div className="flex items-center space-x-6 min-w-0 flex-1">
-            <div className="flex flex-col shrink-0 text-center w-16">
+            <div className="flex flex-col shrink-0 text-center w-16 items-center">
               <span className={`text-sm font-medium ${isRejected ? 'text-[#FF3B30]/80' : 'text-white'}`}>
                 {app.tarih ? String(app.tarih).substring(0, 5) : '—'}
               </span>
               <span className={`text-[11px] font-medium mt-1 uppercase tracking-wide ${isRejected ? 'text-[#FF3B30]/55' : 'text-[#86868B]'}`}>
-                {app.saatBlok ? String(app.saatBlok).split(' (')[0] : (app.ilce || 'Bekliyor')}
+                {app.saatBlok || app.ilce || 'Bekliyor'}
               </span>
+              {app.tarih &&
+                app.il &&
+                !isRejected &&
+                (isConfirmed ||
+                  normalizeAppointmentStatus(app.status) === 'danisman_onayi_bekliyor') && (
+                  <WeatherBadge
+                    il={app.il}
+                    ilce={app.ilce}
+                    tarih={app.tarih}
+                    variant="icon"
+                    className="mt-1 sm:hidden"
+                  />
+                )}
             </div>
             <div className={`w-px h-8 mx-2 hidden sm:block ${isRejected ? 'bg-[#FF3B30]/20' : 'bg-white/5'}`}></div>
             <div className="flex flex-col min-w-0 flex-1">
@@ -1526,7 +1934,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
               </span>
               <span className={`text-[13px] truncate mt-1 ${isRejected ? 'text-[#FF3B30]/50' : 'text-[#86868B]'}`}>
                 {app.portfoyTuru || app.danismanNotu || '—'}
-                {usesManagerShell(role) ? ` • Danışman: ${app.danismanIsmi}` : ` • Pilot: ${app.pilot}`}
+                {usesManagerShell(role)
+                  ? ` • Danışman: ${app.danismanIsmi}`
+                  : role === 'danisman'
+                    ? ` • ${app.danismanIsmi}${app.pilot ? ` • Pilot: ${app.pilot}` : ''}`
+                    : ` • Pilot: ${app.pilot}`}
                 {role === 'broker' && (() => {
                   const owner = app.ownerRole || ownerRoleFromPilot(app.pilot);
                   const islem = ownerRoleDisplayName(owner);
@@ -1544,6 +1956,19 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
           </div>
 
           <div className="flex flex-row items-center gap-3 shrink-0 sm:ml-4 self-end sm:self-center">
+            {app.tarih &&
+              app.il &&
+              !isRejected &&
+              (isConfirmed ||
+                normalizeAppointmentStatus(app.status) === 'danisman_onayi_bekliyor') && (
+                <WeatherBadge
+                  il={app.il}
+                  ilce={app.ilce}
+                  tarih={app.tarih}
+                  variant="compact"
+                  className="hidden sm:inline-flex"
+                />
+              )}
             {canEditAppointment(app) && (
               <button
                 type="button"
@@ -1587,6 +2012,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     { id: 'genel', label: 'Genel Bakış', icon: LayoutGrid, isEnabled: true },
     { id: 'takvim', label: 'Çekim Takvimi', icon: CalendarDays, isEnabled: true },
     { id: 'randevu', label: 'Randevu Talebi Oluştur', icon: CalendarCheck, isEnabled: true },
+    { id: 'teklif-onay', label: 'Kesinleştirmenizi Bekleyen Teklifler', icon: CheckCheck, isEnabled: true },
     { id: 'portfoy', label: 'Portföy Havuzu', icon: Briefcase, isEnabled: false },
     { id: 'studyo', label: 'Zebra Stüdyo', icon: Camera, isEnabled: false },
     { id: 'kampanya', label: 'Kampanyalar', icon: Megaphone, isEnabled: false },
@@ -1744,7 +2170,50 @@ const pendingRequests = bookedAppointments.filter(app => {
   );
 
   const requestIlceler = getIlceler(requestIl);
-  const inquiryIlceler = getIlceler(inquiryIl);
+
+  /** Sidebar badge: menü başına bekleyen eylem sayısı */
+  const menuBadgeCounts = {
+    cekim: canApproveAppointments(role) ? pendingRequests.length : 0,
+    'teklif-onay': role === 'danisman' ? danismanConfirmRequests.length : 0,
+  };
+
+  const openOfferCalendar = () => {
+    if (offerTarih) {
+      const [y, m] = offerTarih.split('-').map(Number);
+      if (y && m) {
+        setOfferCalYear(y);
+        setOfferCalMonth(m - 1);
+      }
+    } else {
+      const now = new Date();
+      setOfferCalYear(now.getFullYear());
+      setOfferCalMonth(now.getMonth());
+    }
+    setIsOfferCalendarOpen(true);
+  };
+
+  const handleOfferCalendarSelectIso = (iso) => {
+    setOfferTarih(iso);
+  };
+
+  const handleOfferCalPrevMonth = () => {
+    if (offerCalMonth === 0) {
+      setOfferCalMonth(11);
+      setOfferCalYear((y) => y - 1);
+    } else {
+      setOfferCalMonth((m) => m - 1);
+    }
+  };
+
+  const handleOfferCalNextMonth = () => {
+    if (offerCalMonth === 11) {
+      setOfferCalMonth(0);
+      setOfferCalYear((y) => y + 1);
+    } else {
+      setOfferCalMonth((m) => m + 1);
+    }
+  };
+
   return (
     <div className="min-h-screen flex font-sans antialiased text-[#EDEDED] overflow-hidden selection:bg-white/20 selection:text-white bg-[#0A0A0A]">
       
@@ -1771,14 +2240,30 @@ const pendingRequests = bookedAppointments.filter(app => {
         </div>
       )}
 
+      {/* Edit tarih — teklif ile aynı Akıllı Planlama (modal dışında: fixed stacking) */}
+      <SmartSchedulingAssistant
+        open={!!editingAppointment && isEditCalendarOpen}
+        onClose={() => setIsEditCalendarOpen(false)}
+        targetIl={editForm.il || editingAppointment?.il}
+        targetIlce={editForm.ilce || editingAppointment?.ilce}
+        pilotName={editForm.pilot || editingAppointment?.pilot || (isPilot ? fullName : null)}
+        appointments={bookedAppointments}
+        selectedIso={editForm.tarih || ''}
+        onSelectDate={handleEditCalendarSelectIso}
+        month={editCalMonth}
+        year={editCalYear}
+        onPrevMonth={handleEditCalPrevMonth}
+        onNextMonth={handleEditCalNextMonth}
+      />
+
       {/* EDIT APPOINTMENT MODAL */}
       {editingAppointment && (
         <div
-          className="fixed inset-0 bg-[#0A0A0A]/70 backdrop-blur-xl z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300"
+          className="fixed inset-0 bg-[#0A0A0A]/70 backdrop-blur-xl z-[100] flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in duration-300"
           onClick={closeEditModal}
         >
           <div
-            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-300 ease-out max-h-[90vh] flex flex-col overflow-hidden"
+            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-out max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-white/5 shrink-0">
@@ -1797,230 +2282,219 @@ const pendingRequests = bookedAppointments.filter(app => {
             </div>
 
             <form onSubmit={handleUpdateAppointment} className="flex flex-col flex-1 min-h-0">
-              <div className="flex-1 overflow-y-auto custom-scrollbar px-6 sm:px-8 py-6 space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="relative">
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Tarih</label>
-                    <button
-                      type="button"
-                      onClick={openEditCalendar}
-                      className="w-full bg-[#1C1C1E] border border-white/5 text-left text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 hover:border-white/15 transition-all text-[14px] cursor-pointer flex items-center justify-between active:scale-[0.99]"
-                    >
-                      <span className={editForm.tarih ? 'text-white' : 'text-[#666666]'}>
-                        {editForm.tarih ? toDisplayDate(editForm.tarih) : 'Tarih seçin'}
-                      </span>
-                      <CalendarDays className="w-4 h-4 text-[#86868B] shrink-0" />
-                    </button>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar px-6 sm:px-8 py-6 space-y-5">
+                {isDanismanLocationEdit ? (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İl</label>
+                        <div className="relative">
+                          <select
+                            required
+                            value={editForm.il}
+                            onChange={(e) => { handleEditFormChange('il', e.target.value); handleEditFormChange('ilce', ''); }}
+                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                          >
+                            {TURKEY_ILLER.map((il) => (
+                              <option key={il} value={il}>{il}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İlçe</label>
+                        <div className="relative">
+                          <select
+                            required
+                            value={editForm.ilce}
+                            onChange={(e) => handleEditFormChange('ilce', e.target.value)}
+                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                          >
+                            <option value="">İlçe seçin</option>
+                            {editIlceler.map((ilce) => (
+                              <option key={ilce} value={ilce}>{ilce}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Semt</label>
+                        <input
+                          type="text"
+                          value={editForm.semt}
+                          onChange={(e) => handleEditFormChange('semt', e.target.value)}
+                          className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px]"
+                          placeholder="Opsiyonel"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Danışman Notu</label>
+                      <textarea
+                        value={editForm.danismanNotu}
+                        onChange={(e) => handleEditFormChange('danismanNotu', e.target.value)}
+                        rows={3}
+                        className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                        placeholder="Notlar"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Pilot</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {PILOT_OPTIONS.map((pilot) => (
+                          <button
+                            key={pilot}
+                            type="button"
+                            onClick={() => handleEditFormChange('pilot', pilot)}
+                            className={`w-full flex items-center p-3.5 rounded-xl transition-all text-left cursor-pointer active:scale-[0.98]
+                              ${editForm.pilot === pilot ? 'bg-white text-black' : 'bg-[#1C1C1E] text-white hover:bg-[#2C2C2E]'}`}
+                          >
+                            <User className={`w-3.5 h-3.5 mr-3 ${editForm.pilot === pilot ? 'text-black' : 'text-white'}`} />
+                            <span className="text-[13px] font-medium truncate">{pilot}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[12px] text-[#86868B]">Yalnızca talep aşamasında (pilot bekleniyor) düzenlenebilir.</p>
+                  </>
+                ) : (
+                  <>
+                    {normalizeAppointmentStatus(editingAppointment?.status) === 'iptal' &&
+                      (role === 'broker' || role === 'selim' || role === 'fatima') && (
+                      <div className="rounded-xl border border-[#E5B540]/25 bg-[#E5B540]/10 px-4 py-3 space-y-1">
+                        <p className="text-[13px] font-medium text-[#E5B540]">Reddedilmiş randevu — yeniden teklif</p>
+                        <p className="text-[12px] text-[#86868B] leading-relaxed">
+                          Tarih ve saat seçip kaydedin. Durum otomatik olarak danışman kesinleştirmesine geçer;
+                          danışmana bildirim gider.
+                        </p>
+                      </div>
+                    )}
 
-                    {/* Şık takvim popup — ana takvimle aynı dil */}
-                    {isEditCalendarOpen && (
-                      <div
-                        className="fixed inset-0 z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200"
-                        onClick={() => setIsEditCalendarOpen(false)}
-                      >
-                        <div className="absolute inset-0 bg-[#0A0A0A]/50 backdrop-blur-md" />
-                        <div
-                          className="relative z-10 w-full max-w-[360px] bg-[#161616] border border-white/10 rounded-2xl p-5 sm:p-6 shadow-2xl animate-in zoom-in-95 duration-300 ease-out"
-                          onClick={(e) => e.stopPropagation()}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="relative">
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Tarih</label>
+                        <button
+                          type="button"
+                          onClick={openEditCalendar}
+                          className="w-full bg-[#1C1C1E] border border-white/5 text-left text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 hover:border-white/15 transition-all text-[14px] cursor-pointer flex items-center justify-between active:scale-[0.99]"
                         >
-                          <div className="flex items-center justify-between mb-5">
-                            <h3 className="text-[15px] font-medium tracking-tight text-white">
-                              {monthNames[editCalMonth]} {editCalYear}
-                            </h3>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                type="button"
-                                onClick={handleEditCalPrevMonth}
-                                className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95"
-                              >
-                                <ChevronLeft className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleEditCalNextMonth}
-                                className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95"
-                              >
-                                <ChevronRight className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setIsEditCalendarOpen(false)}
-                                className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1C1C1E] text-[#86868B] hover:text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95 ml-1"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-7 gap-1 mb-2">
-                            {weekDays.map((day) => (
-                              <div
-                                key={day}
-                                className="text-center text-[10px] font-medium text-[#86868B] uppercase tracking-wide py-1.5"
-                              >
-                                {day}
-                              </div>
+                          <span className={editForm.tarih ? 'text-white' : 'text-[#666666]'}>
+                            {editForm.tarih ? toDisplayDate(editForm.tarih) : 'Tarih seçin'}
+                          </span>
+                          <CalendarDays className="w-4 h-4 text-[#86868B] shrink-0" />
+                        </button>
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Saat</label>
+                        <div className="relative">
+                          <select value={editForm.saatBlok} onChange={(e) => handleEditFormChange('saatBlok', e.target.value)} className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer">
+                            <option value="">Seçin</option>
+                            {!TIME_SLOT_OPTIONS.includes(editForm.saatBlok) && editForm.saatBlok ? (
+                              <option value={editForm.saatBlok}>{editForm.saatBlok}</option>
+                            ) : null}
+                            {TIME_SLOT_OPTIONS.map((b) => (
+                              <option key={b} value={b}>{b}</option>
                             ))}
-                          </div>
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                        </div>
+                      </div>
+                    </div>
 
-                          <div className="grid grid-cols-7 gap-1">
-                            {Array.from({ length: getFirstDayOfMonth(editCalMonth, editCalYear) }).map((_, i) => (
-                              <div key={`edit-empty-${i}`} className="h-10" />
-                            ))}
-                            {Array.from({ length: getDaysInMonth(editCalMonth, editCalYear) }).map((_, i) => {
-                              const dayNumber = i + 1;
-                              const dateObj = new Date(editCalYear, editCalMonth, dayNumber);
-                              const iso = toIsoDate(dateObj);
-                              const isSelected = editForm.tarih === iso;
-                              const isToday =
-                                dayNumber === today.getDate() &&
-                                editCalMonth === today.getMonth() &&
-                                editCalYear === today.getFullYear();
+                    {editForm.tarih && editForm.il && (
+                      <div className="flex items-center gap-2 -mt-1">
+                        <span className="text-[11px] text-[#86868B]">Hava</span>
+                        <WeatherBadge
+                          il={editForm.il}
+                          ilce={editForm.ilce}
+                          tarih={editForm.tarih}
+                          variant="detail"
+                        />
+                      </div>
+                    )}
 
-                              return (
-                                <button
-                                  key={`edit-day-${dayNumber}`}
-                                  type="button"
-                                  onClick={() => handleEditCalendarSelect(dateObj)}
-                                  className={`
-                                    relative h-10 w-full rounded-xl flex items-center justify-center text-[14px] font-medium transition-all duration-300 cursor-pointer active:scale-[0.98]
-                                    ${!isSelected && !isToday ? 'bg-[#1C1C1E] text-white hover:bg-white/10' : ''}
-                                    ${isToday && !isSelected ? 'bg-neutral-800/50 text-neutral-400 font-medium ring-1 ring-white/10' : ''}
-                                    ${isSelected ? 'bg-white text-black font-medium shadow-xl' : ''}
-                                  `}
-                                >
-                                  {dayNumber}
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          <p className="text-[11px] text-[#86868B] text-center mt-4">
-                            Bir gün seçerek tarihi güncelleyin
-                          </p>
+                    {(role === 'broker' || role === 'selim' || role === 'fatima') && (
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Durum</label>
+                        <div className="relative">
+                          <select
+                            value={editForm.status}
+                            onChange={(e) => handleEditFormChange('status', e.target.value)}
+                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
+                          >
+                            <option value="pilot_bekleniyor">Pilot Bekleniyor</option>
+                            <option value="danisman_onayi_bekliyor">Danışman Kesinleştirmesi Bekleniyor (Teklif)</option>
+                            {role === 'broker' && (
+                              <option value="kesinlesti">Kesinleşti</option>
+                            )}
+                            <option value="iptal">İptal / Reddedildi</option>
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
                         </div>
                       </div>
                     )}
-                  </div>
-                  <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Saat Bloğu</label>
-                    <div className="relative">
-                      <select
-                        required
-                        value={editForm.saatBlok}
-                        onChange={(e) => handleEditFormChange('saatBlok', e.target.value)}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px] cursor-pointer"
-                      >
-                        <option value="" disabled>Seçin</option>
-                        {!TIME_BLOCKS.includes(editForm.saatBlok) && editForm.saatBlok ? (
-                          <option value={editForm.saatBlok}>{editForm.saatBlok}</option>
-                        ) : null}
-                        {TIME_BLOCKS.map((b) => (
-                          <option key={b} value={b}>{b}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+
+                    {editForm.status === 'iptal' && (
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İptal Sebebi</label>
+                        <textarea value={editForm.reddedilmeSebebi} onChange={(e) => handleEditFormChange('reddedilmeSebebi', e.target.value)} rows={2} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]" />
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İl</label>
+                        <div className="relative">
+                          <select value={editForm.il} onChange={(e) => { handleEditFormChange('il', e.target.value); handleEditFormChange('ilce', ''); }} className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer">
+                            {TURKEY_ILLER.map((il) => (<option key={il} value={il}>{il}</option>))}
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İlçe</label>
+                        <div className="relative">
+                          <select value={editForm.ilce} onChange={(e) => handleEditFormChange('ilce', e.target.value)} className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer">
+                            <option value="">İlçe seçin</option>
+                            {editIlceler.map((ilce) => (<option key={ilce} value={ilce}>{ilce}</option>))}
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Semt</label>
+                        <input type="text" value={editForm.semt} onChange={(e) => handleEditFormChange('semt', e.target.value)} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px]" placeholder="Opsiyonel" />
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Konum</label>
-                  <input
-                    type="text"
-                    required
-                    value={editForm.konum}
-                    onChange={(e) => handleEditFormChange('konum', e.target.value)}
-                    className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px]"
-                    placeholder="Adres / proje"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Portföy Türü</label>
-                  <input
-                    type="text"
-                    value={editForm.portfoyTuru}
-                    onChange={(e) => handleEditFormChange('portfoyTuru', e.target.value)}
-                    className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px]"
-                    placeholder="Örn. 3+1 Daire"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Açıklama</label>
-                  <textarea
-                    value={editForm.aciklama}
-                    onChange={(e) => handleEditFormChange('aciklama', e.target.value)}
-                    rows={3}
-                    className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 resize-none focus:outline-none focus:border-white/20 transition-all text-[14px] custom-scrollbar"
-                    placeholder="Çekim notları"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Medya Sorumlusu</label>
-                  {role === 'broker' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {PILOT_OPTIONS.map((pilot) => (
-                        <button
-                          key={pilot}
-                          type="button"
-                          onClick={() => handleEditFormChange('pilot', pilot)}
-                          className={`w-full flex items-center p-3.5 rounded-xl transition-all duration-300 text-left cursor-pointer active:scale-[0.98]
-                            ${editForm.pilot === pilot
-                              ? 'bg-white text-black'
-                              : 'bg-[#1C1C1E] text-white hover:bg-[#2C2C2E]'
-                            }`}
-                        >
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 shrink-0 ${editForm.pilot === pilot ? 'bg-[#F2F2F7]' : 'bg-[#2C2C2E]'}`}>
-                            <User className={`w-3.5 h-3.5 ${editForm.pilot === pilot ? 'text-black' : 'text-white'}`} />
-                          </div>
-                          <span className="text-[13px] font-medium truncate">{pilot}</span>
-                        </button>
-                      ))}
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Portföy Türü</label>
+                      <input type="text" value={editForm.portfoyTuru} onChange={(e) => handleEditFormChange('portfoyTuru', e.target.value)} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px]" />
                     </div>
-                  ) : (
-                    <div className="w-full bg-[#1C1C1E] border border-white/5 rounded-xl px-4 h-12 flex items-center text-[14px] text-[#86868B]">
-                      {editForm.pilot}
-                      <span className="ml-auto text-[11px] uppercase tracking-wide">Kilitli</span>
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Açıklama</label>
+                      <textarea value={editForm.aciklama} onChange={(e) => handleEditFormChange('aciklama', e.target.value)} rows={3} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]" />
                     </div>
-                  )}
-                </div>
 
-                <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Durum</label>
-                  <div className="relative">
-                    <select
-                      value={editForm.status}
-                      onChange={(e) => handleEditFormChange('status', e.target.value)}
-                      className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px] cursor-pointer"
-                    >
-                      <option value="pilot_bekleniyor">Pilot Bekleniyor</option>
-                      <option value="danisman_onayi_bekliyor">Danışman Onayı</option>
-                      <option value="kesinlesti">Kesinleşti</option>
-                      <option value="iptal">İptal</option>
-                    </select>
-                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
-                  </div>
-                </div>
-
-                {editForm.status === 'iptal' && (
-                  <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Red Sebebi</label>
-                    <textarea
-                      required
-                      value={editForm.reddedilmeSebebi}
-                      onChange={(e) => handleEditFormChange('reddedilmeSebebi', e.target.value)}
-                      rows={2}
-                      className="w-full bg-[#1C1C1E] border border-[#FF3B30]/20 text-white placeholder:text-[#666666] rounded-xl p-4 resize-none focus:outline-none focus:border-[#FF3B30]/40 transition-all text-[14px] custom-scrollbar"
-                      placeholder="Red gerekçesi"
-                    />
-                  </div>
+                    {role === 'broker' && (
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Pilot</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {PILOT_OPTIONS.map((pilot) => (
+                            <button key={pilot} type="button" onClick={() => handleEditFormChange('pilot', pilot)} className={`w-full flex items-center p-3.5 rounded-xl text-left cursor-pointer ${editForm.pilot === pilot ? 'bg-white text-black' : 'bg-[#1C1C1E] text-white'}`}>
+                              <span className="text-[13px] font-medium truncate">{pilot}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
-              <div className="px-6 sm:px-8 py-5 border-t border-white/5 flex gap-3 shrink-0">
+<div className="px-6 sm:px-8 py-5 border-t border-white/5 flex gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={closeEditModal}
@@ -2036,6 +2510,9 @@ const pendingRequests = bookedAppointments.filter(app => {
                 >
                   {isEditSaving ? (
                     <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                  ) : normalizeAppointmentStatus(editingAppointment?.status) === 'iptal' &&
+                    editForm.status === 'danisman_onayi_bekliyor' ? (
+                    'Teklifi Gönder'
                   ) : (
                     'Kaydet'
                   )}
@@ -2046,20 +2523,42 @@ const pendingRequests = bookedAppointments.filter(app => {
         </div>
       )}
 
+      {/* Manuel çekim tarih — Akıllı Planlama (modal dışında) */}
+      <SmartSchedulingAssistant
+        open={isManualModalOpen && isManualCalendarOpen}
+        onClose={() => setIsManualCalendarOpen(false)}
+        targetIl={manualForm.il}
+        targetIlce={manualForm.ilce}
+        pilotName={
+          role === 'broker'
+            ? manualForm.pilot || null
+            : lockedPilotForRole(role) || fullName || null
+        }
+        appointments={bookedAppointments}
+        selectedIso={manualForm.tarih || ''}
+        onSelectDate={handleManualCalendarSelectIso}
+        month={manualCalMonth}
+        year={manualCalYear}
+        onPrevMonth={handleManualCalPrevMonth}
+        onNextMonth={handleManualCalNextMonth}
+      />
+
       {/* MANUAL CREATE MODAL */}
       {isManualModalOpen && (
         <div
-          className="fixed inset-0 bg-[#0A0A0A]/70 backdrop-blur-xl z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300"
+          className="fixed inset-0 bg-[#0A0A0A]/70 backdrop-blur-xl z-[100] flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in duration-300"
           onClick={closeManualModal}
         >
           <div
-            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-300 ease-out max-h-[90vh] flex flex-col overflow-hidden"
+            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-out max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-white/5 shrink-0">
               <div>
                 <h2 className="text-lg font-medium tracking-tight text-white">Yeni Çekim Oluştur</h2>
-                <p className="text-[12px] text-[#86868B] mt-1">Manuel giriş — doğrudan onaylı kaydedilir</p>
+                <p className="text-[12px] text-[#86868B] mt-1">
+                  Akıllı planlama ile doğrudan kesinleştir — ara onay yok
+                </p>
               </div>
               <button
                 type="button"
@@ -2073,106 +2572,93 @@ const pendingRequests = bookedAppointments.filter(app => {
 
             <form onSubmit={handleManualCreate} className="flex flex-col flex-1 min-h-0">
               <div className="flex-1 overflow-y-auto custom-scrollbar px-6 sm:px-8 py-6 space-y-5">
+                {/* 1) Konum — takvim hava/aynı bölge için önce */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İl</label>
+                    <div className="relative">
+                      <select
+                        required
+                        value={manualForm.il}
+                        onChange={(e) => {
+                          handleManualFormChange('il', e.target.value);
+                          handleManualFormChange('ilce', '');
+                          handleManualFormChange('tarih', '');
+                        }}
+                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
+                      >
+                        {TURKEY_ILLER.map((il) => (
+                          <option key={il} value={il}>{il}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İlçe</label>
+                    <div className="relative">
+                      <select
+                        required
+                        value={manualForm.ilce}
+                        onChange={(e) => {
+                          handleManualFormChange('ilce', e.target.value);
+                          handleManualFormChange('tarih', '');
+                        }}
+                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
+                      >
+                        <option value="">İlçe seçin</option>
+                        {manualIlceler.map((ilce) => (
+                          <option key={ilce} value={ilce}>{ilce}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Semt</label>
+                    <input
+                      type="text"
+                      value={manualForm.semt}
+                      onChange={(e) => handleManualFormChange('semt', e.target.value)}
+                      className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px]"
+                      placeholder="Opsiyonel"
+                    />
+                  </div>
+                </div>
+
+                {/* 2) Akıllı tarih + 30 dk saat */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="relative">
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Tarih</label>
+                  <div>
+                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                      Tarih (Akıllı Planlama)
+                    </label>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (manualForm.tarih) {
-                          const [y, m] = manualForm.tarih.split('-').map(Number);
-                          if (y && m) {
-                            setManualCalYear(y);
-                            setManualCalMonth(m - 1);
-                          }
-                        }
-                        setIsManualCalendarOpen(true);
-                      }}
+                      onClick={openManualSmartCalendar}
                       className="w-full bg-[#1C1C1E] border border-white/5 text-left text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 hover:border-white/15 transition-all text-[14px] cursor-pointer flex items-center justify-between active:scale-[0.99]"
                     >
                       <span className={manualForm.tarih ? 'text-white' : 'text-[#666666]'}>
-                        {manualForm.tarih ? toDisplayDate(manualForm.tarih) : 'Tarih seçin'}
+                        {manualForm.tarih ? toDisplayDate(manualForm.tarih) : 'Akıllı takvimi aç'}
                       </span>
                       <CalendarDays className="w-4 h-4 text-[#86868B] shrink-0" />
                     </button>
-
-                    {isManualCalendarOpen && (
-                      <div
-                        className="fixed inset-0 z-[120] flex items-center justify-center p-4 animate-in fade-in duration-200"
-                        onClick={() => setIsManualCalendarOpen(false)}
-                      >
-                        <div className="absolute inset-0 bg-[#0A0A0A]/50 backdrop-blur-md" />
-                        <div
-                          className="relative z-10 w-full max-w-[360px] bg-[#161616] border border-white/10 rounded-2xl p-5 sm:p-6 shadow-2xl animate-in zoom-in-95 duration-300 ease-out"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex items-center justify-between mb-5">
-                            <h3 className="text-[15px] font-medium tracking-tight text-white">
-                              {monthNames[manualCalMonth]} {manualCalYear}
-                            </h3>
-                            <div className="flex items-center space-x-2">
-                              <button type="button" onClick={handleManualCalPrevMonth} className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95">
-                                <ChevronLeft className="w-4 h-4" />
-                              </button>
-                              <button type="button" onClick={handleManualCalNextMonth} className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95">
-                                <ChevronRight className="w-4 h-4" />
-                              </button>
-                              <button type="button" onClick={() => setIsManualCalendarOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center bg-[#1C1C1E] text-[#86868B] hover:text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95 ml-1">
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-7 gap-1 mb-2">
-                            {weekDays.map((day) => (
-                              <div key={day} className="text-center text-[10px] font-medium text-[#86868B] uppercase tracking-wide py-1.5">{day}</div>
-                            ))}
-                          </div>
-                          <div className="grid grid-cols-7 gap-1">
-                            {Array.from({ length: getFirstDayOfMonth(manualCalMonth, manualCalYear) }).map((_, i) => (
-                              <div key={`man-empty-${i}`} className="h-10" />
-                            ))}
-                            {Array.from({ length: getDaysInMonth(manualCalMonth, manualCalYear) }).map((_, i) => {
-                              const dayNumber = i + 1;
-                              const dateObj = new Date(manualCalYear, manualCalMonth, dayNumber);
-                              const iso = toIsoDate(dateObj);
-                              const isSelected = manualForm.tarih === iso;
-                              const isToday =
-                                dayNumber === today.getDate() &&
-                                manualCalMonth === today.getMonth() &&
-                                manualCalYear === today.getFullYear();
-                              return (
-                                <button
-                                  key={`man-day-${dayNumber}`}
-                                  type="button"
-                                  onClick={() => handleManualCalendarSelect(dateObj)}
-                                  className={`
-                                    relative h-10 w-full rounded-xl flex items-center justify-center text-[14px] font-medium transition-all duration-300 cursor-pointer active:scale-[0.98]
-                                    ${!isSelected && !isToday ? 'bg-[#1C1C1E] text-white hover:bg-white/10' : ''}
-                                    ${isToday && !isSelected ? 'bg-neutral-800/50 text-neutral-400 font-medium ring-1 ring-white/10' : ''}
-                                    ${isSelected ? 'bg-white text-black font-medium shadow-xl' : ''}
-                                  `}
-                                >
-                                  {dayNumber}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
+                    {!manualForm.ilce && (
+                      <p className="text-[11px] text-[#86868B] mt-1.5 ml-0.5">
+                        İlçe seçildikten sonra takvimde hava ve aynı bölge vurguları aktif olur.
+                      </p>
                     )}
                   </div>
-
                   <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Saat Bloğu</label>
+                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Saat</label>
                     <div className="relative">
                       <select
                         required
                         value={manualForm.saatBlok}
                         onChange={(e) => handleManualFormChange('saatBlok', e.target.value)}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px] cursor-pointer"
+                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
                       >
-                        <option value="" disabled>Seçin</option>
-                        {TIME_BLOCKS.map((b) => (
+                        <option value="">Saat seçin</option>
+                        {TIME_SLOT_OPTIONS.map((b) => (
                           <option key={b} value={b}>{b}</option>
                         ))}
                       </select>
@@ -2181,49 +2667,51 @@ const pendingRequests = bookedAppointments.filter(app => {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Portföy Konumu</label>
-                  <input
-                    type="text"
-                    required
-                    value={manualForm.konum}
-                    onChange={(e) => handleManualFormChange('konum', e.target.value)}
-                    className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px]"
-                    placeholder="Adres / proje"
-                  />
-                </div>
+                {manualForm.tarih && manualForm.il && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-[#86868B]">Hava</span>
+                    <WeatherBadge
+                      il={manualForm.il}
+                      ilce={manualForm.ilce}
+                      tarih={manualForm.tarih}
+                      variant="detail"
+                    />
+                  </div>
+                )}
 
                 <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Portföy Türü</label>
-                  <input
-                    type="text"
+                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                    Portföy bilgileri
+                  </label>
+                  <textarea
                     value={manualForm.portfoyTuru}
                     onChange={(e) => handleManualFormChange('portfoyTuru', e.target.value)}
-                    className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px]"
-                    placeholder="Örn. 3+1 Daire"
+                    rows={3}
+                    className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]"
+                    placeholder="Örn. 3+1 satılık daire, site girişi..."
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Açıklama</label>
+                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Açıklama / Not</label>
                   <textarea
                     value={manualForm.aciklama}
                     onChange={(e) => handleManualFormChange('aciklama', e.target.value)}
-                    rows={3}
-                    className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 resize-none focus:outline-none focus:border-white/20 transition-all text-[14px] custom-scrollbar"
-                    placeholder="Çekim notları"
+                    rows={2}
+                    className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]"
+                    placeholder="Opsiyonel"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Danışman</label>
+                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Hedef Danışman</label>
                   {consultants.length > 0 ? (
                     <div className="relative">
                       <select
                         required
                         value={manualForm.danismanIsmi}
                         onChange={(e) => handleManualFormChange('danismanIsmi', e.target.value)}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px] cursor-pointer"
+                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
                       >
                         <option value="" disabled>Danışman seçin</option>
                         {consultants.map((name) => (
@@ -2238,14 +2726,14 @@ const pendingRequests = bookedAppointments.filter(app => {
                       required
                       value={manualForm.danismanIsmi}
                       onChange={(e) => handleManualFormChange('danismanIsmi', e.target.value)}
-                      className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 transition-all text-[14px]"
+                      className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px]"
                       placeholder="Danışman tam adı"
                     />
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Sorumlu Pilot</label>
+                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Pilot</label>
                   {role === 'broker' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {PILOT_OPTIONS.map((pilot) => (
@@ -2253,15 +2741,8 @@ const pendingRequests = bookedAppointments.filter(app => {
                           key={pilot}
                           type="button"
                           onClick={() => handleManualFormChange('pilot', pilot)}
-                          className={`w-full flex items-center p-3.5 rounded-xl transition-all duration-300 text-left cursor-pointer active:scale-[0.98]
-                            ${manualForm.pilot === pilot
-                              ? 'bg-white text-black'
-                              : 'bg-[#1C1C1E] text-white hover:bg-[#2C2C2E]'
-                            }`}
+                          className={`w-full flex items-center p-3.5 rounded-xl text-left cursor-pointer ${manualForm.pilot === pilot ? 'bg-white text-black' : 'bg-[#1C1C1E] text-white hover:bg-[#2C2C2E]'}`}
                         >
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 shrink-0 ${manualForm.pilot === pilot ? 'bg-[#F2F2F7]' : 'bg-[#2C2C2E]'}`}>
-                            <User className={`w-3.5 h-3.5 ${manualForm.pilot === pilot ? 'text-black' : 'text-white'}`} />
-                          </div>
                           <span className="text-[13px] font-medium truncate">{pilot}</span>
                         </button>
                       ))}
@@ -2282,7 +2763,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                   disabled={isManualSaving}
                   className="flex-1 h-12 rounded-xl bg-[#1C1C1E] text-white text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40"
                 >
-                  İptal
+                  Vazgeç
                 </button>
                 <button
                   type="submit"
@@ -2292,7 +2773,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                   {isManualSaving ? (
                     <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
                   ) : (
-                    'Kaydet'
+                    'Kesinleştir'
                   )}
                 </button>
               </div>
@@ -2320,23 +2801,23 @@ const pendingRequests = bookedAppointments.filter(app => {
               <p className="text-[15px] font-medium text-[#86868B]">Bildirim Yok</p>
             </div>
           ) : (
-            userNotifications.map(notif => (
-<div key={notif.id} className={`bg-[#1C1C1E] border ${notif.is_read ? 'border-transparent opacity-60' : 'border-white/10 shadow-lg'} rounded-2xl p-5 transition-all duration-300`}>                <div className="flex justify-between items-start mb-2">
+            userNotifications.map((notif) => (
+              <button
+                key={notif.id}
+                type="button"
+                onClick={() => handleNotificationClick(notif)}
+                className={`w-full text-left bg-[#1C1C1E] border rounded-2xl p-5 transition-all duration-300 cursor-pointer active:scale-[0.99] hover:border-white/15
+                  ${notif.is_read ? 'border-transparent opacity-70' : 'border-white/10 shadow-lg'}`}
+              >
+                <div className="flex justify-between items-start mb-2 gap-3">
                   <h4 className="text-[14px] font-medium text-white">{notif.title}</h4>
-                  <span className="text-[11px] font-medium text-[#86868B]">{notif.created_at}</span>
+                  <span className="text-[11px] font-medium text-[#86868B] shrink-0">{notif.created_at}</span>
                 </div>
                 <p className="text-[13px] text-[#86868B] leading-relaxed">{notif.message}</p>
-              </div>
+              </button>
             ))
           )}
         </div>
-        {unreadCount > 0 && (
-          <div className="p-6 border-t border-white/5 shrink-0">
-            <button onClick={markAllAsRead} className="w-full py-4 text-[14px] font-medium text-black bg-white rounded-xl transition-all active:scale-[0.98] cursor-pointer">
-              Tümünü Okundu İşaretle
-            </button>
-          </div>
-        )}
       </aside>
 
       {/* SIDEBAR NAVIGATION */}
@@ -2357,6 +2838,7 @@ const pendingRequests = bookedAppointments.filter(app => {
           {currentMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
+            const badgeCount = menuBadgeCounts[item.id] || 0;
             return (
               <button
                 key={item.id}
@@ -2370,8 +2852,13 @@ const pendingRequests = bookedAppointments.filter(app => {
                     : item.isEnabled ? 'text-[#86868B] hover:bg-white/5 hover:text-white cursor-pointer' 
                     : 'text-[#86868B] opacity-40 cursor-not-allowed'}`}
               >
-                <Icon className={`w-[16px] h-[16px] mr-3.5 transition-colors duration-300 ${isActive ? 'text-white' : 'text-[#86868B]'}`} strokeWidth={2} />
-                {item.label}
+                <Icon className={`w-[16px] h-[16px] mr-3.5 shrink-0 transition-colors duration-300 ${isActive ? 'text-white' : 'text-[#86868B]'}`} strokeWidth={2} />
+                <span className="truncate text-left flex-1">{item.label}</span>
+                {badgeCount > 0 && (
+                  <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#E5B540]/15 text-[#E5B540] text-[11px] font-medium tabular-nums flex items-center justify-center">
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -2426,9 +2913,18 @@ const pendingRequests = bookedAppointments.filter(app => {
               <p className="text-[13px] font-medium text-white">{todayStr}</p>
             </div>
             
-            <button onClick={() => setIsNotificationOpen(true)} className="relative w-10 h-10 flex items-center justify-center text-[#86868B] hover:text-white bg-[#161616] border border-white/5 rounded-full transition-all duration-300 shadow-sm active:scale-95 cursor-pointer">
+            <button
+              type="button"
+              onClick={() => setIsNotificationOpen(true)}
+              className="relative w-10 h-10 flex items-center justify-center text-[#86868B] hover:text-white bg-[#161616] border border-white/5 rounded-full transition-all duration-300 shadow-sm active:scale-95 cursor-pointer"
+              aria-label={unreadCount > 0 ? `${unreadCount} okunmamış bildirim` : 'Bildirimler'}
+            >
               <Bell className="w-[18px] h-[18px]" />
-              {unreadCount > 0 && <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-white rounded-full border-2 border-[#161616]"></span>}
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#FF3B30] text-white text-[10px] font-semibold tabular-nums flex items-center justify-center border-2 border-[#161616] shadow-sm">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </button>
 
             {role === 'danisman' && (
@@ -2440,7 +2936,7 @@ const pendingRequests = bookedAppointments.filter(app => {
         </header>
 
         {/* SCROLLABLE CONTENT */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-6 md:px-12 lg:px-16 py-8">
+        <div className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-4 sm:px-6 md:px-12 lg:px-16 py-6 sm:py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           <div className="w-full mx-auto space-y-10 pb-20 max-w-7xl">
             
             {/* --- GENEL BAKIŞ (Completely Empty/Minimalist Entry) --- */}
@@ -2549,7 +3045,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                           className={`flex-1 px-4 py-2.5 rounded-lg text-[12px] sm:text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
                             ${dayListFilter === 'confirmed' ? 'bg-white text-black shadow-sm' : 'text-[#86868B] hover:text-white'}`}
                         >
-                          Sadece Onaylananlar
+                          Sadece Kesinleşmişler
                         </button>
                       </div>
                     )}
@@ -2558,7 +3054,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                     {takvimAppointmentsForSelectedDate.length === 0 ? (
                       <p className="text-[#86868B] text-[14px]">
                         {role === 'yonetici' || dayListFilter === 'confirmed'
-                          ? 'Bu tarihte onaylanmış randevu bulunmuyor.'
+                          ? 'Bu tarihte kesinleşmiş randevu bulunmuyor.'
                           : 'Bu tarihte planlanan bir işlem bulunmuyor.'}
                       </p>
                     ) : (
@@ -2637,19 +3133,28 @@ const pendingRequests = bookedAppointments.filter(app => {
                               </div>
                               <div className="space-y-3 mb-4">
                                 {req.portfoyTuru && (
-                                  <div className="flex items-start text-[14px]"><Building2 className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" /><span className="text-white truncate">{req.portfoyTuru}</span></div>
+                                  <div className="flex items-start text-[13px] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
+                                    <Building2 className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" />
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide mb-1">Portföy bilgileri</p>
+                                      <p className="text-white leading-relaxed break-words">{req.portfoyTuru}</p>
+                                    </div>
+                                  </div>
                                 )}
                                 {(req.danismanNotu || req.aciklama) && (
                                   <div className="flex items-start text-[13px] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
                                     <AlignLeft className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" />
-                                    <p className="text-[#86868B] leading-relaxed">{req.danismanNotu || req.aciklama}</p>
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide mb-1">Danışman notu</p>
+                                      <p className="text-[#86868B] leading-relaxed break-words">{req.danismanNotu || req.aciklama}</p>
+                                    </div>
                                   </div>
                                 )}
                                 {districtConfirmed.length > 0 && (
                                   <div className="text-[12px] text-[#86868B] bg-[#1C1C1E]/60 border border-white/5 rounded-xl p-3">
                                     Bu ilçede {districtConfirmed.length} kesinleşmiş iş var
                                     {districtConfirmed.slice(0, 3).map((a) => (
-                                      <span key={a.id} className="block mt-1 text-white/80">• {a.tarih || '—'} {(a.saatBlok || '').split(' (')[0]} — {a.pilot}</span>
+                                      <span key={a.id} className="block mt-1 text-white/80">• {a.tarih || '—'} {a.saatBlok || ''} — {a.pilot}</span>
                                     ))}
                                   </div>
                                 )}
@@ -2669,32 +3174,61 @@ const pendingRequests = bookedAppointments.filter(app => {
                                 <div className="space-y-4 border-t border-white/5 pt-4">
                                   <p className="text-[12px] font-medium text-[#86868B]">TARİH VE SAAT TEKLİF ET</p>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                      <label className="block text-[12px] text-[#86868B] mb-2">Tarih (YYYY-MM-DD)</label>
-                                      <input
-                                        type="date"
-                                        value={offerTarih}
-                                        onChange={(e) => setOfferTarih(e.target.value)}
-                                        className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                                    <div className="relative">
+                                      <label className="block text-[12px] text-[#86868B] mb-2">Tarih</label>
+                                      <button
+                                        type="button"
+                                        onClick={openOfferCalendar}
+                                        className="w-full bg-[#1C1C1E] border border-white/5 text-left text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 hover:border-white/15 transition-all text-[14px] cursor-pointer flex items-center justify-between active:scale-[0.99]"
+                                      >
+                                        <span className={offerTarih ? 'text-white' : 'text-[#666666]'}>
+                                          {offerTarih ? toDisplayDate(offerTarih) : 'Tarih seçin'}
+                                        </span>
+                                        <CalendarDays className="w-4 h-4 text-[#86868B] shrink-0" />
+                                      </button>
+                                      <SmartSchedulingAssistant
+                                        open={isOfferCalendarOpen}
+                                        onClose={() => setIsOfferCalendarOpen(false)}
+                                        targetIl={offeringRequest?.il || req.il}
+                                        targetIlce={offeringRequest?.ilce || req.ilce}
+                                        pilotName={offeringRequest?.pilot || req.pilot || (isPilot ? fullName : null)}
+                                        appointments={bookedAppointments}
+                                        selectedIso={offerTarih}
+                                        onSelectDate={handleOfferCalendarSelectIso}
+                                        month={offerCalMonth}
+                                        year={offerCalYear}
+                                        onPrevMonth={handleOfferCalPrevMonth}
+                                        onNextMonth={handleOfferCalNextMonth}
                                       />
                                     </div>
                                     <div className="relative">
-                                      <label className="block text-[12px] text-[#86868B] mb-2">Saat Bloğu</label>
+                                      <label className="block text-[12px] text-[#86868B] mb-2">Saat</label>
                                       <select
                                         value={offerSaatBlok}
                                         onChange={(e) => setOfferSaatBlok(e.target.value)}
                                         className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
                                       >
-                                        <option value="">Seçin</option>
-                                        {TIME_BLOCKS.map((b) => (
-                                          <option key={b} value={b}>{b}</option>
+                                        <option value="">Saat seçin</option>
+                                        {TIME_SLOT_OPTIONS.map((h) => (
+                                          <option key={h} value={h}>{h}</option>
                                         ))}
                                       </select>
                                       <ChevronDown className="absolute right-4 top-[42px] w-4 h-4 text-[#86868B] pointer-events-none" />
                                     </div>
                                   </div>
+                                  {offerTarih && (req.il || offeringRequest?.il) && (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] text-[#86868B]">Hava</span>
+                                      <WeatherBadge
+                                        il={offeringRequest?.il || req.il}
+                                        ilce={offeringRequest?.ilce || req.ilce}
+                                        tarih={offerTarih}
+                                        variant="detail"
+                                      />
+                                    </div>
+                                  )}
                                   <div className="flex gap-3">
-                                    <button type="button" onClick={() => { setOfferingId(null); setOfferTarih(''); setOfferSaatBlok(''); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
+                                    <button type="button" onClick={() => { setOfferingId(null); setOfferTarih(''); setOfferSaatBlok(''); setIsOfferCalendarOpen(false); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
                                     <button type="button" disabled={processingId === req.id || !offerTarih || !offerSaatBlok} onClick={() => handlePilotOffer(req)} className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium disabled:opacity-50 cursor-pointer flex items-center justify-center">
                                       {processingId === req.id ? <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> : 'Teklifi Gönder'}
                                     </button>
@@ -2745,78 +3279,16 @@ const pendingRequests = bookedAppointments.filter(app => {
                   <p className="text-[#86868B] mt-2 text-[15px]">Bölge ve pilot seçin — tarih/saat pilot tarafından teklif edilecek.</p>
                 </div>
 
-                {/* Onay bekleyen teklifler */}
-                {danismanConfirmRequests.length > 0 && (
-                  <div className="mb-10 space-y-4">
-                    <h2 className="text-xl font-medium text-white">Onayınızı Bekleyen Teklifler</h2>
-                    {danismanConfirmRequests.map((req) => (
-                      <div key={req.id} className="bg-[#161616] border border-[#E5B540]/20 rounded-2xl p-6 space-y-4">
-                        <div className="flex justify-between items-start gap-4">
-                          <div>
-                            <p className="text-[17px] font-medium text-white">
-                              {req.il} / {req.ilce}{req.semt ? ` / ${req.semt}` : ''}
-                            </p>
-                            <p className="text-[13px] text-[#86868B] mt-1">
-                              Teklif: {req.tarih || '—'} • {(req.saatBlok || '').split(' (')[0] || '—'} • {req.pilot}
-                            </p>
-                          </div>
-                          {getStatusBadge(req.status)}
-                        </div>
-                        {(req.danismanNotu || req.aciklama) && (
-                          <p className="text-[13px] text-[#86868B] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
-                            {req.danismanNotu || req.aciklama}
-                          </p>
-                        )}
-                        <div className="flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setRejectingId(req.id)}
-                            className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer"
-                          >
-                            Reddet
-                          </button>
-                          <button
-                            type="button"
-                            disabled={processingId === req.id}
-                            onClick={() => handleDanismanConfirm(req)}
-                            className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 transition-all cursor-pointer flex items-center justify-center"
-                          >
-                            {processingId === req.id ? (
-                              <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                            ) : (
-                              'Kesinleştir'
-                            )}
-                          </button>
-                        </div>
-                        {rejectingId === req.id && (
-                          <div className="space-y-3">
-                            <textarea
-                              value={rejectReason}
-                              onChange={(e) => setRejectReason(e.target.value)}
-                              placeholder="Reddetme sebebi..."
-                              className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px]"
-                            />
-                            <div className="flex gap-3">
-                              <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
-                              <button type="button" disabled={!rejectReason.trim() || processingId === req.id} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] cursor-pointer disabled:opacity-50">İptal Et</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
                 <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 w-full mb-8">
                   <h3 className="text-[12px] font-medium text-[#86868B] mb-6">KONUM VE DETAYLAR</h3>
                   <form onSubmit={handleSubmit} className="space-y-6 w-full">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] gap-4 items-end">
                       <div>
                         <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">İl</label>
                         <div className="relative">
                           <select
                             value={requestIl}
-                            onChange={(e) => { setRequestIl(e.target.value); setRequestIlce(''); }}
+                            onChange={(e) => { setRequestIl(e.target.value); setRequestIlce(''); setInquiryDone(false); }}
                             className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
                           >
                             {TURKEY_ILLER.map((il) => (
@@ -2831,7 +3303,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                         <div className="relative">
                           <select
                             value={requestIlce}
-                            onChange={(e) => setRequestIlce(e.target.value)}
+                            onChange={(e) => { setRequestIlce(e.target.value); setInquiryDone(false); }}
                             className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
                           >
                             <option value="">İlçe seçin</option>
@@ -2852,16 +3324,49 @@ const pendingRequests = bookedAppointments.filter(app => {
                           className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px]"
                         />
                       </div>
+                      <button
+                        type="button"
+                        onClick={runRegionInquiry}
+                        className="h-12 px-5 rounded-xl bg-white/10 border border-white/10 text-white text-[14px] font-medium hover:bg-white/15 cursor-pointer active:scale-[0.98] whitespace-nowrap shrink-0"
+                      >
+                        Soruştur
+                      </button>
                     </div>
 
+                    {inquiryDone && (
+                      <div className="space-y-3 pt-2">
+                        <p className="text-[12px] font-medium text-[#86868B]">
+                          {requestIl} / {requestIlce} — aktif talepler
+                        </p>
+                        {(inquiryResults || []).length === 0 ? (
+                          <p className="text-[14px] text-[#86868B]">Bu bölgede aktif talep bulunmuyor.</p>
+                        ) : (
+                          (inquiryResults || []).map((app) => (
+                            <div key={app.id} className="flex items-center justify-between gap-3 bg-[#1C1C1E] border border-white/5 rounded-xl px-4 py-3">
+                              <div className="min-w-0">
+                                <p className="text-[14px] text-white truncate">
+                                  {app.tarih || 'Tarih yok'}{app.saatBlok ? ` • ${app.saatBlok}` : ''}
+                                  {app.semt ? ` • ${app.semt}` : ''}
+                                </p>
+                                <p className="text-[12px] text-[#86868B] truncate">{app.pilot || '—'} • {app.danismanIsmi}</p>
+                              </div>
+                              {getStatusBadge(app.status)}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+
                     <div>
-                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Portföy Türü (opsiyonel)</label>
-                      <input
-                        type="text"
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">
+                        Portföy bilgileri <span className="text-[#E5B540]">*</span>
+                      </label>
+                      <textarea
+                        required
                         value={portfolioType}
                         onChange={(e) => setPortfolioType(e.target.value)}
-                        placeholder="3+1 Lüks Daire"
-                        className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 py-3.5 focus:outline-none focus:border-white/20 text-[14px]"
+                        placeholder="Örn. 3+1 satılık daire, deniz manzaralı, kapı kodu / site girişi..."
+                        className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-28 resize-none focus:outline-none focus:border-white/20 text-[14px]"
                       />
                     </div>
 
@@ -2870,7 +3375,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                       <textarea
                         value={danismanNotu}
                         onChange={(e) => setDanismanNotu(e.target.value)}
-                        placeholder="Çekim notları, erişim bilgisi..."
+                        placeholder="Çekim notları, erişim bilgisi (opsiyonel)..."
                         className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-28 resize-none focus:outline-none focus:border-white/20 text-[14px]"
                       />
                     </div>
@@ -2906,64 +3411,6 @@ const pendingRequests = bookedAppointments.filter(app => {
                   </form>
                 </div>
 
-                {/* Soruştur */}
-                <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 w-full mb-8">
-                  <h3 className="text-[12px] font-medium text-[#86868B] mb-2">BÖLGE SORUŞTUR</h3>
-                  <p className="text-[13px] text-[#86868B] mb-6">Seçtiğiniz bölgedeki kesinleşmiş çekimleri görün.</p>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <div className="relative">
-                      <select
-                        value={inquiryIl}
-                        onChange={(e) => { setInquiryIl(e.target.value); setInquiryIlce(''); setInquiryDone(false); }}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
-                      >
-                        {TURKEY_ILLER.map((il) => (
-                          <option key={il} value={il}>{il}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
-                    </div>
-                    <div className="relative">
-                      <select
-                        value={inquiryIlce}
-                        onChange={(e) => { setInquiryIlce(e.target.value); setInquiryDone(false); }}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
-                      >
-                        <option value="">İlçe seçin</option>
-                        {inquiryIlceler.map((ilce) => (
-                          <option key={ilce} value={ilce}>{ilce}</option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={runRegionInquiry}
-                      className="h-12 rounded-xl bg-white text-black text-[14px] font-medium hover:bg-gray-200 cursor-pointer active:scale-[0.98]"
-                    >
-                      Soruştur
-                    </button>
-                  </div>
-                  {inquiryDone && (
-                    <div className="space-y-3 mt-4">
-                      {(inquiryResults || []).length === 0 ? (
-                        <p className="text-[14px] text-[#86868B]">Bu bölgede kesinleşmiş çekim yok.</p>
-                      ) : (
-                        (inquiryResults || []).map((app) => (
-                          <div key={app.id} className="flex items-center justify-between gap-3 bg-[#1C1C1E] border border-white/5 rounded-xl px-4 py-3">
-                            <div className="min-w-0">
-                              <p className="text-[14px] text-white truncate">{app.tarih || '—'} • {(app.saatBlok || '').split(' (')[0]}</p>
-                              <p className="text-[12px] text-[#86868B] truncate">{app.pilot}{app.semt ? ` • ${app.semt}` : ''}</p>
-                            </div>
-                            {getStatusBadge(app.status)}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* ARCHIVE COMPONENT FOR CONSULTANT */}
                 <div className="pt-16 mt-8 border-t border-white/5">
                   <h2 className="text-2xl font-medium tracking-tight text-white mb-8 flex items-center">
                     <History className="w-5 h-5 mr-3 text-white/70" /> Geçmiş Randevularım / Hareketler
@@ -2982,6 +3429,95 @@ const pendingRequests = bookedAppointments.filter(app => {
                     )}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* CONSULTANT: KESİNLEŞTİRME BEKLEYEN TEKLİFLER */}
+            {role === 'danisman' && activeTab === 'teklif-onay' && (
+              <div className="animate-in fade-in duration-700 w-full">
+                <div className="mb-10">
+                  <h1 className="text-3xl font-medium tracking-tight text-white">Kesinleştirmenizi Bekleyen Teklifler</h1>
+                  <p className="text-[#86868B] mt-2 text-[15px]">Pilotun önerdiği tarih ve saati kesinleştirin veya iptal edin.</p>
+                </div>
+
+                {danismanConfirmRequests.length === 0 ? (
+                  <div className="bg-[#111111] border border-white/5 rounded-2xl p-20 flex flex-col items-center justify-center text-center w-full">
+                    <div className="w-16 h-16 bg-[#1C1C1E] rounded-full flex items-center justify-center mb-6">
+                      <CheckCheck className="w-6 h-6 text-[#86868B]" strokeWidth={1.5} />
+                    </div>
+                    <h3 className="text-lg font-medium text-white mb-2">Bekleyen Teklif Yok</h3>
+                    <p className="text-[#86868B] text-[14px]">Pilot teklif gönderdiğinde burada görünecek.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4 w-full">
+                    {danismanConfirmRequests.map((req) => (
+                      <div key={req.id} className="bg-[#161616] border border-[#E5B540]/20 rounded-2xl p-6 sm:p-8 space-y-4">
+                        <div className="flex justify-between items-start gap-4">
+                          <div>
+                            <p className="text-[17px] font-medium text-white">
+                              {req.il} / {req.ilce}{req.semt ? ` / ${req.semt}` : ''}
+                            </p>
+                            <p className="text-[13px] text-[#86868B] mt-1 inline-flex flex-wrap items-center gap-2">
+                              <span>
+                                Teklif: {req.tarih || '—'} • {req.saatBlok || '—'} • {req.pilot}
+                              </span>
+                              {req.tarih && req.il && (
+                                <WeatherBadge
+                                  il={req.il}
+                                  ilce={req.ilce}
+                                  tarih={req.tarih}
+                                  variant="compact"
+                                />
+                              )}
+                            </p>
+                          </div>
+                          {getStatusBadge(req.status)}
+                        </div>
+                        {(req.danismanNotu || req.aciklama) && (
+                          <p className="text-[13px] text-[#86868B] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
+                            {req.danismanNotu || req.aciklama}
+                          </p>
+                        )}
+                        {rejectingId === req.id ? (
+                          <div className="space-y-3">
+                            <textarea
+                              value={rejectReason}
+                              onChange={(e) => setRejectReason(e.target.value)}
+                              placeholder="Reddetme sebebi..."
+                              className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                            />
+                            <div className="flex gap-3">
+                              <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
+                              <button type="button" disabled={!rejectReason.trim() || processingId === req.id} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] cursor-pointer disabled:opacity-50">İptal Et</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setRejectingId(req.id)}
+                              className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer"
+                            >
+                              Reddet
+                            </button>
+                            <button
+                              type="button"
+                              disabled={processingId === req.id}
+                              onClick={() => handleDanismanConfirm(req)}
+                              className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 transition-all cursor-pointer flex items-center justify-center"
+                            >
+                              {processingId === req.id ? (
+                                <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                'Kesinleştir'
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

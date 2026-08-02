@@ -77,7 +77,7 @@ export function usesManagerShell(role: AppRole | string): boolean {
   return role === 'broker' || role === 'selim' || role === 'fatima' || role === 'yonetici';
 }
 
-/** Onay / ret yetkisi */
+/** Kesinleştirme / ret yetkisi */
 export function canApproveAppointments(role: AppRole | string): boolean {
   return role === 'broker' || role === 'selim' || role === 'fatima';
 }

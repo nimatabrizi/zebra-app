@@ -174,9 +174,9 @@ ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;
 
 -- SELECT
 --   broker            → hepsi
---   selim / fatima    → kendi owner_role + tüm kesinlesti (ilçe planlama)
+--   selim / fatima    → kendi owner_role + tüm aktif (ilçe planlama)
 --   yonetici          → yalnızca kesinlesti
---   danisman          → kendi talepleri + tüm kesinlesti (Soruştur)
+--   danisman          → kendi talepleri + tüm aktif (bölgesel Soruştur)
 CREATE POLICY "appointments_select"
   ON public.appointments
   FOR SELECT
@@ -190,7 +190,11 @@ CREATE POLICY "appointments_select"
       )
       AND (
         owner_role = public.current_app_role()
-        OR status = 'kesinlesti'::public.appointment_status
+        OR status IN (
+          'pilot_bekleniyor'::public.appointment_status,
+          'danisman_onayi_bekliyor'::public.appointment_status,
+          'kesinlesti'::public.appointment_status
+        )
       )
     )
     OR (
@@ -201,7 +205,11 @@ CREATE POLICY "appointments_select"
       public.current_app_role() = 'danisman'::public.app_role
       AND (
         created_by = auth.uid()
-        OR status = 'kesinlesti'::public.appointment_status
+        OR status IN (
+          'pilot_bekleniyor'::public.appointment_status,
+          'danisman_onayi_bekliyor'::public.appointment_status,
+          'kesinlesti'::public.appointment_status
+        )
       )
     )
   );
@@ -239,7 +247,7 @@ CREATE POLICY "appointments_insert"
 -- UPDATE
 --   broker → herkes
 --   pilot (calendar owner) → kendi owner_role
---   danisman → kendi oluşturduğu (teklifi onaylama / iptal)
+--   danisman → kendi + pilot_bekleniyor (düzenleme) / teklif kesinleştirme / iptal
 CREATE POLICY "appointments_update"
   ON public.appointments
   FOR UPDATE
@@ -253,6 +261,10 @@ CREATE POLICY "appointments_update"
     OR (
       public.current_app_role() = 'danisman'::public.app_role
       AND created_by = auth.uid()
+      AND status IN (
+        'pilot_bekleniyor'::public.appointment_status,
+        'danisman_onayi_bekliyor'::public.appointment_status
+      )
     )
   )
   WITH CHECK (
@@ -265,6 +277,7 @@ CREATE POLICY "appointments_update"
       public.current_app_role() = 'danisman'::public.app_role
       AND created_by = auth.uid()
       AND status IN (
+        'pilot_bekleniyor'::public.appointment_status,
         'danisman_onayi_bekliyor'::public.appointment_status,
         'kesinlesti'::public.appointment_status,
         'iptal'::public.appointment_status

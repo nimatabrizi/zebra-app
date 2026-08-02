@@ -17,48 +17,49 @@ import {
   parseDisplayDate,
 } from '../lib/appointmentUtils';
 import { manualEntryDisplayName } from '../lib/authIdentity';
-
-type Appointment = {
-  id: string;
-  danismanIsmi?: string;
-  tarih: string;
-  saatBlok?: string;
-  konum?: string;
-  portfoyTuru?: string;
-  aciklama?: string;
-  pilot?: string;
-  ownerRole?: string;
-  owner?: string | null;
-  status: string;
-  reddedilmeSebebi?: string;
-  isManual?: boolean;
-  createdByRole?: string | null;
-};
+import type { Appointment } from '../types/appointments';
+import WeatherBadge from './WeatherBadge';
 
 function StatusBadge({ status }: { status: string }) {
   const baseClass =
     'px-3 py-1 rounded-xl text-[11px] font-medium tracking-wide uppercase border flex items-center shadow-sm shrink-0';
-  if (status === 'Bekliyor' || status === 'pending') {
+  if (
+    status === 'Bekliyor' ||
+    status === 'pending' ||
+    status === 'pilot_bekleniyor' ||
+    status === 'danisman_onayi_bekliyor'
+  ) {
+    const label =
+      status === 'danisman_onayi_bekliyor'
+        ? 'Kesinleştirme Bekleniyor'
+        : status === 'pilot_bekleniyor'
+          ? 'Pilot Bekleniyor'
+          : 'Bekliyor';
     return (
       <span className={`${baseClass} bg-[#1C1C1E] text-[#E5B540] border-[#E5B540]/20`}>
         <div className="w-1.5 h-1.5 rounded-full bg-[#E5B540] mr-2" />
-        Bekliyor
+        {label}
       </span>
     );
   }
-  if (status === 'Onaylandı' || status === 'confirmed' || status === 'approved') {
+  if (
+    status === 'Onaylandı' ||
+    status === 'confirmed' ||
+    status === 'approved' ||
+    status === 'kesinlesti'
+  ) {
     return (
       <span className={`${baseClass} bg-[#1C1C1E] text-[#34C759] border-[#34C759]/20`}>
         <div className="w-1.5 h-1.5 rounded-full bg-[#34C759] mr-2" />
-        Onaylandı
+        Kesinleşti
       </span>
     );
   }
-  if (status === 'Reddedildi' || status === 'rejected') {
+  if (status === 'Reddedildi' || status === 'rejected' || status === 'iptal') {
     return (
       <span className={`${baseClass} bg-[#1C1C1E] text-[#FF3B30] border-[#FF3B30]/20`}>
         <div className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] mr-2" />
-        Reddedildi
+        {status === 'iptal' ? 'İptal' : 'Reddedildi'}
       </span>
     );
   }
@@ -182,7 +183,7 @@ export default function CekimRaporuPanel({ appointments }: Props) {
             Çekim Raporu
           </h1>
           <p className="text-[#86868B] mt-2 text-[14px]">
-            Yalnızca onaylanmış çekimler. Haftalık veya aylık özet.
+            Yalnızca kesinleşmiş çekimler. Haftalık veya aylık özet.
           </p>
         </div>
 
@@ -290,13 +291,13 @@ export default function CekimRaporuPanel({ appointments }: Props) {
 
         <div className="bg-[#161616] border border-white/5 rounded-2xl overflow-hidden">
           <div className="px-5 sm:px-6 py-4 border-b border-white/5 flex items-center justify-between">
-            <h3 className="text-[14px] font-medium text-white">Onaylı Çekimler</h3>
+            <h3 className="text-[14px] font-medium text-white">Kesinleşmiş Çekimler</h3>
             <span className="text-[12px] text-[#86868B] tabular-nums">{cekimRaporu.rows.length} kayıt</span>
           </div>
 
           {cekimRaporu.rows.length === 0 ? (
             <div className="px-6 py-14 text-center">
-              <p className="text-[14px] text-[#86868B]">Bu dönemde onaylanmış çekim yok.</p>
+              <p className="text-[14px] text-[#86868B]">Bu dönemde kesinleşmiş çekim yok.</p>
             </div>
           ) : (
             <div className="overflow-x-auto custom-scrollbar">
@@ -374,11 +375,30 @@ export default function CekimRaporuPanel({ appointments }: Props) {
 
               <div className="h-px bg-white/5" />
 
+              <div>
+                <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide mb-1.5">
+                  Tarih
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-[15px] text-white leading-relaxed">
+                    {reportDetailAppointment.tarih || '—'}
+                  </p>
+                  {reportDetailAppointment.tarih &&
+                    (reportDetailAppointment.il || reportDetailAppointment.konum) && (
+                      <WeatherBadge
+                        il={reportDetailAppointment.il}
+                        ilce={reportDetailAppointment.ilce}
+                        tarih={reportDetailAppointment.tarih}
+                        variant="detail"
+                      />
+                    )}
+                </div>
+              </div>
+
               {[
-                { label: 'Tarih', value: reportDetailAppointment.tarih },
-                { label: 'Saat Bloğu', value: reportDetailAppointment.saatBlok },
+                { label: 'Saat', value: reportDetailAppointment.saatBlok },
                 { label: 'Portföy Konumu', value: reportDetailAppointment.konum },
-                { label: 'Portföy Türü', value: reportDetailAppointment.portfoyTuru },
+                { label: 'Portföy bilgileri', value: reportDetailAppointment.portfoyTuru },
                 { label: 'Danışman', value: reportDetailAppointment.danismanIsmi },
                 {
                   label: 'Sorumlu Pilot',
