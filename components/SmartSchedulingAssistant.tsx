@@ -74,8 +74,9 @@ function statusAccent(status: unknown): string {
 function shortStatusLabel(status: unknown): string {
   const n = normalizeAppointmentStatus(status);
   if (n === 'kesinlesti') return 'Kesinleşti';
-  if (n === 'danisman_onayi_bekliyor') return 'Kesinleşme bekliyor';
-  if (n === 'pilot_bekleniyor') return 'Pilot bekleniyor';
+  if (n === 'danisman_onayi_bekliyor') return 'Onay Bekliyor';
+  if (n === 'pilot_bekleniyor') return 'Pilot Bekliyor';
+  if (n === 'iptal') return 'İptal';
   return String(status ?? '');
 }
 

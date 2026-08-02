@@ -23,7 +23,7 @@ import WeatherBadge from './WeatherBadge';
 
 function StatusBadge({ status }: { status: string }) {
   const baseClass =
-    'px-3 py-1 rounded-xl text-[11px] font-medium tracking-wide uppercase border flex items-center shadow-sm shrink-0';
+    'px-2.5 py-1 rounded-full text-[11px] font-medium border inline-flex items-center max-w-full whitespace-nowrap';
   if (
     status === 'Bekliyor' ||
     status === 'pending' ||
@@ -32,13 +32,13 @@ function StatusBadge({ status }: { status: string }) {
   ) {
     const label =
       status === 'danisman_onayi_bekliyor'
-        ? 'Kesinleştirme Bekleniyor'
+        ? 'Onay Bekliyor'
         : status === 'pilot_bekleniyor'
-          ? 'Pilot Bekleniyor'
+          ? 'Pilot Bekliyor'
           : 'Bekliyor';
     return (
       <span className={`${baseClass} bg-[#1C1C1E] text-[#E5B540] border-[#E5B540]/20`}>
-        <div className="w-1.5 h-1.5 rounded-full bg-[#E5B540] mr-2" />
+        <div className="w-1.5 h-1.5 rounded-full bg-[#E5B540] mr-2 shrink-0" />
         {label}
       </span>
     );

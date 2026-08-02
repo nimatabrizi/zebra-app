@@ -23,8 +23,8 @@ export const APPOINTMENT_STATUSES: readonly AppointmentStatus[] = [
 ] as const;
 
 export const APPOINTMENT_STATUS_LABELS: Record<AppointmentStatus, string> = {
-  pilot_bekleniyor: 'Pilot Bekleniyor',
-  danisman_onayi_bekliyor: 'Danışman Kesinleştirmesi Bekleniyor',
+  pilot_bekleniyor: 'Pilot Bekliyor',
+  danisman_onayi_bekliyor: 'Onay Bekliyor',
   kesinlesti: 'Kesinleşti',
   iptal: 'İptal',
 };

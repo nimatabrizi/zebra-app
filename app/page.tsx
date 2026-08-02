@@ -42,6 +42,7 @@ import {
   normalizeAppointmentStatus,
   ownerRoleFromPilot as ownerRoleFromPilotUtil,
   ownerRoleDisplayName as ownerRoleDisplayNameUtil,
+  parseDisplayDate,
 } from '../lib/appointmentUtils';
 import { DEFAULT_IL, TURKEY_ILLER, getIlceler } from '../lib/turkeyLocations';
 import { TIME_SLOT_OPTIONS } from '../lib/timeSlots';
@@ -52,6 +53,7 @@ import {
 } from '../lib/notifications';
 import CekimRaporuPanel from '../components/CekimRaporuPanel';
 import ComingSoonPlaceholder from '../components/ComingSoonPlaceholder';
+import GlobalCalendar from '../components/global-calendar/GlobalCalendar';
 import OverviewDashboard from '../components/OverviewDashboard';
 import SidebarNav from '../components/SidebarNav';
 import SmartSchedulingAssistant from '../components/SmartSchedulingAssistant';
@@ -147,6 +149,8 @@ const [activeTab, setActiveTab] = useState('genel');
   const isNotificationOpenRef = useRef(false);
   const showToastRef = useRef(null);
   const [notifications, setNotifications] = useState<any[]>([]);
+  /** Panelde ilk kez gösterilen (açılışta okunmamış) bildirim id'leri — stil için */
+  const [firstShownNotifIds, setFirstShownNotifIds] = useState(() => new Set());
 
   useEffect(() => {
     isNotificationOpenRef.current = isNotificationOpen;
@@ -253,6 +257,8 @@ const [activeTab, setActiveTab] = useState('genel');
     );
     if (unread.length === 0) return;
 
+    setFirstShownNotifIds(new Set(unread.map((n) => String(n.id))));
+
     setNotifications((prev) =>
       prev.map((n) => (isNotificationForMe(n) ? { ...n, is_read: true } : n))
     );
@@ -272,7 +278,10 @@ const [activeTab, setActiveTab] = useState('genel');
   };
 
   useEffect(() => {
-    if (!isNotificationOpen) return;
+    if (!isNotificationOpen) {
+      setFirstShownNotifIds(new Set());
+      return;
+    }
     void markUnreadAsRead();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNotificationOpen]);
@@ -401,6 +410,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [confirmSuccessInfo, setConfirmSuccessInfo] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
 
   // Düzenleme modalı
@@ -450,9 +460,20 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const [viewYear, setViewYear] = useState(currentDate.getFullYear());
   const [expandedRows, setExpandedRows] = useState([]);
 
-  const [takvimSelectedDate, setTakvimSelectedDate] = useState(new Date());
+  /** null = henüz gün seçilmedi; liste yalnızca içerik olan güne tıklanınca açılır */
+  const [takvimSelectedDate, setTakvimSelectedDate] = useState(null);
   /** Günün randevuları filtresi: all | confirmed */
   const [dayListFilter, setDayListFilter] = useState('all');
+  /** Danışman Randevularım: kesinlesti | pilot_bekleniyor | danisman_onayi_bekliyor | iptal | all */
+  const [randevularimFilter, setRandevularimFilter] = useState('kesinlesti');
+
+  const RANDEVULARIM_FILTERS = [
+    { value: 'kesinlesti', label: 'Kesinleşmiş' },
+    { value: 'danisman_onayi_bekliyor', label: 'Onay Bekliyor' },
+    { value: 'pilot_bekleniyor', label: 'Teklif Bekleniyor' },
+    { value: 'iptal', label: 'İptal' },
+    { value: 'all', label: 'Tümü' },
+  ];
 
   const formatDateStr = (date: any) => {
     if (!date) return '';
@@ -1002,16 +1023,47 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     return filtered.sort((a, b) => Number(b.id) - Number(a.id));
   }, [bookedAppointments, role, fullName, isPilot, seesAllAppointments]);
 
+  /** Danışman — Randevularım listesi (filtreli) */
+  const danismanRandevularim = useMemo(() => {
+    if (role !== 'danisman') return [];
+    let filtered = bookedAppointments.filter(
+      (app) =>
+        app.danismanIsmi === fullName ||
+        (!!currentUserId && app.createdBy === currentUserId)
+    );
+    if (randevularimFilter !== 'all') {
+      filtered = filtered.filter(
+        (app) => normalizeAppointmentStatus(app.status) === randevularimFilter
+      );
+    }
+    return filtered.sort((a, b) => {
+      const da = parseDisplayDate(a.tarih)?.getTime() ?? 0;
+      const db = parseDisplayDate(b.tarih)?.getTime() ?? 0;
+      if (db !== da) return db - da;
+      return Number(b.id) - Number(a.id);
+    });
+  }, [
+    bookedAppointments,
+    role,
+    fullName,
+    currentUserId,
+    randevularimFilter,
+  ]);
+
   const selectedTakvimDateStr = formatDateStr(takvimSelectedDate);
-  const takvimAppointmentsForSelectedDate = useMemo(() => {
-    let filtered = bookedAppointments.filter(app => app.tarih === selectedTakvimDateStr);
+
+  /** Seçili gündeki rol-görünür randevular (segment filtresi hariç) */
+  const takvimDayBaseAppointments = useMemo(() => {
+    if (!selectedTakvimDateStr) return [];
+    let filtered = bookedAppointments.filter(
+      (app) => app.tarih === selectedTakvimDateStr
+    );
 
     if (seesAllAppointments) {
       // broker + yonetici: o günün randevuları
     } else if (role === 'selim' || role === 'fatima' || isPilot) {
-      filtered = filtered.filter(app => app.pilot === fullName);
+      filtered = filtered.filter((app) => app.pilot === fullName);
     } else if (role === 'danisman') {
-      // Takım şeffaflığı: o gündeki tüm danışmanların aktif talepleri
       filtered = filtered.filter((app) => {
         const st = normalizeAppointmentStatus(app.status);
         return (
@@ -1021,22 +1073,42 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         );
       });
     } else {
-      filtered = filtered.filter(app => app.danismanIsmi === fullName);
+      filtered = filtered.filter((app) => app.danismanIsmi === fullName);
     }
 
-    // Segmented filter: Tümü | Sadece Kesinleşmişler
+    return filtered.sort((a, b) => {
+      const rank = (s) =>
+        isPendingStatus(s) ? 0 : isConfirmedStatus(s) ? 1 : 2;
+      return rank(a.status) - rank(b.status) || Number(b.id) - Number(a.id);
+    });
+  }, [
+    bookedAppointments,
+    selectedTakvimDateStr,
+    role,
+    fullName,
+    isPilot,
+    seesAllAppointments,
+  ]);
+
+  const takvimAppointmentsForSelectedDate = useMemo(() => {
     // yonetici: filtre gizli; kalıcı olarak yalnızca kesinleşmişler
     const effectiveDayFilter =
       role === 'yonetici' ? 'confirmed' : dayListFilter;
     if (effectiveDayFilter === 'confirmed') {
-      filtered = filtered.filter(app => isConfirmedStatus(app.status));
+      return takvimDayBaseAppointments.filter((app) =>
+        isConfirmedStatus(app.status)
+      );
     }
+    return takvimDayBaseAppointments;
+  }, [takvimDayBaseAppointments, role, dayListFilter]);
 
-    return filtered.sort((a, b) => {
-      const rank = (s) => (isPendingStatus(s) ? 0 : isConfirmedStatus(s) ? 1 : 2);
-      return rank(a.status) - rank(b.status) || Number(b.id) - Number(a.id);
-    });
-  }, [bookedAppointments, selectedTakvimDateStr, role, fullName, isPilot, seesAllAppointments, dayListFilter]);
+  /** Danışman Takvim genel takvimdir — gün detay listesi yok. Yönetici çekim takviminde var. */
+  const showTakvimDayDetail =
+    role !== 'danisman' &&
+    !!takvimSelectedDate &&
+    (role === 'yonetici'
+      ? takvimDayBaseAppointments.some((a) => isConfirmedStatus(a.status))
+      : takvimDayBaseAppointments.length > 0);
 
   const offeringRequest = useMemo(
     () => bookedAppointments.find((a) => a.id === offeringId) || null,
@@ -1469,7 +1541,12 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     await notifyAppointmentApproved({ ...req, status: 'kesinlesti' });
 
     setProcessingId(null);
-    showToast('Randevu kesinleşti.');
+    setConfirmSuccessInfo({
+      tarih: req.tarih || '',
+      saatBlok: req.saatBlok || '',
+      ilce: req.ilce || '',
+      il: req.il || '',
+    });
   };
 
   /** Broker hızlı kesinleştirme (tarih zaten varsa → kesinlesti) */
@@ -1910,17 +1987,33 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
   // --- APPLE HIG UI RENDERERS ---
   const getStatusBadge = (status) => {
-    const baseClass = "px-3 py-1 rounded-xl text-[11px] font-medium tracking-wide uppercase border flex items-center shadow-sm shrink-0";
+    const baseClass =
+      'px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-medium border inline-flex items-center max-w-full whitespace-nowrap shadow-sm';
     const n = normalizeAppointmentStatus(status);
     if (n === 'pilot_bekleniyor' || n === 'danisman_onayi_bekliyor') {
       const label = APPOINTMENT_STATUS_LABELS[n];
-      return <span className={`${baseClass} bg-[#1C1C1E] text-[#E5B540] border-[#E5B540]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#E5B540] mr-2"></div>{label}</span>;
+      return (
+        <span className={`${baseClass} bg-[#1C1C1E] text-[#E5B540] border-[#E5B540]/20`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-[#E5B540] mr-1.5 shrink-0" />
+          {label}
+        </span>
+      );
     }
     if (n === 'kesinlesti') {
-      return <span className={`${baseClass} bg-[#1C1C1E] text-[#34C759] border-[#34C759]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#34C759] mr-2"></div>Kesinleşti</span>;
+      return (
+        <span className={`${baseClass} bg-[#1C1C1E] text-[#34C759] border-[#34C759]/20`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-[#34C759] mr-1.5 shrink-0" />
+          Kesinleşti
+        </span>
+      );
     }
     if (n === 'iptal') {
-      return <span className={`${baseClass} bg-[#1C1C1E] text-[#FF3B30] border-[#FF3B30]/20`}><div className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] mr-2"></div>İptal</span>;
+      return (
+        <span className={`${baseClass} bg-[#1C1C1E] text-[#FF3B30] border-[#FF3B30]/20`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] mr-1.5 shrink-0" />
+          İptal
+        </span>
+      );
     }
     return null;
   };
@@ -1942,15 +2035,15 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
           }`}
       >
         <div 
-          className={`flex flex-col sm:flex-row justify-between sm:items-center p-6 gap-4 sm:gap-0 transition-colors ${isRejected ? 'cursor-pointer active:scale-[0.99]' : ''}`}
+          className={`flex flex-col gap-4 p-4 sm:p-6 sm:flex-row sm:justify-between sm:items-center transition-colors ${isRejected ? 'cursor-pointer active:scale-[0.99]' : ''}`}
           onClick={() => isRejected && toggleRow(app.id)}
         >
-          <div className="flex items-center space-x-6 min-w-0 flex-1">
-            <div className="flex flex-col shrink-0 text-center w-16 items-center">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-6 min-w-0 flex-1">
+            <div className="flex flex-col shrink-0 text-center w-14 sm:w-16 items-center pt-0.5">
               <span className={`text-sm font-medium ${isRejected ? 'text-[#FF3B30]/80' : 'text-white'}`}>
                 {app.tarih ? String(app.tarih).substring(0, 5) : '—'}
               </span>
-              <span className={`text-[11px] font-medium mt-1 uppercase tracking-wide ${isRejected ? 'text-[#FF3B30]/55' : 'text-[#86868B]'}`}>
+              <span className={`text-[11px] font-medium mt-1 tracking-wide ${isRejected ? 'text-[#FF3B30]/55' : 'text-[#86868B]'}`}>
                 {app.saatBlok || app.ilce || 'Bekliyor'}
               </span>
               {app.tarih &&
@@ -1967,12 +2060,12 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                   />
                 )}
             </div>
-            <div className={`w-px h-8 mx-2 hidden sm:block ${isRejected ? 'bg-[#FF3B30]/20' : 'bg-white/5'}`}></div>
+            <div className={`w-px h-8 mx-1 hidden sm:block shrink-0 ${isRejected ? 'bg-[#FF3B30]/20' : 'bg-white/5'}`}></div>
             <div className="flex flex-col min-w-0 flex-1">
-              <span className={`text-[15px] font-medium truncate ${isRejected ? 'text-[#FF3B30]/90' : 'text-white'}`}>
+              <span className={`text-[14px] sm:text-[15px] font-medium break-words ${isRejected ? 'text-[#FF3B30]/90' : 'text-white'}`}>
                 {app.il && app.ilce ? `${app.il} / ${app.ilce}${app.semt ? ` / ${app.semt}` : ''}` : (app.konum || 'Konum yok')}
               </span>
-              <span className={`text-[13px] truncate mt-1 ${isRejected ? 'text-[#FF3B30]/50' : 'text-[#86868B]'}`}>
+              <span className={`text-[12px] sm:text-[13px] mt-1 break-words ${isRejected ? 'text-[#FF3B30]/50' : 'text-[#86868B]'}`}>
                 {app.portfoyTuru || app.danismanNotu || '—'}
                 {usesManagerShell(role)
                   ? ` • Danışman: ${toTitleCaseName(app.danismanIsmi)}`
@@ -1988,14 +2081,14 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 })()}
               </span>
               {app.isManual && (
-                <span className="inline-flex mt-2 px-2 py-0.5 rounded-md text-[10px] font-medium tracking-wide uppercase bg-white/5 text-neutral-400 border border-white/5">
+                <span className="inline-flex mt-2 px-2 py-0.5 rounded-md text-[10px] font-medium tracking-wide uppercase bg-white/5 text-neutral-400 border border-white/5 w-fit">
                   Manuel Giriş: {toTitleCaseName(manualEntryDisplayName(app.createdByRole))}
                 </span>
               )}
             </div>
           </div>
 
-          <div className="flex flex-row items-center gap-3 shrink-0 sm:ml-4 self-end sm:self-center">
+          <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto sm:ml-4 shrink-0">
             {app.tarih &&
               app.il &&
               !isRejected &&
@@ -2017,14 +2110,14 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                   e.stopPropagation();
                   openEditModal(app);
                 }}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-[#1C1C1E] border border-white/5 text-[#86868B] hover:text-white hover:bg-white/10 hover:border-white/10 transition-all duration-300 cursor-pointer active:scale-95"
+                className="size-8 shrink-0 aspect-square flex items-center justify-center rounded-full bg-[#1C1C1E] border border-white/5 text-[#86868B] hover:text-white hover:bg-white/10 hover:border-white/10 transition-all duration-300 cursor-pointer active:scale-95 self-center"
               >
                 <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
               </button>
             )}
             {getStatusBadge(app.status)}
             {isRejected && (
-              <div className={`w-8 h-8 flex items-center justify-center rounded-full border transition-all duration-300 cursor-pointer active:scale-95 ${isExpanded ? 'bg-[#FF3B30]/15 border-[#FF3B30]/30' : 'bg-[#1C1C1E] border-[#FF3B30]/20 hover:bg-[#FF3B30]/10'}`}>
+              <div className={`size-8 shrink-0 aspect-square flex items-center justify-center rounded-full border transition-all duration-300 cursor-pointer active:scale-95 self-center ${isExpanded ? 'bg-[#FF3B30]/15 border-[#FF3B30]/30' : 'bg-[#1C1C1E] border-[#FF3B30]/20 hover:bg-[#FF3B30]/10'}`}>
                 <ChevronDown className={`w-4 h-4 text-[#FF3B30]/80 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
               </div>
             )}
@@ -2059,6 +2152,16 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
     }
   };
+
+  useEffect(() => {
+    if (!confirmSuccessInfo) return undefined;
+    const timer = setTimeout(() => {
+      setConfirmSuccessInfo(null);
+      navigateToTab('genel');
+    }, 3200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmSuccessInfo]);
 
   const getDaysInMonth = (month, year) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (month, year) => {
@@ -2104,7 +2207,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Tam İsim"
                 autoComplete="username"
-                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-base md:text-sm"
+                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-[14px]"
                 required
               />
             </div>
@@ -2116,7 +2219,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="WhatsApp Numarası"
                 autoComplete="current-password"
-                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-base md:text-sm"
+                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-[14px]"
                 required
               />
             </div>
@@ -2191,6 +2294,7 @@ const pendingRequests = bookedAppointments.filter(app => {
   const menuBadgeCounts = {
     cekim: canApproveAppointments(role) ? pendingRequests.length : 0,
     randevu: role === 'danisman' ? danismanConfirmRequests.length : 0,
+    randevularim: role === 'danisman' ? danismanConfirmRequests.length : 0,
   };
 
   const openOfferCalendar = () => {
@@ -2252,6 +2356,43 @@ const pendingRequests = bookedAppointments.filter(app => {
             </div>
             <h2 className="text-xl font-medium tracking-tight text-white mb-2">Talep İletildi</h2>
             <p className="text-[#86868B] text-[14px] leading-relaxed">Randevu talebiniz başarıyla oluşturuldu ve ekibe bildirildi.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Danışman kesinleştirme başarı modalı → Genel Bakış */}
+      {confirmSuccessInfo && (
+        <div className="fixed inset-0 bg-[#0A0A0A]/70 backdrop-blur-xl z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-2xl p-8 sm:p-10 max-w-md w-full text-center shadow-2xl">
+            <div className="w-16 h-16 bg-[#34C759]/10 border border-[#34C759]/20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <CheckCircle2 className="w-8 h-8 text-[#34C759]" strokeWidth={2.5} />
+            </div>
+            <h2 className="text-xl font-medium tracking-tight text-white mb-3">Randevu Kesinleşti</h2>
+            <p className="text-[#AEAEB2] text-[15px] leading-relaxed">
+              Randevunuz{' '}
+              <span className="text-white font-medium">
+                {confirmSuccessInfo.tarih || 'belirlenen tarihte'}
+                {confirmSuccessInfo.saatBlok ? ` • ${confirmSuccessInfo.saatBlok}` : ''}
+              </span>
+              {confirmSuccessInfo.ilce ? (
+                <>
+                  {' '}
+                  ({confirmSuccessInfo.il ? `${confirmSuccessInfo.il} / ` : ''}
+                  {confirmSuccessInfo.ilce})
+                </>
+              ) : null}{' '}
+              için kesinleşti.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmSuccessInfo(null);
+                navigateToTab('genel');
+              }}
+              className="mt-8 w-full h-12 rounded-xl bg-white text-black text-[14px] font-medium hover:bg-neutral-200 transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98]"
+            >
+              Genel Bakışa Dön
+            </button>
           </div>
         </div>
       )}
@@ -2819,21 +2960,41 @@ const pendingRequests = bookedAppointments.filter(app => {
               <p className="text-[15px] font-medium text-[#86868B]">Bildirim Yok</p>
             </div>
           ) : (
-            userNotifications.map((notif) => (
+            userNotifications.map((notif) => {
+              const isFirstShown =
+                !notif.is_read || firstShownNotifIds.has(String(notif.id));
+              return (
               <button
                 key={notif.id}
                 type="button"
                 onClick={() => handleNotificationClick(notif)}
-                className={`w-full text-left bg-[#1C1C1E] border rounded-2xl p-5 transition-all duration-300 cursor-pointer active:scale-[0.99] hover:border-white/15
-                  ${notif.is_read ? 'border-transparent opacity-70' : 'border-white/10 shadow-lg'}`}
+                className={`w-full text-left border rounded-2xl p-5 transition-all duration-300 cursor-pointer active:scale-[0.99]
+                  ${isFirstShown
+                    ? 'bg-white text-black border-transparent shadow-lg hover:bg-neutral-100'
+                    : 'bg-[#1C1C1E] border-transparent opacity-70 hover:border-white/15 text-white'}`}
               >
                 <div className="flex justify-between items-start mb-2 gap-3">
-                  <h4 className="text-[14px] font-medium text-white">{notif.title}</h4>
-                  <span className="text-[11px] font-medium text-[#86868B] shrink-0">{notif.created_at}</span>
+                  <h4 className={`text-[14px] font-medium ${isFirstShown ? 'text-black' : 'text-white'}`}>
+                    {notif.title}
+                  </h4>
+                  <span
+                    className={`text-[11px] font-medium shrink-0 ${
+                      isFirstShown ? 'text-black/45' : 'text-[#86868B]'
+                    }`}
+                  >
+                    {notif.created_at}
+                  </span>
                 </div>
-                <p className="text-[13px] text-[#86868B] leading-relaxed">{notif.message}</p>
+                <p
+                  className={`text-[13px] leading-relaxed ${
+                    isFirstShown ? 'text-black/65' : 'text-[#86868B]'
+                  }`}
+                >
+                  {notif.message}
+                </p>
               </button>
-            ))
+              );
+            })
           )}
         </div>
       </aside>
@@ -2961,12 +3122,28 @@ const pendingRequests = bookedAppointments.filter(app => {
               <ComingSoonPlaceholder />
             )}
 
-            {/* --- ÇEKİM TAKVİMİ --- */}
-            {activeTab === 'takvim' && (
+            {/* --- TAKVİM: danışman genel takvim --- */}
+            {activeTab === 'takvim' && role === 'danisman' && (
+              <GlobalCalendar
+                appointments={bookedAppointments}
+                userKey={currentUserId || fullName}
+                fallbackKeys={[fullName, currentUserId].filter(Boolean)}
+                showTeamAppointments
+                fullName={fullName}
+                currentUserId={currentUserId}
+              />
+            )}
+
+            {/* --- TAKVİM: yönetici çekim takvimi --- */}
+            {activeTab === 'takvim' && role !== 'danisman' && (
               <div className="panel-enter space-y-8">
                 <div className="mb-10">
-                  <h1 className="text-2xl font-medium tracking-tight text-white">Çekim Takvimi</h1>
-                  <p className="text-[#86868B] mt-2 text-[14px]">Operasyon takvimini görüntüleyin.</p>
+                  <h1 className="text-2xl font-medium tracking-tight text-white">
+                    Çekim Takvimi
+                  </h1>
+                  <p className="text-[#86868B] mt-2 text-[14px]">
+                    Operasyon takvimini görüntüleyin.
+                  </p>
                 </div>
 
                 <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 shadow-sm">
@@ -3028,44 +3205,52 @@ const pendingRequests = bookedAppointments.filter(app => {
                   </div>
                 </div>
 
-                <div className="pt-8 border-t border-white/5">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                    <h3 className="text-lg font-medium text-white">
-                      {formatDateStr(takvimSelectedDate)} Randevuları
-                    </h3>
-                    {role !== 'yonetici' && (
-                      <div className="flex w-full p-1 rounded-xl bg-[#1C1C1E] border border-white/5">
-                        <button
-                          type="button"
-                          onClick={() => setDayListFilter('all')}
-                          className={`flex-1 px-4 py-2.5 rounded-lg text-[12px] sm:text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
-                            ${dayListFilter === 'all' ? 'bg-white text-black shadow-sm' : 'text-[#86868B] hover:text-white'}`}
-                        >
-                          Tümü
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDayListFilter('confirmed')}
-                          className={`flex-1 px-4 py-2.5 rounded-lg text-[12px] sm:text-[13px] font-medium transition-all cursor-pointer active:scale-[0.98]
-                            ${dayListFilter === 'confirmed' ? 'bg-white text-black shadow-sm' : 'text-[#86868B] hover:text-white'}`}
-                        >
-                          Sadece Kesinleşmişler
-                        </button>
-                      </div>
-                    )}
+                {showTakvimDayDetail && (
+                  <div className="pt-8 border-t border-white/5">
+                    <div className="flex flex-col gap-4 mb-6">
+                      <h3 className="text-lg font-medium text-white">
+                        {formatDateStr(takvimSelectedDate)}
+                      </h3>
+                      {role !== 'yonetici' && (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setDayListFilter('all')}
+                            className={`min-h-10 px-3.5 sm:px-4 py-2 rounded-xl text-[12px] sm:text-[13px] font-medium transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98] border ${
+                              dayListFilter === 'all'
+                                ? 'bg-white text-black border-white shadow-sm'
+                                : 'bg-[#1C1C1E] text-[#86868B] border-white/5 hover:text-white hover:border-white/10'
+                            }`}
+                          >
+                            Tümü
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDayListFilter('confirmed')}
+                            className={`min-h-10 px-3.5 sm:px-4 py-2 rounded-xl text-[12px] sm:text-[13px] font-medium transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98] border ${
+                              dayListFilter === 'confirmed'
+                                ? 'bg-white text-black border-white shadow-sm'
+                                : 'bg-[#1C1C1E] text-[#86868B] border-white/5 hover:text-white hover:border-white/10'
+                            }`}
+                          >
+                            Kesinleşmiş
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col space-y-4 w-full">
+                      {takvimAppointmentsForSelectedDate.length === 0 ? (
+                        <p className="text-[#86868B] text-[14px]">
+                          Bu tarihte kesinleşmiş randevu bulunmuyor.
+                        </p>
+                      ) : (
+                        takvimAppointmentsForSelectedDate.map((app) =>
+                          renderAppointmentRow(app)
+                        )
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-col space-y-4 w-full">
-                    {takvimAppointmentsForSelectedDate.length === 0 ? (
-                      <p className="text-[#86868B] text-[14px]">
-                        {role === 'yonetici' || dayListFilter === 'confirmed'
-                          ? 'Bu tarihte kesinleşmiş randevu bulunmuyor.'
-                          : 'Bu tarihte planlanan bir işlem bulunmuyor.'}
-                      </p>
-                    ) : (
-                      takvimAppointmentsForSelectedDate.map(app => renderAppointmentRow(app))
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
@@ -3272,6 +3457,146 @@ const pendingRequests = bookedAppointments.filter(app => {
                     )}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* CONSULTANT: RANDEVULARIM */}
+            {role === 'danisman' && activeTab === 'randevularim' && (
+              <div className="panel-enter w-full">
+                <div className="mb-8">
+                  <h1 className="text-3xl font-medium tracking-tight text-white">Randevularım</h1>
+                  <p className="text-[#86868B] mt-2 text-[15px]">
+                    Kesinleşen, onay bekleyen ve teklif sürecindeki tüm randevularınız.
+                  </p>
+                </div>
+
+                <div className="mb-8 max-w-sm">
+                  <div className="relative">
+                    <select
+                      value={randevularimFilter}
+                      onChange={(e) => setRandevularimFilter(e.target.value)}
+                      className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                    >
+                      {RANDEVULARIM_FILTERS.map((f) => (
+                        <option key={f.value} value={f.value}>{f.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                  </div>
+                </div>
+
+                {danismanRandevularim.length === 0 ? (
+                  <div className="bg-[#111111] border border-white/5 rounded-2xl p-16 sm:p-20 flex flex-col items-center justify-center text-center w-full">
+                    <div className="w-16 h-16 bg-[#1C1C1E] rounded-full flex items-center justify-center mb-6">
+                      <Inbox className="w-6 h-6 text-[#86868B]" strokeWidth={1.5} />
+                    </div>
+                    <h3 className="text-lg font-medium text-white mb-2">Kayıt yok</h3>
+                    <p className="text-[#86868B] text-[14px] max-w-sm">
+                      {randevularimFilter === 'kesinlesti'
+                        ? 'Henüz kesinleşmiş randevunuz bulunmuyor.'
+                        : randevularimFilter === 'all'
+                          ? 'Henüz randevu kaydınız yok.'
+                          : 'Bu filtrede görüntülenecek randevu yok.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col space-y-4 w-full">
+                    {danismanRandevularim.map((app) => {
+                      const needsConfirm =
+                        normalizeAppointmentStatus(app.status) ===
+                        'danisman_onayi_bekliyor';
+                      if (!needsConfirm) return renderAppointmentRow(app);
+
+                      return (
+                        <div
+                          key={app.id}
+                          className="bg-[#161616]/90 backdrop-blur-xl border border-[#E5B540]/20 rounded-2xl p-6 sm:p-8 space-y-4"
+                        >
+                          <div className="flex justify-between items-start gap-4">
+                            <div>
+                              <p className="text-[17px] font-medium text-white">
+                                {app.il} / {app.ilce}
+                                {app.semt ? ` / ${app.semt}` : ''}
+                              </p>
+                              <p className="text-[13px] text-[#86868B] mt-1 inline-flex flex-wrap items-center gap-2">
+                                <span>
+                                  Teklif: {app.tarih || '—'} • {app.saatBlok || '—'} •{' '}
+                                  {toTitleCaseName(app.pilot)}
+                                </span>
+                                {app.tarih && app.il && (
+                                  <WeatherBadge
+                                    il={app.il}
+                                    ilce={app.ilce}
+                                    tarih={app.tarih}
+                                    variant="compact"
+                                  />
+                                )}
+                              </p>
+                            </div>
+                            {getStatusBadge(app.status)}
+                          </div>
+                          {(app.danismanNotu || app.aciklama) && (
+                            <p className="text-[13px] text-[#86868B] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
+                              {app.danismanNotu || app.aciklama}
+                            </p>
+                          )}
+                          {rejectingId === app.id ? (
+                            <div className="space-y-3">
+                              <textarea
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                placeholder="Reddetme sebebi..."
+                                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                              />
+                              <div className="flex gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRejectingId(null);
+                                    setRejectReason('');
+                                  }}
+                                  className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer transition-all duration-300 ease-zebra"
+                                >
+                                  Vazgeç
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={!rejectReason.trim() || processingId === app.id}
+                                  onClick={() => handleRejectSubmit(app)}
+                                  className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] cursor-pointer disabled:opacity-50 transition-all duration-300 ease-zebra"
+                                >
+                                  İptal Et
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setRejectingId(app.id)}
+                                className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] transition-all duration-300 ease-zebra cursor-pointer"
+                              >
+                                Reddet
+                              </button>
+                              <button
+                                type="button"
+                                disabled={processingId === app.id}
+                                onClick={() => handleDanismanConfirm(app)}
+                                className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 transition-all duration-300 ease-zebra cursor-pointer flex items-center justify-center"
+                              >
+                                {processingId === app.id ? (
+                                  <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  'Kesinleştir'
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 

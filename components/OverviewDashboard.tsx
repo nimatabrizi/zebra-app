@@ -195,7 +195,7 @@ export default function OverviewDashboard({
   const until = upcoming ? daysUntil(upcoming.tarih) : null;
 
   const pathways: Pathway[] = useMemo(() => {
-    const randevuTab = isManager ? 'takvim' : 'randevu';
+    const randevuTab = isManager ? 'takvim' : 'randevularim';
     const randevuBadge = isManager ? pendingCount : confirmCount;
     const analizTab = role === 'broker' ? 'cekim-raporu' : 'pazar';
 
@@ -223,7 +223,7 @@ export default function OverviewDashboard({
       {
         id: 'randevu',
         title: 'Randevu Sistemi',
-        hint: isManager ? 'Takvim & talepler' : 'Talep & kesinleştirme',
+        hint: isManager ? 'Takvim & talepler' : 'Randevularım & talep',
         icon: CalendarCheck,
         tab: randevuTab,
         className: 'md:col-span-2 lg:col-span-4',

@@ -16,6 +16,7 @@ export type SidebarItem = {
   /** lucide icon key resolved in SidebarNav */
   icon:
     | 'LayoutGrid'
+    | 'CalendarDays'
     | 'Users'
     | 'Briefcase'
     | 'Aperture'
@@ -33,19 +34,14 @@ export type SidebarItem = {
 export const CORE_LIVE_TABS = [
   'genel',
   'takvim',
+  'randevularim',
   'randevu',
   'cekim',
   'cekim-raporu',
 ] as const;
 
-function productTreeBase(): SidebarItem[] {
+function sharedProductModules(): SidebarItem[] {
   return [
-    {
-      id: 'genel',
-      label: 'Genel Bakış',
-      icon: 'LayoutGrid',
-      isEnabled: true,
-    },
     {
       id: 'musteri',
       label: 'Müşteri Yönetimi',
@@ -80,7 +76,7 @@ function productTreeBase(): SidebarItem[] {
   ];
 }
 
-function productTreeTail(opts: { brokerReport: boolean }): SidebarItem[] {
+function productTreeTail(): SidebarItem[] {
   return [
     {
       id: 'reklam',
@@ -98,9 +94,6 @@ function productTreeTail(opts: { brokerReport: boolean }): SidebarItem[] {
       icon: 'LineChart',
       isEnabled: true,
       children: [
-        ...(opts.brokerReport
-          ? [{ id: 'cekim-raporu', label: 'Çekim Raporu', isEnabled: true }]
-          : []),
         { id: 'pazar', label: 'Pazar Analiz', isEnabled: true },
         { id: 'bolge-raporu', label: 'Bölge raporu', isEnabled: true },
         { id: 'cma', label: 'Karşılaştırmalı Piyasa Analizi (CMA)', isEnabled: true },
@@ -124,18 +117,30 @@ function productTreeTail(opts: { brokerReport: boolean }): SidebarItem[] {
 /** Danışman kabuğu */
 export function buildConsultantNav(): SidebarItem[] {
   return [
-    ...productTreeBase(),
+    {
+      id: 'genel',
+      label: 'Genel Bakış',
+      icon: 'LayoutGrid',
+      isEnabled: true,
+    },
+    {
+      id: 'takvim',
+      label: 'Takvim',
+      icon: 'CalendarDays',
+      isEnabled: true,
+    },
+    ...sharedProductModules(),
     {
       id: 'randevu-sistemi',
       label: 'Randevu Sistemi',
       icon: 'CalendarCheck',
       isEnabled: true,
       children: [
-        { id: 'takvim', label: 'Çekim takvimi', isEnabled: true },
+        { id: 'randevularim', label: 'Randevularım', isEnabled: true },
         { id: 'randevu', label: 'Randevu Talebi', isEnabled: true },
       ],
     },
-    ...productTreeTail({ brokerReport: false }),
+    ...productTreeTail(),
   ];
 }
 
@@ -143,7 +148,13 @@ export function buildConsultantNav(): SidebarItem[] {
 export function buildManagerNav(role: string): SidebarItem[] {
   const isBroker = role === 'broker';
   return [
-    ...productTreeBase(),
+    {
+      id: 'genel',
+      label: 'Genel Bakış',
+      icon: 'LayoutGrid',
+      isEnabled: true,
+    },
+    ...sharedProductModules(),
     {
       id: 'randevu-sistemi',
       label: 'Randevu Sistemi',
@@ -152,10 +163,13 @@ export function buildManagerNav(role: string): SidebarItem[] {
       children: [
         { id: 'takvim', label: 'Çekim takvimi', isEnabled: true },
         { id: 'cekim', label: 'Çekim Talepleri', isEnabled: true },
+        ...(isBroker
+          ? [{ id: 'cekim-raporu', label: 'Çekim Raporu', isEnabled: true }]
+          : []),
         { id: 'randevu', label: 'Randevu Talebi', isEnabled: true },
       ],
     },
-    ...productTreeTail({ brokerReport: isBroker }),
+    ...productTreeTail(),
   ];
 }
 
@@ -187,7 +201,9 @@ export function findParentNavId(
  * Rol yetkisi olmayan core sekmeler de Yakında gösterir.
  */
 export function isLiveContentTab(tabId: string, role: string): boolean {
-  if (tabId === 'genel' || tabId === 'takvim') return true;
+  if (tabId === 'genel') return true;
+  if (tabId === 'takvim') return true;
+  if (tabId === 'randevularim' && role === 'danisman') return true;
   if (tabId === 'randevu' && role === 'danisman') return true;
   if (
     tabId === 'cekim' &&

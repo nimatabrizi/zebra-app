@@ -28,6 +28,15 @@ body {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/* iOS Safari: input/textarea <16px → otomatik zoom engeli */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Panel entrance + skeleton shimmer (tüm sekmeler) */
 @keyframes panel-fade-up {
   from {

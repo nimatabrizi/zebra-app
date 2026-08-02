@@ -7,6 +7,7 @@ import {
   Briefcase,
   Building2,
   CalendarCheck,
+  CalendarDays,
   ChevronDown,
   LayoutGrid,
   LineChart,
@@ -25,6 +26,7 @@ import { usesManagerShell } from '../lib/authIdentity';
 
 const ICONS: Record<SidebarItem['icon'], LucideIcon> = {
   LayoutGrid,
+  CalendarDays,
   Users,
   Briefcase,
   Aperture,
