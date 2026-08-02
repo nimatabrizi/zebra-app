@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { Appointment } from '../types/appointments';
 import { normalizeAppointmentStatus } from '../lib/appointmentUtils';
+import { toTitleCaseName } from '../lib/formatName';
 import {
   getBusyDatesInMonth,
   getDayAgenda,
@@ -190,7 +191,7 @@ export default function SmartSchedulingAssistant({
     >
       <div className="absolute inset-0 bg-[#0A0A0A]/60 backdrop-blur-md" />
       <div
-        className="relative z-10 w-full sm:max-w-[860px] h-[min(96dvh,960px)] sm:h-auto sm:max-h-[min(92vh,680px)] flex flex-col bg-[#161616] border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-out overflow-hidden"
+        className="relative z-10 w-full sm:max-w-[860px] h-[min(96dvh,960px)] sm:h-auto sm:max-h-[min(92vh,680px)] flex flex-col bg-[#161616] border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header — sabit */}
@@ -432,7 +433,7 @@ export default function SmartSchedulingAssistant({
                                 </p>
                                 {app.danismanIsmi && (
                                   <p className="text-[11px] text-[#666666] mt-1">
-                                    {app.danismanIsmi}
+                                    {toTitleCaseName(app.danismanIsmi)}
                                   </p>
                                 )}
                               </div>

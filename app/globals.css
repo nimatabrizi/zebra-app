@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --zebra-ease: cubic-bezier(0.625, 0.05, 0, 1);
 }
 
 @theme inline {
@@ -10,6 +11,8 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --ease-zebra: cubic-bezier(0.625, 0.05, 0, 1);
+  --default-transition-timing-function: cubic-bezier(0.625, 0.05, 0, 1);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,5 +25,241 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Panel entrance + skeleton shimmer (tüm sekmeler) */
+@keyframes panel-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes overview-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.panel-enter,
+.overview-enter {
+  animation: panel-fade-up 0.7s cubic-bezier(0.625, 0.05, 0, 1) both;
+}
+
+.overview-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: overview-shimmer 1.4s cubic-bezier(0.625, 0.05, 0, 1) infinite;
+}
+
+/* Genel Bakış — bento entrance + ambient motion */
+@keyframes bento-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bento-orb-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, -4%, 0) scale(1.08);
+  }
+}
+
+@keyframes bento-orb-drift-alt {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-5%, 6%, 0) scale(1.06);
+  }
+}
+
+@keyframes bento-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes bento-grain-shift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-2%, -3%, 0);
+  }
+}
+
+.bento-enter {
+  animation: bento-fade-up 0.75s cubic-bezier(0.625, 0.05, 0, 1) both;
+}
+
+.bento-ambient {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.bento-ambient__orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(48px);
+  will-change: transform, opacity;
+  animation: bento-orb-drift 18s cubic-bezier(0.625, 0.05, 0, 1) infinite,
+    bento-breathe 10s cubic-bezier(0.625, 0.05, 0, 1) infinite;
+}
+
+.bento-ambient__orb--2 {
+  animation-name: bento-orb-drift-alt, bento-breathe;
+  animation-duration: 22s, 12s;
+  animation-delay: -4s, -2s;
+}
+
+.bento-ambient__grain {
+  position: absolute;
+  inset: -20%;
+  opacity: 0.035;
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.55) 0.55px,
+    transparent 0.55px
+  );
+  background-size: 14px 14px;
+  animation: bento-grain-shift 28s linear infinite;
+  mix-blend-mode: soft-light;
+}
+
+.bento-ambient--mesh-studio .bento-ambient__orb--1 {
+  width: 55%;
+  height: 55%;
+  left: -8%;
+  top: -18%;
+  background: rgba(120, 120, 128, 0.28);
+}
+
+.bento-ambient--mesh-studio .bento-ambient__orb--2 {
+  width: 48%;
+  height: 48%;
+  right: -12%;
+  bottom: -22%;
+  background: rgba(72, 72, 78, 0.35);
+}
+
+.bento-ambient--mesh-a .bento-ambient__orb--1 {
+  width: 60%;
+  height: 60%;
+  left: -20%;
+  top: -30%;
+  background: rgba(90, 100, 120, 0.18);
+}
+
+.bento-ambient--mesh-a .bento-ambient__orb--2 {
+  width: 50%;
+  height: 50%;
+  right: -25%;
+  bottom: -35%;
+  background: rgba(60, 60, 68, 0.22);
+}
+
+.bento-ambient--mesh-b .bento-ambient__orb--1 {
+  width: 55%;
+  height: 55%;
+  right: -15%;
+  top: -25%;
+  background: rgba(110, 100, 90, 0.16);
+}
+
+.bento-ambient--mesh-b .bento-ambient__orb--2 {
+  width: 45%;
+  height: 45%;
+  left: -20%;
+  bottom: -30%;
+  background: rgba(50, 55, 65, 0.24);
+}
+
+.bento-ambient--mesh-c .bento-ambient__orb--1 {
+  width: 58%;
+  height: 58%;
+  left: -18%;
+  bottom: -28%;
+  background: rgba(70, 110, 90, 0.14);
+}
+
+.bento-ambient--mesh-c .bento-ambient__orb--2 {
+  width: 42%;
+  height: 42%;
+  right: -18%;
+  top: -22%;
+  background: rgba(55, 55, 62, 0.22);
+}
+
+.bento-ambient--mesh-d .bento-ambient__orb--1 {
+  width: 52%;
+  height: 52%;
+  right: -22%;
+  top: -20%;
+  background: rgba(120, 90, 80, 0.14);
+}
+
+.bento-ambient--mesh-d .bento-ambient__orb--2 {
+  width: 48%;
+  height: 48%;
+  left: -24%;
+  bottom: -28%;
+  background: rgba(48, 48, 56, 0.25);
+}
+
+.bento-ambient--mesh-e .bento-ambient__orb--1 {
+  width: 56%;
+  height: 56%;
+  left: -16%;
+  top: -24%;
+  background: rgba(80, 95, 120, 0.16);
+}
+
+.bento-ambient--mesh-e .bento-ambient__orb--2 {
+  width: 44%;
+  height: 44%;
+  right: -20%;
+  bottom: -26%;
+  background: rgba(58, 58, 64, 0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter,
+  .overview-enter,
+  .overview-skeleton,
+  .bento-enter,
+  .bento-ambient__orb,
+  .bento-ambient__orb--2,
+  .bento-ambient__grain {
+    animation: none;
+  }
 }

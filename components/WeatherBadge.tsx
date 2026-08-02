@@ -30,13 +30,16 @@ export default function WeatherBadge({
   className = '',
 }: WeatherBadgeProps) {
   const [day, setDay] = useState<DayWeather | null>(null);
+  const [loading, setLoading] = useState(Boolean(tarih && il));
 
   useEffect(() => {
     let cancelled = false;
     if (!tarih || !il) {
       setDay(null);
+      setLoading(false);
       return;
     }
+    setLoading(true);
     (async () => {
       try {
         const forecast = await fetchLocationForecast(il, ilce);
@@ -44,12 +47,29 @@ export default function WeatherBadge({
         setDay(getDayFromForecast(forecast, tarih));
       } catch {
         if (!cancelled) setDay(null);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [il, ilce, tarih]);
+
+  if (loading) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-md border border-white/[0.06] ${className}`}
+        aria-busy="true"
+        aria-label="Hava durumu yükleniyor"
+      >
+        <span className="overview-skeleton h-3 w-3 rounded-sm" />
+        {variant !== 'icon' && (
+          <span className="overview-skeleton h-2.5 w-8 rounded-full" />
+        )}
+      </span>
+    );
+  }
 
   if (!day) return null;
 

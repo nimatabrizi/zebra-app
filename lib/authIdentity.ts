@@ -38,21 +38,9 @@ export function normalizeWhatsappPassword(raw: string): string {
 
 export type AppRole = 'broker' | 'selim' | 'fatima' | 'danisman' | 'yonetici';
 
-/** Rol → giriş sonrası varsayılan panel sekmesi */
-export function defaultTabForRole(role: AppRole | string): string {
-  switch (role) {
-    case 'danisman':
-      return 'randevu';
-    case 'selim':
-    case 'fatima':
-      return 'cekim';
-    case 'broker':
-      return 'genel';
-    case 'yonetici':
-      return 'takvim';
-    default:
-      return 'genel';
-  }
+/** Rol → giriş sonrası varsayılan panel sekmesi (her zaman Genel Bakış) */
+export function defaultTabForRole(_role?: AppRole | string): string {
+  return 'genel';
 }
 
 export function roleLabel(role: AppRole | string): string {

@@ -16,10 +16,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { 
-  Search, Plus, LayoutGrid, Briefcase, Camera, Megaphone, CalendarCheck, Building2, Globe, 
-  LineChart, Map, Mail, X, ChevronDown, LogOut, ChevronLeft, ChevronRight, Clock, 
-  MapPin, Image as ImageIcon, AlignLeft, User, CheckCircle2, AlertCircle, Inbox, 
-  History, Bell, CheckCheck, PlayCircle, CalendarDays, Pencil, BarChart3
+  Search, Plus, Camera, Building2, 
+  X, ChevronDown, LogOut, ChevronLeft, ChevronRight, Clock, 
+  MapPin, AlignLeft, User, CheckCircle2, AlertCircle, Inbox, 
+  History, Bell, CheckCheck, CalendarDays, Pencil
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import {
@@ -32,6 +32,7 @@ import {
   canCreateManualAppointment,
   manualEntryDisplayName,
 } from '../lib/authIdentity';
+import { toTitleCaseName } from '../lib/formatName';
 import {
   formatAppointmentRow,
   isConfirmedStatus as isConfirmedStatusUtil,
@@ -50,8 +51,17 @@ import {
   isNotificationOwnedBy,
 } from '../lib/notifications';
 import CekimRaporuPanel from '../components/CekimRaporuPanel';
+import ComingSoonPlaceholder from '../components/ComingSoonPlaceholder';
+import OverviewDashboard from '../components/OverviewDashboard';
+import SidebarNav from '../components/SidebarNav';
 import SmartSchedulingAssistant from '../components/SmartSchedulingAssistant';
 import WeatherBadge from '../components/WeatherBadge';
+import {
+  buildConsultantNav,
+  buildManagerNav,
+  collectNavTabIds,
+  isLiveContentTab,
+} from '../lib/sidebarNav';
 
 export default function App() {
   // --- PRESERVED LOGIC & STATE MANAGEMENT ---
@@ -72,6 +82,7 @@ const [activeTab, setActiveTab] = useState('genel');
   const isLoggedInRef = useRef(false);
   const currentUserIdRef = useRef('');
   const rememberMeRef = useRef(false);
+  const mainScrollRef = useRef(null);
 
   useEffect(() => {
     isLoggedInRef.current = isLoggedIn;
@@ -84,6 +95,19 @@ const [activeTab, setActiveTab] = useState('genel');
   useEffect(() => {
     rememberMeRef.current = rememberMe;
   }, [rememberMe]);
+
+  /** Sekme değişince ana içerik her zaman en üstten açılsın */
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [activeTab]);
+
+  /** Eski teklif-onay URL/sekmesi → Randevu Talebi */
+  useEffect(() => {
+    if (activeTab === 'teklif-onay') {
+      setActiveTab('randevu');
+    }
+  }, [activeTab]);
 
   const REMEMBER_ME_KEY = 'zebra_remember_me';
   const TAB_SESSION_KEY = 'zebra_session_active';
@@ -265,7 +289,7 @@ const [activeTab, setActiveTab] = useState('genel');
       blob.includes('kesinleştirmenizi') ||
       blob.includes('kesinlestirmenizi')
     ) {
-      return role === 'danisman' ? 'teklif-onay' : 'cekim';
+      return role === 'danisman' ? 'randevu' : 'cekim';
     }
     if (
       blob.includes('yarın') ||
@@ -517,8 +541,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
   /** Broker bildirimi: tam isimlerle */
   const buildBrokerApprovedMessage = (danismanTamAdi, pilotTamAdi, tarih) => {
-    const danisman = String(danismanTamAdi || '').trim();
-    const pilotLabel = withTurkishAblative(String(pilotTamAdi || '').trim());
+    const danisman = toTitleCaseName(danismanTamAdi);
+    const pilotLabel = withTurkishAblative(toTitleCaseName(pilotTamAdi));
     const dateLabel = formatNotifDayMonth(tarih);
     return `${danisman} ${pilotLabel} ${dateLabel} tarihinde çekim randevusu aldı.`;
   };
@@ -902,7 +926,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       notifRows.push({
         user_id: pilotUserId,
         title: 'Yeni Kesinleşmiş Çekim',
-        message: `${manualForm.danismanIsmi.trim()} — ${locationLabel} için ${dateLabel} • ${manualForm.saatBlok} çekimi takviminize eklendi.`,
+        message: `${toTitleCaseName(manualForm.danismanIsmi.trim())} — ${locationLabel} için ${dateLabel} • ${manualForm.saatBlok} çekimi takviminize eklendi.`,
       });
     }
     if (notifRows.length > 0) {
@@ -1052,16 +1076,28 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       typeof window !== 'undefined'
         ? new URLSearchParams(window.location.search).get('tab')
         : null;
-    const allowedTabs = ['genel', 'takvim', 'cekim', 'randevu', 'teklif-onay', 'cekim-raporu'];
+    const navItems = usesManagerShell(appRole)
+      ? buildManagerNav(appRole)
+      : buildConsultantNav();
+    const allowedTabs = collectNavTabIds(navItems);
     let nextTab =
-      (tabFromUrl && allowedTabs.includes(tabFromUrl) && tabFromUrl) ||
       options.tab ||
+      (tabFromUrl && allowedTabs.includes(tabFromUrl) && tabFromUrl) ||
       defaultTabForRole(appRole);
-    // Çekim Raporu yalnızca broker
+    // Eski teklif-onay sekmesi → Randevu Talebi
+    if (tabFromUrl === 'teklif-onay' || nextTab === 'teklif-onay') {
+      nextTab = 'randevu';
+    }
+    // Çekim Raporu yalnızca broker — diğerleri Yakında sayfasına düşmesin, genel'e al
     if (nextTab === 'cekim-raporu' && appRole !== 'broker') {
       nextTab = 'genel';
     }
     setActiveTab(nextTab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', nextTab);
+      window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+    }
 
     // Beni hatırla: profil önbelleğini localStorage'a yaz; aksi halde temizle
     if (options.persist) {
@@ -1125,7 +1161,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         }
         const persist =
           rememberMeRef.current || shouldPersistProfileCache();
-        await applyProfileSession(session.user.id, { persist });
+        // Taze girişte her zaman Genel Bakış
+        await applyProfileSession(session.user.id, {
+          persist,
+          ...(event === 'SIGNED_IN' ? { tab: 'genel' } : {}),
+        });
         return;
       }
 
@@ -1211,7 +1251,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
-    await applyProfileSession(authData.user.id, { persist: rememberMe });
+    await applyProfileSession(authData.user.id, { persist: rememberMe, tab: 'genel' });
   };
 
   // 3. GÜVENLİ ÇIKIŞ
@@ -1325,7 +1365,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     const { error: notifError } = await supabase.from('notifications').insert([{
       user_id: pilotUserId,
       title: 'Yeni Çekim Talebi',
-      message: `${fullName}, ${locationLabel} bölgesi için çekim talebi oluşturdu. Tarih önerinizi bekliyor.`,
+      message: `${toTitleCaseName(fullName)}, ${locationLabel} bölgesi için çekim talebi oluşturdu. Tarih önerinizi bekliyor.`,
     }]);
     if (notifError) {
       console.error('Pilot bildirimi yazılamadı:', notifError.message, notifError);
@@ -1416,7 +1456,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       const { error: notifError } = await supabase.from('notifications').insert([{
         user_id: pilotUserId,
         title: 'Randevu Kesinleşti',
-        message: `${req.danismanIsmi}, ${dateLabel} • ${req.saatBlok || ''} teklifinizi kesinleştirdi. Randevu kesinleşti.`,
+        message: `${toTitleCaseName(req.danismanIsmi)}, ${dateLabel} • ${req.saatBlok || ''} teklifinizi kesinleştirdi. Randevu kesinleşti.`,
       }]);
       if (notifError) {
         console.error('Pilot kesinleşme bildirimi yazılamadı:', notifError.message, notifError);
@@ -1935,21 +1975,21 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
               <span className={`text-[13px] truncate mt-1 ${isRejected ? 'text-[#FF3B30]/50' : 'text-[#86868B]'}`}>
                 {app.portfoyTuru || app.danismanNotu || '—'}
                 {usesManagerShell(role)
-                  ? ` • Danışman: ${app.danismanIsmi}`
+                  ? ` • Danışman: ${toTitleCaseName(app.danismanIsmi)}`
                   : role === 'danisman'
-                    ? ` • ${app.danismanIsmi}${app.pilot ? ` • Pilot: ${app.pilot}` : ''}`
-                    : ` • Pilot: ${app.pilot}`}
+                    ? ` • ${toTitleCaseName(app.danismanIsmi)}${app.pilot ? ` • Pilot: ${toTitleCaseName(app.pilot)}` : ''}`
+                    : ` • Pilot: ${toTitleCaseName(app.pilot)}`}
                 {role === 'broker' && (() => {
                   const owner = app.ownerRole || ownerRoleFromPilot(app.pilot);
                   const islem = ownerRoleDisplayName(owner);
                   return islem ? (
-                    <span className="text-neutral-400"> • İşlem: {islem}</span>
+                    <span className="text-neutral-400"> • İşlem: {toTitleCaseName(islem)}</span>
                   ) : null;
                 })()}
               </span>
               {app.isManual && (
                 <span className="inline-flex mt-2 px-2 py-0.5 rounded-md text-[10px] font-medium tracking-wide uppercase bg-white/5 text-neutral-400 border border-white/5">
-                  Manuel Giriş: {manualEntryDisplayName(app.createdByRole)}
+                  Manuel Giriş: {toTitleCaseName(manualEntryDisplayName(app.createdByRole))}
                 </span>
               )}
             </div>
@@ -1992,7 +2032,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         </div>
 
         {isRejected && (
-          <div className={`transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
+          <div className={`transition-all duration-300 ease-zebra ${isExpanded ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
             <div className="px-6 pb-6 pt-1">
               <div className="bg-[#2A1515] border border-[#FF3B30]/20 rounded-xl p-4 flex items-start space-x-3 shadow-inner">
                 <AlertCircle className="w-4 h-4 text-[#FF3B30] shrink-0 mt-0.5" />
@@ -2008,35 +2048,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     );
   };
 
-  const consultantMenuItems = [
-    { id: 'genel', label: 'Genel Bakış', icon: LayoutGrid, isEnabled: true },
-    { id: 'takvim', label: 'Çekim Takvimi', icon: CalendarDays, isEnabled: true },
-    { id: 'randevu', label: 'Randevu Talebi Oluştur', icon: CalendarCheck, isEnabled: true },
-    { id: 'teklif-onay', label: 'Kesinleştirmenizi Bekleyen Teklifler', icon: CheckCheck, isEnabled: true },
-    { id: 'portfoy', label: 'Portföy Havuzu', icon: Briefcase, isEnabled: false },
-    { id: 'studyo', label: 'Zebra Stüdyo', icon: Camera, isEnabled: false },
-    { id: 'kampanya', label: 'Kampanyalar', icon: Megaphone, isEnabled: false },
-    { id: 'kurumsal', label: 'Kurumsal', icon: Building2, isEnabled: false },
-    { id: 'pazar', label: 'Pazar Analiz Raporu', icon: LineChart, isEnabled: false },
-  ];
-
-  const managerMenuItems = [
-    { id: 'genel', label: 'Genel Bakış', icon: LayoutGrid, isEnabled: true },
-    { id: 'takvim', label: 'Çekim Takvimi', icon: CalendarDays, isEnabled: true },
-    ...(role === 'broker'
-      ? [{ id: 'cekim-raporu', label: 'Çekim Raporu', icon: BarChart3, isEnabled: true }]
-      : []),
-    { id: 'cekim', label: 'Çekim Talepleri', icon: Camera, isEnabled: true },
-    { id: 'danisman', label: 'Danışman Talepleri', icon: User, isEnabled: false },
-    { id: 'kurumsal', label: 'Kurumsal', icon: Building2, isEnabled: false },
-  ];
-
-  const currentMenuItems = usesManagerShell(role) ? managerMenuItems : consultantMenuItems;
-
   const navigateToTab = (tabId) => {
-    if (tabId === 'cekim-raporu' && role !== 'broker') return;
+    if (tabId === 'teklif-onay') tabId = 'randevu';
     setActiveTab(tabId);
     setIsMobileMenuOpen(false);
+    if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       url.searchParams.set('tab', tabId);
@@ -2088,7 +2104,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Tam İsim"
                 autoComplete="username"
-                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-out text-base md:text-sm"
+                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-base md:text-sm"
                 required
               />
             </div>
@@ -2100,7 +2116,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="WhatsApp Numarası"
                 autoComplete="current-password"
-                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-out text-base md:text-sm"
+                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-base md:text-sm"
                 required
               />
             </div>
@@ -2109,18 +2125,18 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
               <label className="flex items-center space-x-3 cursor-pointer group active:scale-[0.98] transition-transform">
                 <div className="relative flex items-center">
                   <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="peer sr-only cursor-pointer" />
-                  <div className="w-5 h-5 bg-[#1C1C1E] border border-white/10 rounded-md peer-checked:bg-white peer-checked:border-white transition-all duration-300 ease-out flex items-center justify-center">
+                  <div className="w-5 h-5 bg-[#1C1C1E] border border-white/10 rounded-md peer-checked:bg-white peer-checked:border-white transition-all duration-300 ease-zebra flex items-center justify-center">
                     {rememberMe && <CheckCircle2 className="w-3.5 h-3.5 text-black" strokeWidth={3} />}
                   </div>
                 </div>
-                <span className="text-[13px] text-[#86868B] group-hover:text-white transition-colors duration-300 ease-out">Beni hatırla</span>
+                <span className="text-[13px] text-[#86868B] group-hover:text-white transition-colors duration-300 ease-zebra">Beni hatırla</span>
               </label>
             </div>
 
             <div className="pt-6">
               <button 
                 type="submit" 
-                className="w-full h-[56px] bg-white text-black text-[15px] font-medium rounded-xl hover:bg-gray-200 active:scale-[0.98] transition-all duration-300 ease-out flex items-center justify-center cursor-pointer"
+                className="w-full h-[56px] bg-white text-black text-[15px] font-medium rounded-xl hover:bg-gray-200 active:scale-[0.98] transition-all duration-300 ease-zebra flex items-center justify-center cursor-pointer"
               >
                 Giriş Yap
               </button>
@@ -2174,7 +2190,7 @@ const pendingRequests = bookedAppointments.filter(app => {
   /** Sidebar badge: menü başına bekleyen eylem sayısı */
   const menuBadgeCounts = {
     cekim: canApproveAppointments(role) ? pendingRequests.length : 0,
-    'teklif-onay': role === 'danisman' ? danismanConfirmRequests.length : 0,
+    randevu: role === 'danisman' ? danismanConfirmRequests.length : 0,
   };
 
   const openOfferCalendar = () => {
@@ -2218,7 +2234,7 @@ const pendingRequests = bookedAppointments.filter(app => {
     <div className="min-h-screen flex font-sans antialiased text-[#EDEDED] overflow-hidden selection:bg-white/20 selection:text-white bg-[#0A0A0A]">
       
       {/* Toast Notification */}
-      <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[110] transition-all duration-500 ease-out pointer-events-none
+      <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[110] transition-all duration-500 ease-zebra pointer-events-none
         ${toastMessage ? 'opacity-100 transform translate-y-0 scale-100' : 'opacity-0 transform translate-y-8 scale-95'}
       `}>
         <div className="bg-[#1C1C1E]/90 backdrop-blur-xl border border-white/10 text-white px-6 py-4 rounded-full shadow-2xl flex items-center space-x-3">
@@ -2230,7 +2246,7 @@ const pendingRequests = bookedAppointments.filter(app => {
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-[#0A0A0A]/60 backdrop-blur-lg z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-[#111111]/90 backdrop-blur-2xl border border-white/10 rounded-2xl p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in-95 duration-500 ease-out">
+          <div className="bg-[#111111]/90 backdrop-blur-2xl border border-white/10 rounded-2xl p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in-95 duration-500 ease-zebra">
             <div className="w-20 h-20 bg-[#1C1C1E] border border-white/5 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner relative">
               <CheckCircle2 className="w-10 h-10 text-white relative z-10" strokeWidth={2.5} />
             </div>
@@ -2263,7 +2279,7 @@ const pendingRequests = bookedAppointments.filter(app => {
           onClick={closeEditModal}
         >
           <div
-            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-out max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
+            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-white/5 shrink-0">
@@ -2352,7 +2368,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                               ${editForm.pilot === pilot ? 'bg-white text-black' : 'bg-[#1C1C1E] text-white hover:bg-[#2C2C2E]'}`}
                           >
                             <User className={`w-3.5 h-3.5 mr-3 ${editForm.pilot === pilot ? 'text-black' : 'text-white'}`} />
-                            <span className="text-[13px] font-medium truncate">{pilot}</span>
+                            <span className="text-[13px] font-medium truncate">{toTitleCaseName(pilot)}</span>
                           </button>
                         ))}
                       </div>
@@ -2484,7 +2500,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {PILOT_OPTIONS.map((pilot) => (
                             <button key={pilot} type="button" onClick={() => handleEditFormChange('pilot', pilot)} className={`w-full flex items-center p-3.5 rounded-xl text-left cursor-pointer ${editForm.pilot === pilot ? 'bg-white text-black' : 'bg-[#1C1C1E] text-white'}`}>
-                              <span className="text-[13px] font-medium truncate">{pilot}</span>
+                              <span className="text-[13px] font-medium truncate">{toTitleCaseName(pilot)}</span>
                             </button>
                           ))}
                         </div>
@@ -2550,7 +2566,7 @@ const pendingRequests = bookedAppointments.filter(app => {
           onClick={closeManualModal}
         >
           <div
-            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-out max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
+            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-white/5 shrink-0">
@@ -2715,7 +2731,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                       >
                         <option value="" disabled>Danışman seçin</option>
                         {consultants.map((name) => (
-                          <option key={name} value={name}>{name}</option>
+                          <option key={name} value={name}>{toTitleCaseName(name)}</option>
                         ))}
                       </select>
                       <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
@@ -2743,13 +2759,15 @@ const pendingRequests = bookedAppointments.filter(app => {
                           onClick={() => handleManualFormChange('pilot', pilot)}
                           className={`w-full flex items-center p-3.5 rounded-xl text-left cursor-pointer ${manualForm.pilot === pilot ? 'bg-white text-black' : 'bg-[#1C1C1E] text-white hover:bg-[#2C2C2E]'}`}
                         >
-                          <span className="text-[13px] font-medium truncate">{pilot}</span>
+                          <span className="text-[13px] font-medium truncate">{toTitleCaseName(pilot)}</span>
                         </button>
                       ))}
                     </div>
                   ) : (
                     <div className="w-full bg-[#1C1C1E] border border-white/5 rounded-xl px-4 h-12 flex items-center text-[14px] text-[#86868B]">
-                      {manualForm.pilot || lockedPilotForRole(role)}
+                      {manualForm.pilot || lockedPilotForRole(role)
+                        ? toTitleCaseName(manualForm.pilot || lockedPilotForRole(role))
+                        : ''}
                       <span className="ml-auto text-[11px] uppercase tracking-wide">Kilitli</span>
                     </div>
                   )}
@@ -2783,11 +2801,11 @@ const pendingRequests = bookedAppointments.filter(app => {
       )}
 
       {/* Mobile Overlays */}
-      <div className={`fixed inset-0 bg-[#0A0A0A]/60 backdrop-blur-md z-40 lg:hidden transition-opacity duration-300 ease-out cursor-pointer ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsMobileMenuOpen(false)} />
-      <div className={`fixed inset-0 bg-[#0A0A0A]/60 backdrop-blur-md z-[60] transition-opacity duration-300 ease-out cursor-pointer ${isNotificationOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsNotificationOpen(false)} />
+      <div className={`fixed inset-0 bg-[#0A0A0A]/60 backdrop-blur-md z-40 lg:hidden transition-opacity duration-300 ease-zebra cursor-pointer ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsMobileMenuOpen(false)} />
+      <div className={`fixed inset-0 bg-[#0A0A0A]/60 backdrop-blur-md z-[60] transition-opacity duration-300 ease-zebra cursor-pointer ${isNotificationOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsNotificationOpen(false)} />
 
       {/* NOTIFICATION CENTER */}
-      <aside className={`fixed inset-y-0 right-0 w-full sm:w-[420px] bg-[#111111]/95 backdrop-blur-3xl shadow-2xl border-l border-white/5 z-[70] flex flex-col transition-transform duration-500 cubic-bezier-[0.16, 1, 0.3, 1] ${isNotificationOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 right-0 w-full sm:w-[420px] bg-[#111111]/95 backdrop-blur-3xl shadow-2xl border-l border-white/5 z-[70] flex flex-col transition-transform duration-500 ease-zebra ${isNotificationOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="h-20 flex items-center justify-between px-8 border-b border-white/5 shrink-0">
           <h2 className="text-lg font-medium tracking-tight text-white">Bildirimler</h2>
           <button onClick={() => setIsNotificationOpen(false)} className="w-8 h-8 flex items-center justify-center text-[#86868B] hover:text-white bg-[#1C1C1E] rounded-full transition-colors active:scale-95 cursor-pointer">
@@ -2821,7 +2839,7 @@ const pendingRequests = bookedAppointments.filter(app => {
       </aside>
 
       {/* SIDEBAR NAVIGATION */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[260px] bg-[#111111]/50 backdrop-blur-2xl border-r border-white/5 flex flex-col transition-transform duration-500 ease-out shrink-0 ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[272px] bg-[#111111]/55 backdrop-blur-2xl border-r border-white/5 flex flex-col transition-transform duration-500 ease-zebra shrink-0 ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="h-20 flex items-center px-6 shrink-0">
           <Image
             src="/icon-512x512.png"
@@ -2834,48 +2852,25 @@ const pendingRequests = bookedAppointments.filter(app => {
           <span className="text-[17px] font-medium tracking-tight text-white">Zebra 360</span>
         </div>
 
-        <nav className="flex-1 px-4 space-y-1 custom-scrollbar overflow-y-auto">
-          {currentMenuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            const badgeCount = menuBadgeCounts[item.id] || 0;
-            return (
-              <button
-                key={item.id}
-                disabled={!item.isEnabled}
-                onClick={() => {
-                  if (!item.isEnabled) return;
-                  navigateToTab(item.id);
-                }}
-                className={`w-full flex items-center px-4 py-2.5 rounded-xl transition-all duration-300 text-[14px] font-medium
-                  ${isActive ? 'bg-white/10 text-white shadow-inner cursor-pointer' 
-                    : item.isEnabled ? 'text-[#86868B] hover:bg-white/5 hover:text-white cursor-pointer' 
-                    : 'text-[#86868B] opacity-40 cursor-not-allowed'}`}
-              >
-                <Icon className={`w-[16px] h-[16px] mr-3.5 shrink-0 transition-colors duration-300 ${isActive ? 'text-white' : 'text-[#86868B]'}`} strokeWidth={2} />
-                <span className="truncate text-left flex-1">{item.label}</span>
-                {badgeCount > 0 && (
-                  <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#E5B540]/15 text-[#E5B540] text-[11px] font-medium tabular-nums flex items-center justify-center">
-                    {badgeCount > 99 ? '99+' : badgeCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
+        <SidebarNav
+          role={role}
+          activeTab={activeTab}
+          badgeCounts={menuBadgeCounts}
+          onNavigate={navigateToTab}
+        />
 
         <div className="p-4 shrink-0">
-          <div className="flex items-center justify-between bg-[#1C1C1E]/50 rounded-xl p-3 border border-white/5 transition-colors hover:bg-[#1C1C1E] cursor-pointer group">
+          <div className="flex items-center justify-between bg-[#1C1C1E]/50 rounded-xl p-3 border border-white/5 transition-colors duration-300 ease-zebra hover:bg-[#1C1C1E] cursor-pointer group">
             <div className="flex items-center">
               <div className="w-8 h-8 bg-white/10 text-white rounded-full flex items-center justify-center text-xs font-medium">
                 {usesManagerShell(role) ? 'YP' : 'NT'}
               </div>
               <div className="ml-3">
-                <p className="text-[13px] font-medium text-white leading-none">{fullName}</p>
+                <p className="text-[13px] font-medium text-white leading-none">{toTitleCaseName(fullName)}</p>
                 <p className="text-[11px] text-[#86868B] mt-1">{roleLabel(role)}</p>
               </div>
             </div>
-            <button onClick={handleLogout} className="text-[#86868B] group-hover:text-white transition-colors p-2 cursor-pointer active:scale-95" title="Çıkış Yap">
+            <button onClick={handleLogout} className="text-[#86868B] group-hover:text-white transition-colors duration-300 ease-zebra p-2 cursor-pointer active:scale-95" title="Çıkış Yap">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -2936,30 +2931,39 @@ const pendingRequests = bookedAppointments.filter(app => {
         </header>
 
         {/* SCROLLABLE CONTENT */}
-        <div className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-4 sm:px-6 md:px-12 lg:px-16 py-6 sm:py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <div
+          ref={mainScrollRef}
+          className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-4 sm:px-6 md:px-12 lg:px-16 py-6 sm:py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+        >
           <div className="w-full mx-auto space-y-10 pb-20 max-w-7xl">
             
-            {/* --- GENEL BAKIŞ (Completely Empty/Minimalist Entry) --- */}
+            {/* --- GENEL BAKIŞ / OVERVIEW --- */}
             {activeTab === 'genel' && (
-              <div className="animate-in fade-in duration-700 flex flex-col items-center justify-center h-[70vh] text-center">
-                <Image
-                  src="/icon-512x512.png"
-                  alt="Zebra 360"
-                  width={64}
-                  height={64}
-                  className="w-16 h-16 mb-6 rounded-full object-cover shadow-[0_0_40px_-12px_rgba(255,255,255,0.25)]"
-                  priority
-                />
-                <h1 className="text-3xl sm:text-4xl font-medium tracking-tight text-white mb-3">
-                  {greeting}, {fullName.split(' ')[0]}.
-                </h1>
-                <p className="text-[#86868B] text-[15px]">Zebra 360’a Hoş Geldiniz.</p>
-              </div>
+              <OverviewDashboard
+                greeting={greeting}
+                fullName={fullName}
+                role={role}
+                isPilot={isPilot}
+                appointments={bookedAppointments}
+                pendingCount={pendingRequests.length}
+                confirmCount={danismanConfirmRequests.length}
+                onNavigate={navigateToTab}
+                onOpenManual={
+                  canCreateManualAppointment(role)
+                    ? () => setIsManualModalOpen(true)
+                    : undefined
+                }
+              />
+            )}
+
+            {/* Henüz yayında olmayan sayfalar */}
+            {!isLiveContentTab(activeTab, role) && (
+              <ComingSoonPlaceholder />
             )}
 
             {/* --- ÇEKİM TAKVİMİ --- */}
             {activeTab === 'takvim' && (
-              <div className="animate-in fade-in duration-700 space-y-8">
+              <div className="panel-enter space-y-8">
                 <div className="mb-10">
                   <h1 className="text-2xl font-medium tracking-tight text-white">Çekim Takvimi</h1>
                   <p className="text-[#86868B] mt-2 text-[14px]">Operasyon takvimini görüntüleyin.</p>
@@ -3072,7 +3076,7 @@ const pendingRequests = bookedAppointments.filter(app => {
 
             {/* MANAGER: PENDING REQUESTS */}
             {canApproveAppointments(role) && activeTab === 'cekim' && (
-              <div className="animate-in fade-in duration-700 w-full">
+              <div className="panel-enter w-full">
                 <div className="mb-10 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div>
                     <h1 className="text-3xl font-medium tracking-tight text-white">Çekim Talepleri</h1>
@@ -3124,7 +3128,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                             <div key={req.id} className="bg-[#161616] border border-white/5 rounded-2xl p-6 sm:p-8 flex flex-col shadow-sm w-full">
                               <div className="flex justify-between items-start mb-4 gap-3">
                                 <div>
-                                  <h3 className="text-[17px] font-medium text-white">{req.danismanIsmi}</h3>
+                                  <h3 className="text-[17px] font-medium text-white">{toTitleCaseName(req.danismanIsmi)}</h3>
                                   <p className="text-[12px] text-[#86868B] mt-1 font-medium">
                                     {req.il} / {req.ilce}{req.semt ? ` / ${req.semt}` : ''}
                                   </p>
@@ -3154,7 +3158,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                                   <div className="text-[12px] text-[#86868B] bg-[#1C1C1E]/60 border border-white/5 rounded-xl p-3">
                                     Bu ilçede {districtConfirmed.length} kesinleşmiş iş var
                                     {districtConfirmed.slice(0, 3).map((a) => (
-                                      <span key={a.id} className="block mt-1 text-white/80">• {a.tarih || '—'} {a.saatBlok || ''} — {a.pilot}</span>
+                                      <span key={a.id} className="block mt-1 text-white/80">• {a.tarih || '—'} {a.saatBlok || ''} — {toTitleCaseName(a.pilot)}</span>
                                     ))}
                                   </div>
                                 )}
@@ -3273,11 +3277,99 @@ const pendingRequests = bookedAppointments.filter(app => {
 
             {/* CONSULTANT: REQUEST FORM */}
             {role === 'danisman' && activeTab === 'randevu' && (
-              <div className="animate-in fade-in duration-700 w-full">
+              <div className="panel-enter w-full">
                 <div className="mb-10">
-                  <h1 className="text-3xl font-medium tracking-tight text-white">Randevu Talebi Oluştur</h1>
+                  <h1 className="text-3xl font-medium tracking-tight text-white">Randevu Talebi</h1>
                   <p className="text-[#86868B] mt-2 text-[15px]">Bölge ve pilot seçin — tarih/saat pilot tarafından teklif edilecek.</p>
                 </div>
+
+                {danismanConfirmRequests.length > 0 && (
+                  <section className="mb-10 space-y-4">
+                    <div className="flex items-center gap-3 mb-1">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#E5B540]/25 bg-[#E5B540]/10">
+                        <CheckCheck className="w-4 h-4 text-[#E5B540]" strokeWidth={2} />
+                      </div>
+                      <div>
+                        <h2 className="text-[17px] font-medium tracking-tight text-white">
+                          Kesinleştirmenizi bekleyenler
+                        </h2>
+                        <p className="text-[13px] text-[#86868B] mt-0.5">
+                          {danismanConfirmRequests.length} teklif onayınızı bekliyor
+                        </p>
+                      </div>
+                    </div>
+
+                    {danismanConfirmRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        className="bg-[#161616]/90 backdrop-blur-xl border border-[#E5B540]/20 rounded-2xl p-6 sm:p-8 space-y-4"
+                      >
+                        <div className="flex justify-between items-start gap-4">
+                          <div>
+                            <p className="text-[17px] font-medium text-white">
+                              {req.il} / {req.ilce}{req.semt ? ` / ${req.semt}` : ''}
+                            </p>
+                            <p className="text-[13px] text-[#86868B] mt-1 inline-flex flex-wrap items-center gap-2">
+                              <span>
+                                Teklif: {req.tarih || '—'} • {req.saatBlok || '—'} • {toTitleCaseName(req.pilot)}
+                              </span>
+                              {req.tarih && req.il && (
+                                <WeatherBadge
+                                  il={req.il}
+                                  ilce={req.ilce}
+                                  tarih={req.tarih}
+                                  variant="compact"
+                                />
+                              )}
+                            </p>
+                          </div>
+                          {getStatusBadge(req.status)}
+                        </div>
+                        {(req.danismanNotu || req.aciklama) && (
+                          <p className="text-[13px] text-[#86868B] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
+                            {req.danismanNotu || req.aciklama}
+                          </p>
+                        )}
+                        {rejectingId === req.id ? (
+                          <div className="space-y-3">
+                            <textarea
+                              value={rejectReason}
+                              onChange={(e) => setRejectReason(e.target.value)}
+                              placeholder="Reddetme sebebi..."
+                              className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                            />
+                            <div className="flex gap-3">
+                              <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer transition-all duration-300 ease-zebra">Vazgeç</button>
+                              <button type="button" disabled={!rejectReason.trim() || processingId === req.id} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] cursor-pointer disabled:opacity-50 transition-all duration-300 ease-zebra">İptal Et</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setRejectingId(req.id)}
+                              className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] transition-all duration-300 ease-zebra cursor-pointer"
+                            >
+                              Reddet
+                            </button>
+                            <button
+                              type="button"
+                              disabled={processingId === req.id}
+                              onClick={() => handleDanismanConfirm(req)}
+                              className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 transition-all duration-300 ease-zebra cursor-pointer flex items-center justify-center"
+                            >
+                              {processingId === req.id ? (
+                                <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                'Kesinleştir'
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </section>
+                )}
 
                 <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 w-full mb-8">
                   <h3 className="text-[12px] font-medium text-[#86868B] mb-6">KONUM VE DETAYLAR</h3>
@@ -3348,7 +3440,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                                   {app.tarih || 'Tarih yok'}{app.saatBlok ? ` • ${app.saatBlok}` : ''}
                                   {app.semt ? ` • ${app.semt}` : ''}
                                 </p>
-                                <p className="text-[12px] text-[#86868B] truncate">{app.pilot || '—'} • {app.danismanIsmi}</p>
+                                <p className="text-[12px] text-[#86868B] truncate">{toTitleCaseName(app.pilot) || '—'} • {toTitleCaseName(app.danismanIsmi)}</p>
                               </div>
                               {getStatusBadge(app.status)}
                             </div>
@@ -3394,7 +3486,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 ${selectedPilot === pilot ? 'bg-[#F2F2F7]' : 'bg-[#2C2C2E]'}`}>
                               <User className={`w-4 h-4 ${selectedPilot === pilot ? 'text-black' : 'text-white'}`} />
                             </div>
-                            <p className={`text-[14px] font-medium ${selectedPilot === pilot ? 'text-black' : 'text-white'}`}>{pilot}</p>
+                            <p className={`text-[14px] font-medium ${selectedPilot === pilot ? 'text-black' : 'text-white'}`}>{toTitleCaseName(pilot)}</p>
                           </button>
                         ))}
                       </div>
@@ -3429,95 +3521,6 @@ const pendingRequests = bookedAppointments.filter(app => {
                     )}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* CONSULTANT: KESİNLEŞTİRME BEKLEYEN TEKLİFLER */}
-            {role === 'danisman' && activeTab === 'teklif-onay' && (
-              <div className="animate-in fade-in duration-700 w-full">
-                <div className="mb-10">
-                  <h1 className="text-3xl font-medium tracking-tight text-white">Kesinleştirmenizi Bekleyen Teklifler</h1>
-                  <p className="text-[#86868B] mt-2 text-[15px]">Pilotun önerdiği tarih ve saati kesinleştirin veya iptal edin.</p>
-                </div>
-
-                {danismanConfirmRequests.length === 0 ? (
-                  <div className="bg-[#111111] border border-white/5 rounded-2xl p-20 flex flex-col items-center justify-center text-center w-full">
-                    <div className="w-16 h-16 bg-[#1C1C1E] rounded-full flex items-center justify-center mb-6">
-                      <CheckCheck className="w-6 h-6 text-[#86868B]" strokeWidth={1.5} />
-                    </div>
-                    <h3 className="text-lg font-medium text-white mb-2">Bekleyen Teklif Yok</h3>
-                    <p className="text-[#86868B] text-[14px]">Pilot teklif gönderdiğinde burada görünecek.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4 w-full">
-                    {danismanConfirmRequests.map((req) => (
-                      <div key={req.id} className="bg-[#161616] border border-[#E5B540]/20 rounded-2xl p-6 sm:p-8 space-y-4">
-                        <div className="flex justify-between items-start gap-4">
-                          <div>
-                            <p className="text-[17px] font-medium text-white">
-                              {req.il} / {req.ilce}{req.semt ? ` / ${req.semt}` : ''}
-                            </p>
-                            <p className="text-[13px] text-[#86868B] mt-1 inline-flex flex-wrap items-center gap-2">
-                              <span>
-                                Teklif: {req.tarih || '—'} • {req.saatBlok || '—'} • {req.pilot}
-                              </span>
-                              {req.tarih && req.il && (
-                                <WeatherBadge
-                                  il={req.il}
-                                  ilce={req.ilce}
-                                  tarih={req.tarih}
-                                  variant="compact"
-                                />
-                              )}
-                            </p>
-                          </div>
-                          {getStatusBadge(req.status)}
-                        </div>
-                        {(req.danismanNotu || req.aciklama) && (
-                          <p className="text-[13px] text-[#86868B] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
-                            {req.danismanNotu || req.aciklama}
-                          </p>
-                        )}
-                        {rejectingId === req.id ? (
-                          <div className="space-y-3">
-                            <textarea
-                              value={rejectReason}
-                              onChange={(e) => setRejectReason(e.target.value)}
-                              placeholder="Reddetme sebebi..."
-                              className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px]"
-                            />
-                            <div className="flex gap-3">
-                              <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
-                              <button type="button" disabled={!rejectReason.trim() || processingId === req.id} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] cursor-pointer disabled:opacity-50">İptal Et</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setRejectingId(req.id)}
-                              className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer"
-                            >
-                              Reddet
-                            </button>
-                            <button
-                              type="button"
-                              disabled={processingId === req.id}
-                              onClick={() => handleDanismanConfirm(req)}
-                              className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 transition-all cursor-pointer flex items-center justify-center"
-                            >
-                              {processingId === req.id ? (
-                                <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                              ) : (
-                                'Kesinleştir'
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
 

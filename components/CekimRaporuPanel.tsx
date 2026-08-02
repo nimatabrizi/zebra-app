@@ -17,6 +17,7 @@ import {
   parseDisplayDate,
 } from '../lib/appointmentUtils';
 import { manualEntryDisplayName } from '../lib/authIdentity';
+import { toTitleCaseName } from '../lib/formatName';
 import type { Appointment } from '../types/appointments';
 import WeatherBadge from './WeatherBadge';
 
@@ -176,7 +177,7 @@ export default function CekimRaporuPanel({ appointments }: Props) {
 
   return (
     <>
-      <div className="animate-in fade-in duration-700 space-y-8 w-full">
+      <div className="panel-enter space-y-8 w-full">
         <div className="mb-2">
           <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-white flex items-center">
             <LineChart className="w-6 h-6 mr-3 text-white/70" />
@@ -320,10 +321,12 @@ export default function CekimRaporuPanel({ appointments }: Props) {
                         {row.tarih}
                       </td>
                       <td className="px-5 sm:px-6 py-4 text-[13px] text-[#A1A1A6] whitespace-nowrap">
-                        {row.danismanIsmi || '—'}
+                        {toTitleCaseName(row.danismanIsmi) || '—'}
                       </td>
                       <td className="px-5 sm:px-6 py-4 text-[13px] text-neutral-400 whitespace-nowrap">
-                        {ownerRoleDisplayName(row.owner) || row.pilot || '—'}
+                        {toTitleCaseName(
+                          ownerRoleDisplayName(row.owner) || row.pilot || '—'
+                        )}
                       </td>
                       <td className="px-5 sm:px-6 py-4 text-right">
                         <button
@@ -350,7 +353,7 @@ export default function CekimRaporuPanel({ appointments }: Props) {
           onClick={() => setReportDetailAppointment(null)}
         >
           <div
-            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300 ease-out max-h-[90vh] flex flex-col overflow-hidden"
+            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-300 ease-zebra max-h-[90vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-white/5 shrink-0">
@@ -399,15 +402,16 @@ export default function CekimRaporuPanel({ appointments }: Props) {
                 { label: 'Saat', value: reportDetailAppointment.saatBlok },
                 { label: 'Portföy Konumu', value: reportDetailAppointment.konum },
                 { label: 'Portföy bilgileri', value: reportDetailAppointment.portfoyTuru },
-                { label: 'Danışman', value: reportDetailAppointment.danismanIsmi },
+                { label: 'Danışman', value: toTitleCaseName(reportDetailAppointment.danismanIsmi) },
                 {
                   label: 'Sorumlu Pilot',
-                  value:
+                  value: toTitleCaseName(
                     ownerRoleDisplayName(
                       reportDetailAppointment.owner ||
                         reportDetailAppointment.ownerRole ||
                         ownerRoleFromPilot(reportDetailAppointment.pilot || '')
-                    ) || reportDetailAppointment.pilot,
+                    ) || reportDetailAppointment.pilot
+                  ),
                 },
               ].map((item) => (
                 <div key={item.label}>
