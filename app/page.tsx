@@ -43,9 +43,21 @@ import {
   ownerRoleFromPilot as ownerRoleFromPilotUtil,
   ownerRoleDisplayName as ownerRoleDisplayNameUtil,
   parseDisplayDate,
+  formatWeekdayTr,
 } from '../lib/appointmentUtils';
 import { DEFAULT_IL, TURKEY_ILLER, getIlceler } from '../lib/turkeyLocations';
-import { TIME_SLOT_OPTIONS } from '../lib/timeSlots';
+import {
+  TIME_SLOT_OPTIONS,
+  OFFER_HOUR_OPTIONS,
+  formatOfferHour,
+  formatOfferRange,
+  getOfferEndHours,
+  parseOfferRange,
+} from '../lib/timeSlots';
+import {
+  findOfferRangeConflicts,
+  isOfferEndBlockedByConfirmed,
+} from '../lib/offerConflicts';
 import { APPOINTMENT_STATUS_LABELS } from '../types/appointments';
 import {
   formatNotificationRow,
@@ -416,7 +428,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   // Pilot teklif (aşama 2)
   const [offeringId, setOfferingId] = useState(null);
   const [offerTarih, setOfferTarih] = useState('');
-  const [offerSaatBlok, setOfferSaatBlok] = useState('');
+  const [offerStartHour, setOfferStartHour] = useState('');
+  const [offerEndHour, setOfferEndHour] = useState('');
   const [isOfferCalendarOpen, setIsOfferCalendarOpen] = useState(false);
   const [offerCalMonth, setOfferCalMonth] = useState(new Date().getMonth());
   const [offerCalYear, setOfferCalYear] = useState(new Date().getFullYear());
@@ -452,6 +465,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     semt: '',
     danismanNotu: '',
   });
+  const [editStartHour, setEditStartHour] = useState('');
+  const [editEndHour, setEditEndHour] = useState('');
   const [isEditSaving, setIsEditSaving] = useState(false);
   const [isEditCalendarOpen, setIsEditCalendarOpen] = useState(false);
   const [editCalMonth, setEditCalMonth] = useState(new Date().getMonth());
@@ -1214,6 +1229,55 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     [bookedAppointments, offeringId]
   );
 
+  const offerPilotName =
+    offeringRequest?.pilot || (isPilot ? fullName : null);
+
+  /** Seçili teklif aralığı — kesinleşmiş / onay bekleyen çakışmalar */
+  const offerRangeConflicts = useMemo(() => {
+    if (!offerTarih || !offerStartHour || !offerEndHour) {
+      return { confirmed: [], pending: [], all: [] };
+    }
+    return findOfferRangeConflicts({
+      appointments: bookedAppointments,
+      date: offerTarih,
+      startHour: Number(offerStartHour),
+      endHour: Number(offerEndHour),
+      pilotName: offerPilotName,
+      excludeId: offeringId,
+    });
+  }, [
+    bookedAppointments,
+    offerTarih,
+    offerStartHour,
+    offerEndHour,
+    offerPilotName,
+    offeringId,
+  ]);
+
+  const editPilotName =
+    editForm.pilot || editingAppointment?.pilot || (isPilot ? fullName : null);
+
+  const editRangeConflicts = useMemo(() => {
+    if (!editForm.tarih || !editStartHour || !editEndHour) {
+      return { confirmed: [], pending: [], all: [] };
+    }
+    return findOfferRangeConflicts({
+      appointments: bookedAppointments,
+      date: editForm.tarih,
+      startHour: Number(editStartHour),
+      endHour: Number(editEndHour),
+      pilotName: editPilotName,
+      excludeId: editingAppointment?.id,
+    });
+  }, [
+    bookedAppointments,
+    editForm.tarih,
+    editStartHour,
+    editEndHour,
+    editPilotName,
+    editingAppointment?.id,
+  ]);
+
   const toggleRow = (id) => setExpandedRows(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]);
 
   /** Auth session → profiles yükle ve panele yönlendir */
@@ -1553,12 +1617,28 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     }, 3000);
   };
 
-  /** Aşama 2 — Pilot tarih/saat teklif eder */
+  /** Aşama 2 — Pilot tarih/saat aralığı teklif eder */
   const handlePilotOffer = async (req) => {
-    if (!offerTarih || !offerSaatBlok) {
-      showToast('Teklif için tarih ve saat seçin.');
+    const startH = Number(offerStartHour);
+    const endH = Number(offerEndHour);
+    const endOptions = getOfferEndHours(startH);
+    if (!offerTarih || !offerStartHour || !offerEndHour || !endOptions.includes(endH)) {
+      showToast('Teklif için tarih, başlangıç ve bitiş saati seçin.');
       return;
     }
+    const conflicts = findOfferRangeConflicts({
+      appointments: bookedAppointments,
+      date: offerTarih,
+      startHour: startH,
+      endHour: endH,
+      pilotName: req.pilot || offerPilotName,
+      excludeId: req.id,
+    });
+    if (conflicts.confirmed.length > 0) {
+      showToast('Bu saat aralığı o gün kesinleşmiş bir çekimle çakışıyor; seçilemez.');
+      return;
+    }
+    const offerSaatBlok = formatOfferRange(startH, endH);
     setProcessingId(req.id);
 
     const { error } = await supabase
@@ -1597,7 +1677,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setProcessingId(null);
     setOfferingId(null);
     setOfferTarih('');
-    setOfferSaatBlok('');
+    setOfferStartHour('');
+    setOfferEndHour('');
     showToast('Teklif danışmana gönderildi.');
   };
 
@@ -1653,7 +1734,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     if (req.status === 'pilot_bekleniyor' || !req.tarih) {
       setOfferingId(req.id);
       setOfferTarih('');
-      setOfferSaatBlok('');
+      setOfferStartHour('');
+      setOfferEndHour('');
       setIsOfferCalendarOpen(false);
       const now = new Date();
       setOfferCalMonth(now.getMonth());
@@ -1737,6 +1819,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     // Reddedilmiş kaydı açınca varsayılan: yeniden teklif (tarih/saat seçilince kaydet)
     const initialStatus = canReoffer ? 'danisman_onayi_bekliyor' : currentStatus;
     setEditingAppointment(app);
+    const parsedRange = parseOfferRange(app.saatBlok);
+    setEditStartHour(parsedRange ? String(parsedRange.start) : '');
+    setEditEndHour(parsedRange ? String(parsedRange.end) : '');
     setEditForm({
       tarih: iso,
       saatBlok: app.saatBlok || '',
@@ -1767,6 +1852,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     if (isEditSaving) return;
     setIsEditCalendarOpen(false);
     setEditingAppointment(null);
+    setEditStartHour('');
+    setEditEndHour('');
     setEditForm({
       tarih: '',
       saatBlok: '',
@@ -1872,13 +1959,37 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     } else if (!editForm.tarih || !editForm.saatBlok) {
       showToast(
         oldStatus === 'iptal'
-          ? 'Yeniden teklif için tarih ve saat seçin.'
-          : 'Tarih ve saat zorunludur.'
+          ? 'Yeniden teklif için tarih ve saat aralığı seçin.'
+          : 'Tarih ve saat aralığı zorunludur.'
       );
       return;
     } else if (!editForm.pilot && role === 'broker') {
       showToast('Pilot seçin.');
       return;
+    }
+
+    if (
+      editForm.tarih &&
+      editStartHour &&
+      editEndHour &&
+      newStatus !== 'pilot_bekleniyor' &&
+      newStatus !== 'iptal'
+    ) {
+      const editConflicts = findOfferRangeConflicts({
+        appointments: bookedAppointments,
+        date: editForm.tarih,
+        startHour: Number(editStartHour),
+        endHour: Number(editEndHour),
+        pilotName:
+          role === 'broker' || role === 'danisman'
+            ? editForm.pilot
+            : editingAppointment.pilot || editForm.pilot,
+        excludeId: editingAppointment.id,
+      });
+      if (editConflicts.confirmed.length > 0) {
+        showToast('Bu saat aralığı o gün kesinleşmiş bir çekimle çakışıyor; seçilemez.');
+        return;
+      }
     }
 
     const effectivePilot =
@@ -2078,6 +2189,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         oldStatus === 'iptal' && newStatus === 'danisman_onayi_bekliyor';
       setIsEditCalendarOpen(false);
       setEditingAppointment(null);
+      setEditStartHour('');
+      setEditEndHour('');
       setEditForm({
         tarih: '',
         saatBlok: '',
@@ -2430,6 +2543,21 @@ const pendingRequests = bookedAppointments.filter(app => {
 
   const handleOfferCalendarSelectIso = (iso) => {
     setOfferTarih(iso);
+    if (
+      offerStartHour &&
+      offerEndHour &&
+      isOfferEndBlockedByConfirmed({
+        appointments: bookedAppointments,
+        date: iso,
+        startHour: Number(offerStartHour),
+        endHour: Number(offerEndHour),
+        pilotName: offerPilotName,
+        excludeId: offeringId,
+      })
+    ) {
+      setOfferEndHour('');
+      showToast('Seçili aralık bu günde kesinleşmiş çekimle çakışıyor; bitiş saatini yeniden seçin.');
+    }
   };
 
   const handleOfferCalPrevMonth = () => {
@@ -2639,14 +2767,14 @@ const pendingRequests = bookedAppointments.filter(app => {
                       <div className="rounded-xl border border-[#E5B540]/25 bg-[#E5B540]/10 px-4 py-3 space-y-1">
                         <p className="text-[13px] font-medium text-[#E5B540]">Reddedilmiş randevu — yeniden teklif</p>
                         <p className="text-[12px] text-[#86868B] leading-relaxed">
-                          Tarih ve saat seçip kaydedin. Durum otomatik olarak danışman kesinleştirmesine geçer;
+                          Tarih ve saat aralığı seçip kaydedin. Durum otomatik olarak danışman kesinleştirmesine geçer;
                           danışmana bildirim gider.
                         </p>
                       </div>
                     )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="relative">
+                      <div className="relative sm:col-span-2">
                         <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Tarih</label>
                         <button
                           type="button"
@@ -2660,21 +2788,104 @@ const pendingRequests = bookedAppointments.filter(app => {
                         </button>
                       </div>
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Saat</label>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Başlangıç</label>
                         <div className="relative">
-                          <select value={editForm.saatBlok} onChange={(e) => handleEditFormChange('saatBlok', e.target.value)} className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer">
-                            <option value="">Seçin</option>
-                            {!TIME_SLOT_OPTIONS.includes(editForm.saatBlok) && editForm.saatBlok ? (
-                              <option value={editForm.saatBlok}>{editForm.saatBlok}</option>
-                            ) : null}
-                            {TIME_SLOT_OPTIONS.map((b) => (
-                              <option key={b} value={b}>{b}</option>
+                          <select
+                            value={editStartHour}
+                            onChange={(e) => {
+                              const nextStart = e.target.value;
+                              setEditStartHour(nextStart);
+                              setEditEndHour('');
+                              handleEditFormChange('saatBlok', '');
+                            }}
+                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                          >
+                            <option value="">Başlangıç seçin</option>
+                            {OFFER_HOUR_OPTIONS.map((h) => (
+                              <option key={h} value={String(h)}>{formatOfferHour(h)}</option>
                             ))}
                           </select>
                           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
                         </div>
                       </div>
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Bitiş</label>
+                        <div className="relative">
+                          <select
+                            value={editEndHour}
+                            onChange={(e) => {
+                              const nextEnd = e.target.value;
+                              if (
+                                editForm.tarih &&
+                                editStartHour &&
+                                nextEnd &&
+                                isOfferEndBlockedByConfirmed({
+                                  appointments: bookedAppointments,
+                                  date: editForm.tarih,
+                                  startHour: Number(editStartHour),
+                                  endHour: Number(nextEnd),
+                                  pilotName: editPilotName,
+                                  excludeId: editingAppointment?.id,
+                                })
+                              ) {
+                                showToast('Bu saat aralığı kesinleşmiş bir çekimle çakışıyor; seçilemez.');
+                                return;
+                              }
+                              setEditEndHour(nextEnd);
+                              const startH = Number(editStartHour);
+                              const endH = Number(nextEnd);
+                              if (editStartHour && nextEnd) {
+                                handleEditFormChange('saatBlok', formatOfferRange(startH, endH));
+                              } else {
+                                handleEditFormChange('saatBlok', '');
+                              }
+                            }}
+                            disabled={!editStartHour}
+                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <option value="">
+                              {editStartHour ? 'Bitiş seçin' : 'Önce başlangıç seçin'}
+                            </option>
+                            {getOfferEndHours(Number(editStartHour)).map((h) => {
+                              const blocked =
+                                !!editForm.tarih &&
+                                isOfferEndBlockedByConfirmed({
+                                  appointments: bookedAppointments,
+                                  date: editForm.tarih,
+                                  startHour: Number(editStartHour),
+                                  endHour: h,
+                                  pilotName: editPilotName,
+                                  excludeId: editingAppointment?.id,
+                                });
+                              return (
+                                <option key={h} value={String(h)} disabled={blocked}>
+                                  {formatOfferHour(h)}{blocked ? ' (dolu)' : ''}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                        </div>
+                      </div>
                     </div>
+
+                    {editRangeConflicts.confirmed.length > 0 && (
+                      <div className="rounded-xl border border-[#FF3B30]/25 bg-[#FF3B30]/10 px-4 py-3 text-[12px] text-[#FF3B30]">
+                        Bu saat aralığı kesinleşmiş çekimle çakışıyor; seçilemez.
+                      </div>
+                    )}
+                    {editRangeConflicts.pending.length > 0 && (
+                      <div className="rounded-xl border border-[#E5B540]/25 bg-[#E5B540]/10 px-4 py-3 space-y-1.5">
+                        <p className="text-[12px] font-medium text-[#E5B540]">Bu aralıkta onay bekleniyor</p>
+                        {editRangeConflicts.pending.map((app) => (
+                          <p key={app.id} className="text-[12px] text-[#AEAEB2] leading-relaxed">
+                            {toTitleCaseName(app.danismanIsmi)}
+                            {app.saatBlok ? ` · ${app.saatBlok}` : ''}
+                            {app.ilce ? ` · ${app.ilce}` : ''}
+                          </p>
+                        ))}
+                      </div>
+                    )}
 
                     {editForm.tarih && editForm.il && (
                       <div className="flex items-center gap-2 -mt-1">
@@ -2781,7 +2992,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isEditSaving}
+                  disabled={isEditSaving || editRangeConflicts.confirmed.length > 0}
                   className="flex-1 h-12 rounded-xl bg-white text-black text-[14px] font-medium hover:bg-gray-200 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 flex items-center justify-center"
                 >
                   {isEditSaving ? (
@@ -3464,9 +3675,11 @@ const pendingRequests = bookedAppointments.filter(app => {
                                 )}
                                 {districtConfirmed.length > 0 && (
                                   <div className="text-[12px] text-[#86868B] bg-[#1C1C1E]/60 border border-white/5 rounded-xl p-3">
-                                    Bu ilçede {districtConfirmed.length} kesinleşmiş iş var
+                                    Bu ilçede {districtConfirmed.length} kesinleşmiş çekim randevusu var
                                     {districtConfirmed.slice(0, 3).map((a) => (
-                                      <span key={a.id} className="block mt-1 text-white/80">• {a.tarih || '—'} {a.saatBlok || ''} — {toTitleCaseName(a.pilot)}</span>
+                                      <span key={a.id} className="block mt-1 text-white/80">
+                                        • {a.tarih || '—'} {a.saatBlok || ''} — {toTitleCaseName(a.danismanIsmi) || 'Danışman yok'}
+                                      </span>
                                     ))}
                                   </div>
                                 )}
@@ -3484,10 +3697,10 @@ const pendingRequests = bookedAppointments.filter(app => {
                                 </div>
                               ) : offeringId === req.id ? (
                                 <div className="space-y-4 border-t border-white/5 pt-4">
-                                  <p className="text-[12px] font-medium text-[#86868B]">TARİH VE SAAT TEKLİF ET</p>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <p className="text-[12px] font-medium text-[#86868B]">TARİH VE SAAT ARALIĞI TEKLİF ET</p>
+                                  <div>
+                                    <label className="block text-[12px] text-[#86868B] mb-2">Tarih</label>
                                     <div className="relative">
-                                      <label className="block text-[12px] text-[#86868B] mb-2">Tarih</label>
                                       <button
                                         type="button"
                                         onClick={openOfferCalendar}
@@ -3513,21 +3726,93 @@ const pendingRequests = bookedAppointments.filter(app => {
                                         onNextMonth={handleOfferCalNextMonth}
                                       />
                                     </div>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="relative">
-                                      <label className="block text-[12px] text-[#86868B] mb-2">Saat</label>
+                                      <label className="block text-[12px] text-[#86868B] mb-2">Başlangıç</label>
                                       <select
-                                        value={offerSaatBlok}
-                                        onChange={(e) => setOfferSaatBlok(e.target.value)}
+                                        value={offerStartHour}
+                                        onChange={(e) => {
+                                          setOfferStartHour(e.target.value);
+                                          setOfferEndHour('');
+                                        }}
                                         className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
                                       >
-                                        <option value="">Saat seçin</option>
-                                        {TIME_SLOT_OPTIONS.map((h) => (
-                                          <option key={h} value={h}>{h}</option>
+                                        <option value="">Başlangıç seçin</option>
+                                        {OFFER_HOUR_OPTIONS.map((h) => (
+                                          <option key={h} value={String(h)}>{formatOfferHour(h)}</option>
                                         ))}
                                       </select>
                                       <ChevronDown className="absolute right-4 top-[42px] w-4 h-4 text-[#86868B] pointer-events-none" />
                                     </div>
+                                    <div className="relative">
+                                      <label className="block text-[12px] text-[#86868B] mb-2">Bitiş</label>
+                                      <select
+                                        value={offerEndHour}
+                                        onChange={(e) => {
+                                          const nextEnd = e.target.value;
+                                          if (
+                                            offerTarih &&
+                                            offerStartHour &&
+                                            nextEnd &&
+                                            isOfferEndBlockedByConfirmed({
+                                              appointments: bookedAppointments,
+                                              date: offerTarih,
+                                              startHour: Number(offerStartHour),
+                                              endHour: Number(nextEnd),
+                                              pilotName: req.pilot || offerPilotName,
+                                              excludeId: req.id,
+                                            })
+                                          ) {
+                                            showToast('Bu saat aralığı kesinleşmiş bir çekimle çakışıyor; seçilemez.');
+                                            return;
+                                          }
+                                          setOfferEndHour(nextEnd);
+                                        }}
+                                        disabled={!offerStartHour}
+                                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                      >
+                                        <option value="">
+                                          {offerStartHour ? 'Bitiş seçin' : 'Önce başlangıç seçin'}
+                                        </option>
+                                        {getOfferEndHours(Number(offerStartHour)).map((h) => {
+                                          const blocked =
+                                            !!offerTarih &&
+                                            isOfferEndBlockedByConfirmed({
+                                              appointments: bookedAppointments,
+                                              date: offerTarih,
+                                              startHour: Number(offerStartHour),
+                                              endHour: h,
+                                              pilotName: req.pilot || offerPilotName,
+                                              excludeId: req.id,
+                                            });
+                                          return (
+                                            <option key={h} value={String(h)} disabled={blocked}>
+                                              {formatOfferHour(h)}{blocked ? ' (dolu)' : ''}
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                      <ChevronDown className="absolute right-4 top-[42px] w-4 h-4 text-[#86868B] pointer-events-none" />
+                                    </div>
                                   </div>
+                                  {offerRangeConflicts.confirmed.length > 0 && (
+                                    <div className="rounded-xl border border-[#FF3B30]/25 bg-[#FF3B30]/10 px-4 py-3 text-[12px] text-[#FF3B30]">
+                                      Bu saat aralığı kesinleşmiş çekimle çakışıyor; seçilemez.
+                                    </div>
+                                  )}
+                                  {offerRangeConflicts.pending.length > 0 && (
+                                    <div className="rounded-xl border border-[#E5B540]/25 bg-[#E5B540]/10 px-4 py-3 space-y-1.5">
+                                      <p className="text-[12px] font-medium text-[#E5B540]">Bu aralıkta onay bekleniyor</p>
+                                      {offerRangeConflicts.pending.map((app) => (
+                                        <p key={app.id} className="text-[12px] text-[#AEAEB2] leading-relaxed">
+                                          {toTitleCaseName(app.danismanIsmi)}
+                                          {app.saatBlok ? ` · ${app.saatBlok}` : ''}
+                                          {app.ilce ? ` · ${app.ilce}` : ''}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  )}
                                   {offerTarih && (req.il || offeringRequest?.il) && (
                                     <div className="flex items-center gap-2">
                                       <span className="text-[11px] text-[#86868B]">Hava</span>
@@ -3540,8 +3825,8 @@ const pendingRequests = bookedAppointments.filter(app => {
                                     </div>
                                   )}
                                   <div className="flex gap-3">
-                                    <button type="button" onClick={() => { setOfferingId(null); setOfferTarih(''); setOfferSaatBlok(''); setIsOfferCalendarOpen(false); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
-                                    <button type="button" disabled={processingId === req.id || !offerTarih || !offerSaatBlok} onClick={() => handlePilotOffer(req)} className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium disabled:opacity-50 cursor-pointer flex items-center justify-center">
+                                    <button type="button" onClick={() => { setOfferingId(null); setOfferTarih(''); setOfferStartHour(''); setOfferEndHour(''); setIsOfferCalendarOpen(false); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
+                                    <button type="button" disabled={processingId === req.id || !offerTarih || !offerStartHour || !offerEndHour || offerRangeConflicts.confirmed.length > 0} onClick={() => handlePilotOffer(req)} className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium disabled:opacity-50 cursor-pointer flex items-center justify-center">
                                       {processingId === req.id ? <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> : 'Teklifi Gönder'}
                                     </button>
                                   </div>
@@ -3636,25 +3921,35 @@ const pendingRequests = bookedAppointments.filter(app => {
                           className="bg-[#161616]/90 backdrop-blur-xl border border-[#E5B540]/20 rounded-2xl p-6 sm:p-8 space-y-4"
                         >
                           <div className="flex justify-between items-start gap-4">
-                            <div>
+                            <div className="min-w-0 flex-1">
                               <p className="text-[17px] font-medium text-white">
                                 {app.il} / {app.ilce}
                                 {app.semt ? ` / ${app.semt}` : ''}
                               </p>
-                              <p className="text-[13px] text-[#86868B] mt-1 inline-flex flex-wrap items-center gap-2">
-                                <span>
-                                  Teklif: {app.tarih || '—'} • {app.saatBlok || '—'} •{' '}
-                                  {toTitleCaseName(app.pilot)}
-                                </span>
-                                {app.tarih && app.il && (
-                                  <WeatherBadge
-                                    il={app.il}
-                                    ilce={app.ilce}
-                                    tarih={app.tarih}
-                                    variant="compact"
-                                  />
-                                )}
-                              </p>
+                              <div className="mt-3 rounded-xl border border-white/10 bg-[#1C1C1E]/80 px-4 py-3.5 space-y-1">
+                                <p className="text-[15px] sm:text-[16px] font-medium text-white tracking-tight">
+                                  {app.tarih || '—'}
+                                  {formatWeekdayTr(app.tarih) ? (
+                                    <span className="text-white/90"> · {formatWeekdayTr(app.tarih)}</span>
+                                  ) : null}
+                                </p>
+                                <p className="text-[20px] sm:text-[22px] font-semibold text-white tracking-tight tabular-nums">
+                                  {app.saatBlok || '—'}
+                                </p>
+                                <div className="pt-1 flex flex-wrap items-center gap-2">
+                                  <span className="text-[12px] text-[#86868B]">
+                                    Pilot: {toTitleCaseName(app.pilot)}
+                                  </span>
+                                  {app.tarih && app.il && (
+                                    <WeatherBadge
+                                      il={app.il}
+                                      ilce={app.ilce}
+                                      tarih={app.tarih}
+                                      variant="compact"
+                                    />
+                                  )}
+                                </div>
+                              </div>
                             </div>
                             {getStatusBadge(app.status)}
                           </div>
@@ -3753,23 +4048,34 @@ const pendingRequests = bookedAppointments.filter(app => {
                         className="bg-[#161616]/90 backdrop-blur-xl border border-[#E5B540]/20 rounded-2xl p-6 sm:p-8 space-y-4"
                       >
                         <div className="flex justify-between items-start gap-4">
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="text-[17px] font-medium text-white">
                               {req.il} / {req.ilce}{req.semt ? ` / ${req.semt}` : ''}
                             </p>
-                            <p className="text-[13px] text-[#86868B] mt-1 inline-flex flex-wrap items-center gap-2">
-                              <span>
-                                Teklif: {req.tarih || '—'} • {req.saatBlok || '—'} • {toTitleCaseName(req.pilot)}
-                              </span>
-                              {req.tarih && req.il && (
-                                <WeatherBadge
-                                  il={req.il}
-                                  ilce={req.ilce}
-                                  tarih={req.tarih}
-                                  variant="compact"
-                                />
-                              )}
-                            </p>
+                            <div className="mt-3 rounded-xl border border-white/10 bg-[#1C1C1E]/80 px-4 py-3.5 space-y-1">
+                              <p className="text-[15px] sm:text-[16px] font-medium text-white tracking-tight">
+                                {req.tarih || '—'}
+                                {formatWeekdayTr(req.tarih) ? (
+                                  <span className="text-white/90"> · {formatWeekdayTr(req.tarih)}</span>
+                                ) : null}
+                              </p>
+                              <p className="text-[20px] sm:text-[22px] font-semibold text-white tracking-tight tabular-nums">
+                                {req.saatBlok || '—'}
+                              </p>
+                              <div className="pt-1 flex flex-wrap items-center gap-2">
+                                <span className="text-[12px] text-[#86868B]">
+                                  Pilot: {toTitleCaseName(req.pilot)}
+                                </span>
+                                {req.tarih && req.il && (
+                                  <WeatherBadge
+                                    il={req.il}
+                                    ilce={req.ilce}
+                                    tarih={req.tarih}
+                                    variant="compact"
+                                  />
+                                )}
+                              </div>
+                            </div>
                           </div>
                           {getStatusBadge(req.status)}
                         </div>

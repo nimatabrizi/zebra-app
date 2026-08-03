@@ -33,6 +33,15 @@ export function parseDisplayDate(value: unknown): Date | null {
   return null;
 }
 
+/** "Salı", "Pazartesi" … — tarih yoksa boş */
+export function formatWeekdayTr(value: unknown): string {
+  const d = parseDisplayDate(value);
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const label = d.toLocaleDateString('tr-TR', { weekday: 'long' });
+  if (!label) return '';
+  return label.charAt(0).toLocaleUpperCase('tr-TR') + label.slice(1);
+}
+
 export function ownerRoleFromPilot(pilotName: string): 'fatima' | 'selim' | null {
   const key = (pilotName || '').trim().toLocaleUpperCase('tr-TR');
   if (key.includes('FATİMA') || key.includes('FATIMA')) return 'fatima';

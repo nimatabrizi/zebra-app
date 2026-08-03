@@ -4,7 +4,7 @@
  *
  * Akış:
  *   1) Talep   → pilot_bekleniyor        (danışman: il/ilçe/semt/not + pilot; tarih/saat yok)
- *   2) Teklif  → danisman_onayi_bekliyor (pilot: tarih + saat_blok)
+ *   2) Teklif  → danisman_onayi_bekliyor (pilot: tarih + saat aralığı)
  *   3) Kesin   → kesinlesti              (danışman onayı)
  *   İptal/red  → iptal
  */
@@ -42,7 +42,7 @@ export type AppointmentRow = {
   pilot_id: string;
   /** Aşama 1'de null; aşama 2'de pilot doldurur */
   tarih?: string | null;
-  /** Aşama 1'de null; aşama 2'de pilot doldurur */
+  /** Aşama 1'de null; aşama 2'de pilot doldurur (örn. "09:00–13:00") */
   saat_blok?: string | null;
   il: string;
   ilce: string;
@@ -99,9 +99,10 @@ export type CreateAppointmentRequest = {
   status?: Extract<AppointmentStatus, 'pilot_bekleniyor'>;
 };
 
-/** Aşama 2 — pilot tarih/saat teklif eder */
+/** Aşama 2 — pilot tarih/saat aralığı teklif eder */
 export type PilotOfferUpdate = {
   tarih: string;
+  /** Örn. "09:00–13:00" */
   saat_blok: string;
   status: Extract<AppointmentStatus, 'danisman_onayi_bekliyor'>;
 };
