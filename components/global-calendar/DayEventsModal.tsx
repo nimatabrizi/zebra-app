@@ -20,8 +20,14 @@ type Props = {
   dateStr: string;
   events: CalendarEvent[];
   onClose: () => void;
-  onAddNote: (title: string, body: string) => void;
-  onUpdateNote: (id: string, title: string, body: string) => void;
+  onAddNote?: (title: string, body: string) => void | Promise<void>;
+  onUpdateNote?: (id: string, title: string, body: string) => void | Promise<void>;
+  /** Eyebrow / opsiyonel araç çubuğu / etkinlik tıklama (çekim takvimi) */
+  allowNotes?: boolean;
+  eyebrow?: string;
+  emptyHint?: string;
+  toolbar?: React.ReactNode;
+  onEventClick?: (ev: CalendarEvent) => void;
 };
 
 const STATUS_META: Record<
@@ -53,6 +59,11 @@ export default function DayEventsModal({
   onClose,
   onAddNote,
   onUpdateNote,
+  allowNotes = true,
+  eyebrow = 'Gün planı',
+  emptyHint = 'Not ekleyerek bu güne hatırlatma veya plan yazabilirsiniz.',
+  toolbar,
+  onEventClick,
 }: Props) {
   const [mounted, setMounted] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
@@ -99,12 +110,13 @@ export default function DayEventsModal({
   };
 
   const saveEdit = () => {
-    if (!editingId) return;
+    if (!editingId || !onUpdateNote) return;
     onUpdateNote(editingId, editTitle, editBody);
     setEditingId(null);
   };
 
   const submitNote = () => {
+    if (!onAddNote) return;
     if (!noteTitle.trim() && !noteBody.trim()) return;
     onAddNote(noteTitle.trim() || 'Not', noteBody);
     setNoteTitle('');
@@ -134,7 +146,7 @@ export default function DayEventsModal({
               <div className="flex items-center gap-2 text-[#86868B] mb-2">
                 <CalendarDays className="w-3.5 h-3.5" strokeWidth={1.75} />
                 <span className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                  Gün planı
+                  {eyebrow}
                 </span>
               </div>
               <h2
@@ -158,29 +170,33 @@ export default function DayEventsModal({
             </button>
           </div>
 
-          <div className="mt-5">
-            <button
-              type="button"
-              onClick={() => {
-                setEditingId(null);
-                setAddingNote((v) => !v);
-              }}
-              className={`inline-flex items-center gap-2 h-11 px-5 rounded-2xl text-[14px] font-medium transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98]
-                ${
-                  addingNote
-                    ? 'bg-white/10 text-white border border-white/15'
-                    : 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_20px_rgba(255,255,255,0.12)]'
-                }`}
-            >
-              <Plus className="w-4 h-4" strokeWidth={2.5} />
-              Not Ekle
-            </button>
-          </div>
+          {allowNotes && (
+            <div className="mt-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingId(null);
+                  setAddingNote((v) => !v);
+                }}
+                className={`inline-flex items-center gap-2 h-11 px-5 rounded-2xl text-[14px] font-medium transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98]
+                  ${
+                    addingNote
+                      ? 'bg-white/10 text-white border border-white/15'
+                      : 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_20px_rgba(255,255,255,0.12)]'
+                  }`}
+              >
+                <Plus className="w-4 h-4" strokeWidth={2.5} />
+                Not Ekle
+              </button>
+            </div>
+          )}
+
+          {toolbar ? <div className="mt-4">{toolbar}</div> : null}
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-6 sm:px-8 py-5 space-y-3 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-          {addingNote && (
+          {addingNote && allowNotes && (
             <div className="rounded-2xl border border-white/[0.1] bg-white/[0.04] p-4 sm:p-5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300 ease-zebra">
               <div className="flex items-center gap-2 text-[#A1A1A6]">
                 <NotebookPen className="w-4 h-4" strokeWidth={1.75} />
@@ -227,15 +243,13 @@ export default function DayEventsModal({
             </div>
           )}
 
-          {events.length === 0 && !addingNote ? (
+          {events.length === 0 && !(addingNote && allowNotes) ? (
             <div className="py-14 flex flex-col items-center text-center">
               <div className="w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center mb-4">
                 <StickyNote className="w-5 h-5 text-[#636366]" strokeWidth={1.5} />
               </div>
               <p className="text-[15px] font-medium text-white mb-1">Boş gün</p>
-              <p className="text-[13px] text-[#86868B] max-w-[240px]">
-                Not ekleyerek bu güne hatırlatma veya plan yazabilirsiniz.
-              </p>
+              <p className="text-[13px] text-[#86868B] max-w-[260px]">{emptyHint}</p>
             </div>
           ) : (
             events.map((ev) => {
@@ -290,7 +304,7 @@ export default function DayEventsModal({
                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-medium tracking-wide ${meta.chip}`}
                       >
                         <span className={`w-1 h-1 rounded-full ${meta.dot}`} />
-                        {ev.type === 'randevu' ? 'Randevu' : 'Not'}
+                        {ev.type === 'randevu' ? 'Çekim' : 'Not'}
                       </span>
                       {ev.time && (
                         <span className="text-[12px] font-medium text-white/80 tabular-nums">
@@ -298,7 +312,7 @@ export default function DayEventsModal({
                         </span>
                       )}
                     </div>
-                    {ev.type === 'note' && (
+                    {(ev.type === 'note' || onEventClick) && (
                       <span className="shrink-0 w-7 h-7 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-[#86868B]">
                         <Pencil className="w-3 h-3" strokeWidth={2} />
                       </span>
@@ -335,9 +349,18 @@ export default function DayEventsModal({
               }
 
               return (
-                <div key={ev.id} className={cardClass}>
+                <button
+                  key={ev.id}
+                  type="button"
+                  onClick={() => onEventClick?.(ev)}
+                  className={`${cardClass} ${
+                    onEventClick
+                      ? 'hover:bg-[#1C1C1E] hover:border-white/10 cursor-pointer active:scale-[0.99]'
+                      : ''
+                  }`}
+                >
                   {cardBody}
-                </div>
+                </button>
               );
             })
           )}

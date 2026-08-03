@@ -199,8 +199,10 @@ export default function OverviewDashboard({
     const randevuBadge = isManager ? pendingCount : confirmCount;
     const analizTab = role === 'broker' ? 'cekim-raporu' : 'pazar';
 
-    return [
-      {
+    const items: Pathway[] = [];
+
+    if (!isManager) {
+      items.push({
         id: 'musteri',
         title: 'Müşteri Yönetimi',
         hint: 'İlişkiler ve takip',
@@ -209,49 +211,62 @@ export default function OverviewDashboard({
         className: 'md:col-span-3 lg:col-span-4',
         tone: 'mesh-a',
         delay: 280,
-      },
-      {
-        id: 'portfoy',
-        title: 'Portföy Yönetimi',
-        hint: 'Portföylerim & havuz',
-        icon: Briefcase,
-        tab: 'portfoylerim',
-        className: 'md:col-span-3 lg:col-span-4',
-        tone: 'mesh-b',
-        delay: 340,
-      },
-      {
-        id: 'randevu',
-        title: 'Randevu Sistemi',
-        hint: isManager ? 'Takvim & talepler' : 'Randevularım & talep',
-        icon: CalendarCheck,
-        tab: randevuTab,
-        className: 'md:col-span-2 lg:col-span-4',
-        tone: 'mesh-c',
-        delay: 400,
-        badge: randevuBadge > 0 ? randevuBadge : undefined,
-      },
-      {
-        id: 'reklam',
-        title: 'Reklam Yönetimi',
-        hint: 'Kampanyalar',
-        icon: Megaphone,
-        tab: 'kampanya-aktif',
-        className: 'md:col-span-3 lg:col-span-4',
-        tone: 'mesh-d',
-        delay: 460,
-      },
-      {
-        id: 'analiz',
-        title: 'Analiz & Raporlar',
-        hint: role === 'broker' ? 'Çekim raporu & pazar' : 'Pazar & bölge',
-        icon: LineChart,
-        tab: analizTab,
-        className: 'md:col-span-3 lg:col-span-4',
-        tone: 'mesh-e',
-        delay: 520,
-      },
-    ];
+      });
+    }
+
+    items.push({
+      id: 'portfoy',
+      title: 'Portföy Yönetimi',
+      hint: 'Portföylerim & havuz',
+      icon: Briefcase,
+      tab: 'portfoylerim',
+      className: isManager
+        ? 'md:col-span-3 lg:col-span-6'
+        : 'md:col-span-3 lg:col-span-4',
+      tone: 'mesh-b',
+      delay: isManager ? 280 : 340,
+    });
+
+    items.push({
+      id: 'randevu',
+      title: 'Randevu Sistemi',
+      hint: isManager ? 'Takvim & talepler' : 'Randevularım & talep',
+      icon: CalendarCheck,
+      tab: randevuTab,
+      className: isManager
+        ? 'md:col-span-3 lg:col-span-6'
+        : 'md:col-span-2 lg:col-span-4',
+      tone: 'mesh-c',
+      delay: isManager ? 340 : 400,
+      badge: randevuBadge > 0 ? randevuBadge : undefined,
+    });
+
+    if (!isManager) {
+      items.push(
+        {
+          id: 'reklam',
+          title: 'Reklam Yönetimi',
+          hint: 'Kampanyalar',
+          icon: Megaphone,
+          tab: 'kampanya-aktif',
+          className: 'md:col-span-3 lg:col-span-4',
+          tone: 'mesh-d',
+          delay: 460,
+        },
+        {
+          id: 'analiz',
+          title: 'Analiz & Raporlar',
+          hint: role === 'broker' ? 'Çekim raporu & pazar' : 'Pazar & bölge',
+          icon: LineChart,
+          tab: analizTab,
+          className: 'md:col-span-3 lg:col-span-4',
+          tone: 'mesh-e',
+          delay: 520,
+        }
+      );
+    }
+
+    return items;
   }, [isManager, pendingCount, confirmCount, role]);
 
   return (

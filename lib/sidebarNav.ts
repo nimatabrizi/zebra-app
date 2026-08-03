@@ -40,14 +40,19 @@ export const CORE_LIVE_TABS = [
   'cekim-raporu',
 ] as const;
 
-function sharedProductModules(): SidebarItem[] {
+function sharedProductModules(options?: { includeMusteri?: boolean }): SidebarItem[] {
+  const includeMusteri = options?.includeMusteri !== false;
   return [
-    {
-      id: 'musteri',
-      label: 'Müşteri Yönetimi',
-      icon: 'Users',
-      isEnabled: true,
-    },
+    ...(includeMusteri
+      ? [
+          {
+            id: 'musteri',
+            label: 'Müşteri Yönetimi',
+            icon: 'Users' as const,
+            isEnabled: true,
+          },
+        ]
+      : []),
     {
       id: 'portfoy-yonetimi',
       label: 'Portföy Yönetimi',
@@ -76,29 +81,38 @@ function sharedProductModules(): SidebarItem[] {
   ];
 }
 
-function productTreeTail(): SidebarItem[] {
+function productTreeTail(options?: { includeMarketingAnalytics?: boolean }): SidebarItem[] {
+  const includeMarketingAnalytics = options?.includeMarketingAnalytics !== false;
   return [
-    {
-      id: 'reklam',
-      label: 'Reklam Yönetimi',
-      icon: 'Megaphone',
-      isEnabled: true,
-      children: [
-        { id: 'kampanya-aktif', label: 'Aktif Kampanyalar', isEnabled: true },
-        { id: 'kampanya-olustur', label: 'Kampanya Oluştur', isEnabled: true },
-      ],
-    },
-    {
-      id: 'analiz',
-      label: 'Analiz & Raporlar',
-      icon: 'LineChart',
-      isEnabled: true,
-      children: [
-        { id: 'pazar', label: 'Pazar Analiz', isEnabled: true },
-        { id: 'bolge-raporu', label: 'Bölge raporu', isEnabled: true },
-        { id: 'cma', label: 'Karşılaştırmalı Piyasa Analizi (CMA)', isEnabled: true },
-      ],
-    },
+    ...(includeMarketingAnalytics
+      ? [
+          {
+            id: 'reklam',
+            label: 'Reklam Yönetimi',
+            icon: 'Megaphone' as const,
+            isEnabled: true,
+            children: [
+              { id: 'kampanya-aktif', label: 'Aktif Kampanyalar', isEnabled: true },
+              { id: 'kampanya-olustur', label: 'Kampanya Oluştur', isEnabled: true },
+            ],
+          },
+          {
+            id: 'analiz',
+            label: 'Analiz & Raporlar',
+            icon: 'LineChart' as const,
+            isEnabled: true,
+            children: [
+              { id: 'pazar', label: 'Pazar Analiz', isEnabled: true },
+              { id: 'bolge-raporu', label: 'Bölge raporu', isEnabled: true },
+              {
+                id: 'cma',
+                label: 'Karşılaştırmalı Piyasa Analizi (CMA)',
+                isEnabled: true,
+              },
+            ],
+          },
+        ]
+      : []),
     {
       id: 'kurumsal',
       label: 'Kurumsal',
@@ -144,7 +158,7 @@ export function buildConsultantNav(): SidebarItem[] {
   ];
 }
 
-/** Yönetici kabuğu */
+/** Yönetici / pilot kabuğu — müşteri, reklam, analiz yok */
 export function buildManagerNav(role: string): SidebarItem[] {
   const isBroker = role === 'broker';
   return [
@@ -154,7 +168,7 @@ export function buildManagerNav(role: string): SidebarItem[] {
       icon: 'LayoutGrid',
       isEnabled: true,
     },
-    ...sharedProductModules(),
+    ...sharedProductModules({ includeMusteri: false }),
     {
       id: 'randevu-sistemi',
       label: 'Randevu Sistemi',
@@ -169,7 +183,7 @@ export function buildManagerNav(role: string): SidebarItem[] {
         { id: 'randevu', label: 'Randevu Talebi', isEnabled: true },
       ],
     },
-    ...productTreeTail(),
+    ...productTreeTail({ includeMarketingAnalytics: false }),
   ];
 }
 

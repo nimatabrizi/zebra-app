@@ -54,6 +54,7 @@ import {
 import CekimRaporuPanel from '../components/CekimRaporuPanel';
 import ComingSoonPlaceholder from '../components/ComingSoonPlaceholder';
 import GlobalCalendar from '../components/global-calendar/GlobalCalendar';
+import DayEventsModal from '../components/global-calendar/DayEventsModal';
 import OverviewDashboard from '../components/OverviewDashboard';
 import SidebarNav from '../components/SidebarNav';
 import SmartSchedulingAssistant from '../components/SmartSchedulingAssistant';
@@ -64,6 +65,7 @@ import {
   collectNavTabIds,
   isLiveContentTab,
 } from '../lib/sidebarNav';
+import { appointmentToCalendarEvent } from '../lib/calendarEvents';
 
 export default function App() {
   // --- PRESERVED LOGIC & STATE MANAGEMENT ---
@@ -386,9 +388,30 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const [portfolioType, setPortfolioType] = useState('');
   const [selectedPilot, setSelectedPilot] = useState(null);
 
-  // Soruştur (formdaki il/ilçe ile aynı alanlar kullanılır)
-  const [inquiryResults, setInquiryResults] = useState(null);
-  const [inquiryDone, setInquiryDone] = useState(false);
+  // Bölge aktivitesi — il/ilçe seçilince otomatik (Soruştur yok)
+  const regionActivity = useMemo(() => {
+    if (!requestIl || !requestIlce) return null;
+    const activeStatuses = new Set([
+      'pilot_bekleniyor',
+      'danisman_onayi_bekliyor',
+      'kesinlesti',
+    ]);
+    return bookedAppointments
+      .filter((app) => {
+        const st = normalizeAppointmentStatus(app.status);
+        return (
+          activeStatuses.has(st) &&
+          app.il === requestIl &&
+          app.ilce === requestIlce
+        );
+      })
+      .sort((a, b) => {
+        const da = String(a.tarih || '');
+        const db = String(b.tarih || '');
+        if (da !== db) return da.localeCompare(db, 'tr');
+        return String(a.saatBlok || '').localeCompare(String(b.saatBlok || ''), 'tr');
+      });
+  }, [bookedAppointments, requestIl, requestIlce]);
 
   // Pilot teklif (aşama 2)
   const [offeringId, setOfferingId] = useState(null);
@@ -739,12 +762,85 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     return true;
   };
 
+  /**
+   * Randevu içeriği güncellendi: ilgili danışman + tüm broker'lara bildirim.
+   * (Kesinleşme / iptal / yeniden teklif status bildirimlerinden ayrı.)
+   */
+  const notifyAppointmentUpdated = async ({
+    danismanIsmi,
+    createdBy,
+    konumLabel,
+    tarih,
+    saatBlok,
+    appointmentId,
+  }) => {
+    const dateLabel = toDisplayDate(tarih) || String(tarih || '').trim() || '—';
+    const timeLabel = String(saatBlok || '').trim();
+    const place = String(konumLabel || '').trim() || 'Portföy';
+    const actor =
+      role === 'broker'
+        ? toTitleCaseName(fullName || 'Broker')
+        : toTitleCaseName(fullName || ownerRoleDisplayName(role) || 'Pilot');
+
+    const ownerUuid = await resolveDanismanProfileId(danismanIsmi, createdBy);
+    const { data: brokers, error: brokerError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'broker');
+    if (brokerError) {
+      console.error('Broker listesi alınamadı:', brokerError.message);
+    }
+
+    const recipientIds = new Set();
+    if (ownerUuid) recipientIds.add(ownerUuid);
+    (brokers || []).forEach((b) => b?.id && recipientIds.add(b.id));
+
+    if (recipientIds.size === 0) {
+      console.warn('Güncelleme bildirimi: alıcı bulunamadı', { danismanIsmi, createdBy });
+      return false;
+    }
+
+    const schedule = timeLabel ? `${dateLabel} • ${timeLabel}` : dateLabel;
+    const ownerMessage = `${actor}, ${place} çekim randevunuzu güncelledi. Yeni plan: ${schedule}.`;
+    const brokerMessage = `${actor}, ${toTitleCaseName(danismanIsmi) || 'danışman'} — ${place} çekimini güncelledi (${schedule}).`;
+
+    const rows = Array.from(recipientIds).map((uid) => {
+      const isOwner = ownerUuid && uid === ownerUuid;
+      return {
+        user_id: uid,
+        title: isOwner ? 'Çekim Randevunuz Güncellendi' : 'Çekim Güncellendi',
+        message: isOwner ? ownerMessage : brokerMessage,
+        appointment_id: appointmentId ? String(appointmentId) : null,
+        link_tab: isOwner ? 'randevularim' : 'takvim',
+        is_read: false,
+      };
+    });
+
+    const { error: notifError } = await supabase.from('notifications').insert(rows);
+    if (notifError) {
+      console.error('Güncelleme bildirimleri yazılamadı:', notifError.message, notifError);
+      return false;
+    }
+    await fetchNotifications();
+    return true;
+  };
+
   const canEditAppointment = (app) => {
     if (!app || !role) return false;
     if (role === 'broker') return true;
-    if (role === 'selim' || role === 'fatima') {
+    if (role === 'selim' || role === 'fatima' || isPilot) {
       const owner = app.ownerRole || ownerRoleFromPilot(app.pilot);
-      return owner === role;
+      if (owner === role) return true;
+      // Pilot adına atanmış kesinleşmiş / aktif kayıtlar
+      if (
+        isPilot &&
+        fullName &&
+        String(app.pilot || '').toLocaleLowerCase('tr-TR') ===
+          String(fullName).toLocaleLowerCase('tr-TR')
+      ) {
+        return true;
+      }
+      return false;
     }
     if (role === 'danisman') {
       const isOwner =
@@ -1102,13 +1198,16 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     return takvimDayBaseAppointments;
   }, [takvimDayBaseAppointments, role, dayListFilter]);
 
-  /** Danışman Takvim genel takvimdir — gün detay listesi yok. Yönetici çekim takviminde var. */
-  const showTakvimDayDetail =
-    role !== 'danisman' &&
-    !!takvimSelectedDate &&
-    (role === 'yonetici'
-      ? takvimDayBaseAppointments.some((a) => isConfirmedStatus(a.status))
-      : takvimDayBaseAppointments.length > 0);
+  /** Pilot / yönetici çekim takvimi — gün popup içeriği */
+  const cekimTakvimDayEvents = useMemo(
+    () =>
+      takvimAppointmentsForSelectedDate
+        .map((app) => appointmentToCalendarEvent(app))
+        .filter(Boolean),
+    [takvimAppointmentsForSelectedDate]
+  );
+
+  const isCekimDayModalOpen = role !== 'danisman' && !!takvimSelectedDate;
 
   const offeringRequest = useMemo(
     () => bookedAppointments.find((a) => a.id === offeringId) || null,
@@ -1625,28 +1724,6 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     showToast('Talep iptal edildi ve danışmana bildirildi.');
   };
 
-  const runRegionInquiry = () => {
-    if (!requestIl || !requestIlce) {
-      showToast('Soruşturmak için il ve ilçe seçin.');
-      return;
-    }
-    const activeStatuses = new Set([
-      'pilot_bekleniyor',
-      'danisman_onayi_bekliyor',
-      'kesinlesti',
-    ]);
-    const results = bookedAppointments.filter((app) => {
-      const st = normalizeAppointmentStatus(app.status);
-      return (
-        activeStatuses.has(st) &&
-        app.il === requestIl &&
-        app.ilce === requestIlce
-      );
-    });
-    setInquiryResults(results);
-    setInquiryDone(true);
-  };
-
   const openEditModal = (app) => {
     if (!canEditAppointment(app)) {
       showToast('Bu randevuyu düzenleme yetkiniz yok.');
@@ -1839,6 +1916,21 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         ? (fullName || 'Broker')
         : (ownerRoleDisplayName(role) || fullName || effectivePilot || 'Ekip');
 
+    const oldIso = displayDateToIso(editingAppointment.tarih) || '';
+    const contentChanged =
+      (editForm.tarih || '') !== oldIso ||
+      (editForm.saatBlok || '') !== (editingAppointment.saatBlok || '') ||
+      (editForm.il || '') !== (editingAppointment.il || '') ||
+      (editForm.ilce || '') !== (editingAppointment.ilce || '') ||
+      (editForm.semt || '').trim() !== String(editingAppointment.semt || '').trim() ||
+      (editForm.portfoyTuru || '').trim() !==
+        String(editingAppointment.portfoyTuru || '').trim() ||
+      (editForm.aciklama || '').trim() !==
+        String(editingAppointment.aciklama || '').trim() ||
+      (editForm.danismanNotu || '').trim() !==
+        String(editingAppointment.danismanNotu || editingAppointment.aciklama || '').trim() ||
+      String(effectivePilot || '') !== String(editingAppointment.pilot || '');
+
     setIsEditSaving(true);
 
     try {
@@ -1951,9 +2043,33 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
               );
               showToast('Teklif kaydedildi; danışman bildirimi iletilemedi (profil bulunamadı).');
             }
+          } else if (contentChanged && !isDanismanEdit) {
+            // Status değişti ama özel akış yok — yine de içerik güncellemesi bildir
+            await notifyAppointmentUpdated({
+              danismanIsmi,
+              createdBy: editingAppointment.createdBy,
+              konumLabel,
+              tarih: editForm.tarih || editingAppointment.tarih,
+              saatBlok: editForm.saatBlok || editingAppointment.saatBlok,
+              appointmentId: editingAppointment.id,
+            });
           }
         } catch (notifErr) {
           console.error('Bildirim hatası:', notifErr);
+        }
+      } else if (contentChanged && !isDanismanEdit) {
+        // Status aynı (ör. kesinlesti kaldı) ama tarih/saat/konum vb. değişti
+        try {
+          await notifyAppointmentUpdated({
+            danismanIsmi,
+            createdBy: editingAppointment.createdBy,
+            konumLabel,
+            tarih: editForm.tarih || editingAppointment.tarih,
+            saatBlok: editForm.saatBlok || editingAppointment.saatBlok,
+            appointmentId: editingAppointment.id,
+          });
+        } catch (notifErr) {
+          console.error('Güncelleme bildirimi hatası:', notifErr);
         }
       }
 
@@ -2583,7 +2699,10 @@ const pendingRequests = bookedAppointments.filter(app => {
                           >
                             <option value="pilot_bekleniyor">Pilot Bekleniyor</option>
                             <option value="danisman_onayi_bekliyor">Danışman Kesinleştirmesi Bekleniyor (Teklif)</option>
-                            {role === 'broker' && (
+                            {(role === 'broker' ||
+                              role === 'selim' ||
+                              role === 'fatima' ||
+                              editForm.status === 'kesinlesti') && (
                               <option value="kesinlesti">Kesinleşti</option>
                             )}
                             <option value="iptal">İptal / Reddedildi</option>
@@ -3126,8 +3245,7 @@ const pendingRequests = bookedAppointments.filter(app => {
             {activeTab === 'takvim' && role === 'danisman' && (
               <GlobalCalendar
                 appointments={bookedAppointments}
-                userKey={currentUserId || fullName}
-                fallbackKeys={[fullName, currentUserId].filter(Boolean)}
+                userKey={currentUserId}
                 showTeamAppointments
                 fullName={fullName}
                 currentUserId={currentUserId}
@@ -3205,52 +3323,57 @@ const pendingRequests = bookedAppointments.filter(app => {
                   </div>
                 </div>
 
-                {showTakvimDayDetail && (
-                  <div className="pt-8 border-t border-white/5">
-                    <div className="flex flex-col gap-4 mb-6">
-                      <h3 className="text-lg font-medium text-white">
-                        {formatDateStr(takvimSelectedDate)}
-                      </h3>
-                      {role !== 'yonetici' && (
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setDayListFilter('all')}
-                            className={`min-h-10 px-3.5 sm:px-4 py-2 rounded-xl text-[12px] sm:text-[13px] font-medium transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98] border ${
-                              dayListFilter === 'all'
-                                ? 'bg-white text-black border-white shadow-sm'
-                                : 'bg-[#1C1C1E] text-[#86868B] border-white/5 hover:text-white hover:border-white/10'
-                            }`}
-                          >
-                            Tümü
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDayListFilter('confirmed')}
-                            className={`min-h-10 px-3.5 sm:px-4 py-2 rounded-xl text-[12px] sm:text-[13px] font-medium transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98] border ${
-                              dayListFilter === 'confirmed'
-                                ? 'bg-white text-black border-white shadow-sm'
-                                : 'bg-[#1C1C1E] text-[#86868B] border-white/5 hover:text-white hover:border-white/10'
-                            }`}
-                          >
-                            Kesinleşmiş
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col space-y-4 w-full">
-                      {takvimAppointmentsForSelectedDate.length === 0 ? (
-                        <p className="text-[#86868B] text-[14px]">
-                          Bu tarihte kesinleşmiş randevu bulunmuyor.
-                        </p>
-                      ) : (
-                        takvimAppointmentsForSelectedDate.map((app) =>
-                          renderAppointmentRow(app)
-                        )
-                      )}
-                    </div>
-                  </div>
-                )}
+                <DayEventsModal
+                  open={isCekimDayModalOpen}
+                  date={takvimSelectedDate}
+                  dateStr={selectedTakvimDateStr}
+                  events={cekimTakvimDayEvents}
+                  onClose={() => setTakvimSelectedDate(null)}
+                  allowNotes={false}
+                  eyebrow="Çekim günü"
+                  emptyHint="Bu tarihte planlanmış çekim bulunmuyor."
+                  onEventClick={(ev) => {
+                    const sourceId = ev.sourceId || String(ev.id || '').replace(/^randevu-/, '');
+                    const app = bookedAppointments.find(
+                      (a) => String(a.id) === String(sourceId)
+                    );
+                    if (!app) return;
+                    if (!canEditAppointment(app)) {
+                      showToast('Bu randevuyu düzenleme yetkiniz yok.');
+                      return;
+                    }
+                    setTakvimSelectedDate(null);
+                    openEditModal(app);
+                  }}
+                  toolbar={
+                    role !== 'yonetici' ? (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setDayListFilter('all')}
+                          className={`min-h-10 px-3.5 sm:px-4 py-2 rounded-xl text-[12px] sm:text-[13px] font-medium transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98] border ${
+                            dayListFilter === 'all'
+                              ? 'bg-white text-black border-white shadow-sm'
+                              : 'bg-[#1C1C1E] text-[#86868B] border-white/5 hover:text-white hover:border-white/10'
+                          }`}
+                        >
+                          Tümü
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDayListFilter('confirmed')}
+                          className={`min-h-10 px-3.5 sm:px-4 py-2 rounded-xl text-[12px] sm:text-[13px] font-medium transition-all duration-300 ease-zebra cursor-pointer active:scale-[0.98] border ${
+                            dayListFilter === 'confirmed'
+                              ? 'bg-white text-black border-white shadow-sm'
+                              : 'bg-[#1C1C1E] text-[#86868B] border-white/5 hover:text-white hover:border-white/10'
+                          }`}
+                        >
+                          Kesinleşmiş
+                        </button>
+                      </div>
+                    ) : null
+                  }
+                />
               </div>
             )}
 
@@ -3699,13 +3822,16 @@ const pendingRequests = bookedAppointments.filter(app => {
                 <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 w-full mb-8">
                   <h3 className="text-[12px] font-medium text-[#86868B] mb-6">KONUM VE DETAYLAR</h3>
                   <form onSubmit={handleSubmit} className="space-y-6 w-full">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] gap-4 items-end">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
                       <div>
                         <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">İl</label>
                         <div className="relative">
                           <select
                             value={requestIl}
-                            onChange={(e) => { setRequestIl(e.target.value); setRequestIlce(''); setInquiryDone(false); }}
+                            onChange={(e) => {
+                              setRequestIl(e.target.value);
+                              setRequestIlce('');
+                            }}
                             className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
                           >
                             {TURKEY_ILLER.map((il) => (
@@ -3720,7 +3846,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                         <div className="relative">
                           <select
                             value={requestIlce}
-                            onChange={(e) => { setRequestIlce(e.target.value); setInquiryDone(false); }}
+                            onChange={(e) => setRequestIlce(e.target.value)}
                             className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
                           >
                             <option value="">İlçe seçin</option>
@@ -3731,7 +3857,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
                         </div>
                       </div>
-                      <div>
+                      <div className="sm:col-span-2 lg:col-span-1">
                         <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Semt (opsiyonel)</label>
                         <input
                           type="text"
@@ -3741,35 +3867,66 @@ const pendingRequests = bookedAppointments.filter(app => {
                           className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px]"
                         />
                       </div>
-                      <button
-                        type="button"
-                        onClick={runRegionInquiry}
-                        className="h-12 px-5 rounded-xl bg-white/10 border border-white/10 text-white text-[14px] font-medium hover:bg-white/15 cursor-pointer active:scale-[0.98] whitespace-nowrap shrink-0"
-                      >
-                        Soruştur
-                      </button>
                     </div>
 
-                    {inquiryDone && (
-                      <div className="space-y-3 pt-2">
-                        <p className="text-[12px] font-medium text-[#86868B]">
-                          {requestIl} / {requestIlce} — aktif talepler
-                        </p>
-                        {(inquiryResults || []).length === 0 ? (
-                          <p className="text-[14px] text-[#86868B]">Bu bölgede aktif talep bulunmuyor.</p>
+                    {regionActivity && (
+                      <div className="space-y-3 pt-1">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+                          <p className="text-[12px] font-medium text-[#86868B]">
+                            {requestIl} / {requestIlce} — bölgedeki çekimler
+                          </p>
+                          <p className="text-[11px] text-[#636366]">
+                            {regionActivity.length === 0
+                              ? 'Aktif kayıt yok'
+                              : `${regionActivity.length} kayıt`}
+                          </p>
+                        </div>
+
+                        {regionActivity.length === 0 ? (
+                          <p className="text-[14px] text-[#86868B] bg-[#1C1C1E]/60 border border-white/5 rounded-xl px-4 py-3">
+                            Bu bölgede teklif veya kesinleşmiş çekim bulunmuyor.
+                          </p>
                         ) : (
-                          (inquiryResults || []).map((app) => (
-                            <div key={app.id} className="flex items-center justify-between gap-3 bg-[#1C1C1E] border border-white/5 rounded-xl px-4 py-3">
-                              <div className="min-w-0">
-                                <p className="text-[14px] text-white truncate">
-                                  {app.tarih || 'Tarih yok'}{app.saatBlok ? ` • ${app.saatBlok}` : ''}
-                                  {app.semt ? ` • ${app.semt}` : ''}
-                                </p>
-                                <p className="text-[12px] text-[#86868B] truncate">{toTitleCaseName(app.pilot) || '—'} • {toTitleCaseName(app.danismanIsmi)}</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {regionActivity.map((app) => (
+                              <div
+                                key={app.id}
+                                className="flex flex-col gap-3 bg-[#1C1C1E] border border-white/5 rounded-2xl p-4 sm:p-5"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 space-y-1">
+                                    <p className="text-[15px] font-medium text-white leading-snug">
+                                      {app.tarih || 'Tarih bekleniyor'}
+                                      {app.saatBlok ? (
+                                        <span className="text-white/90"> · {app.saatBlok}</span>
+                                      ) : (
+                                        <span className="text-[#86868B] font-normal text-[13px]"> · Saat yok</span>
+                                      )}
+                                    </p>
+                                    {app.semt ? (
+                                      <p className="text-[12px] text-[#86868B] truncate">{app.semt}</p>
+                                    ) : null}
+                                    <p className="text-[12px] text-[#86868B] truncate">
+                                      {toTitleCaseName(app.danismanIsmi)}
+                                      {app.pilot ? ` · Pilot: ${toTitleCaseName(app.pilot)}` : ''}
+                                    </p>
+                                  </div>
+                                  {getStatusBadge(app.status)}
+                                </div>
+                                {app.tarih && app.il && (
+                                  <div className="flex items-center gap-2 pt-0.5 border-t border-white/[0.05]">
+                                    <span className="text-[11px] text-[#636366]">Hava</span>
+                                    <WeatherBadge
+                                      il={app.il}
+                                      ilce={app.ilce}
+                                      tarih={app.tarih}
+                                      variant="detail"
+                                    />
+                                  </div>
+                                )}
                               </div>
-                              {getStatusBadge(app.status)}
-                            </div>
-                          ))
+                            ))}
+                          </div>
                         )}
                       </div>
                     )}

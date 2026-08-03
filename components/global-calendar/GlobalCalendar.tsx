@@ -1,18 +1,20 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Appointment } from '../../types/appointments';
 import type { CalendarEvent } from '../../types/calendar';
 import {
   buildCalendarEventsFromAppointments,
   buildDayMarkers,
-  createNoteEvent,
   eventsForDate,
-  loadNotesFromStorage,
   mergeCalendarEvents,
-  migrateNotesToPrimary,
-  saveNotesToStorage,
 } from '../../lib/calendarEvents';
+import {
+  fetchCalendarNotes,
+  insertCalendarNote,
+  migrateLocalNotesToSupabase,
+  updateCalendarNote,
+} from '../../lib/calendarNotesApi';
 import CalendarMonthGrid from './CalendarMonthGrid';
 import DayEventsModal from './DayEventsModal';
 
@@ -24,10 +26,8 @@ function toDateStr(date: Date) {
 
 type Props = {
   appointments: Appointment[];
-  /** Primary persistence key (UUID tercih) */
+  /** auth.users / session UUID */
   userKey: string;
-  /** Eski / alternatif anahtarlar (isim → UUID geçişi) */
-  fallbackKeys?: string[];
   showTeamAppointments?: boolean;
   fullName?: string;
   currentUserId?: string;
@@ -35,12 +35,11 @@ type Props = {
 
 /**
  * Genel Takvim — ay ızgarası + gün modalı.
- * Randevular Supabase listesinden; notlar localStorage (sekme değişiminde kalır).
+ * Randevular + notlar Supabase'den (SQL ile sıfırlanabilir).
  */
 export default function GlobalCalendar({
   appointments,
   userKey,
-  fallbackKeys = [],
   showTeamAppointments = true,
   fullName = '',
   currentUserId = '',
@@ -50,36 +49,19 @@ export default function GlobalCalendar({
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [notes, setNotes] = useState<CalendarEvent[]>([]);
-  /** İlk yüklemede boş state'in localStorage'ı ezmesini engeller */
-  const skipSaveRef = useRef(true);
-  const fallbackKey = useMemo(
-    () => [...new Set(fallbackKeys.filter(Boolean))].join('|'),
-    [fallbackKeys]
-  );
-  const resolvedFallbacks = useMemo(
-    () => (fallbackKey ? fallbackKey.split('|') : []),
-    [fallbackKey]
-  );
 
   useEffect(() => {
     if (!userKey) return;
-    skipSaveRef.current = true;
-    migrateNotesToPrimary(userKey, resolvedFallbacks);
-    setNotes(loadNotesFromStorage(userKey, resolvedFallbacks));
-  }, [userKey, fallbackKey, resolvedFallbacks]);
-
-  useEffect(() => {
-    if (!userKey) return;
-    if (skipSaveRef.current) {
-      skipSaveRef.current = false;
-      return;
-    }
-    saveNotesToStorage(userKey, notes);
-    // İsim anahtarına da yaz — UUID geçişinde kayıp olmasın
-    for (const key of resolvedFallbacks) {
-      if (key && key !== userKey) saveNotesToStorage(key, notes);
-    }
-  }, [notes, userKey, resolvedFallbacks]);
+    let cancelled = false;
+    (async () => {
+      await migrateLocalNotesToSupabase(userKey);
+      const loaded = await fetchCalendarNotes(userKey);
+      if (!cancelled) setNotes(loaded);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userKey]);
 
   const randevuEvents = useMemo(
     () =>
@@ -122,24 +104,22 @@ export default function GlobalCalendar({
     }
   };
 
-  const handleAddNote = (title: string, body: string) => {
-    if (!selectedDateStr) return;
-    setNotes((prev) => [createNoteEvent(selectedDateStr, title, body), ...prev]);
+  const handleAddNote = async (title: string, body: string) => {
+    if (!selectedDateStr || !userKey) return;
+    const created = await insertCalendarNote(
+      userKey,
+      selectedDateStr,
+      title,
+      body
+    );
+    if (created) setNotes((prev) => [created, ...prev]);
   };
 
-  const handleUpdateNote = (id: string, title: string, body: string) => {
-    setNotes((prev) =>
-      prev.map((n) =>
-        n.id === id
-          ? {
-              ...n,
-              title: title.trim() || 'Not',
-              body: body.trim() || null,
-              updatedAt: new Date().toISOString(),
-            }
-          : n
-      )
-    );
+  const handleUpdateNote = async (id: string, title: string, body: string) => {
+    const updated = await updateCalendarNote(id, title, body);
+    if (updated) {
+      setNotes((prev) => prev.map((n) => (n.id === id ? updated : n)));
+    }
   };
 
   if (!userKey) return null;

@@ -32,6 +32,7 @@ export function appointmentToCalendarEvent(app: Appointment): CalendarEvent | nu
     status: isConfirmed ? 'confirmed' : 'pending',
     time: app.saatBlok || null,
     subtitle: [
+      app.danismanIsmi ? `Danışman: ${toTitleCaseName(app.danismanIsmi)}` : null,
       app.portfoyTuru,
       app.pilot ? `Pilot: ${toTitleCaseName(app.pilot)}` : null,
     ]
@@ -117,9 +118,3 @@ export function createNoteEvent(dateStr: string, title: string, body = ''): Cale
     updatedAt: now,
   };
 }
-
-export {
-  loadNotesFromStorage,
-  saveNotesToStorage,
-  migrateNotesToPrimary,
-} from './calendarNotesStorage';
