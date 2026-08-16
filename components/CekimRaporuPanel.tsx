@@ -90,6 +90,7 @@ type Props = {
 
 export default function CekimRaporuPanel({ appointments }: Props) {
   const [reportMode, setReportMode] = useState<'weekly' | 'monthly'>('weekly');
+  /** Rapor filtresi: kişi anahtarı (AppRole değil) */
   const [reportPilot, setReportPilot] = useState<'all' | 'fatima' | 'selim'>('all');
   const [reportDetailAppointment, setReportDetailAppointment] = useState<Appointment | null>(null);
   const [reportRefDate, setReportRefDate] = useState(() => {

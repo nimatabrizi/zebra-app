@@ -35,14 +35,19 @@ const STATUS_META: Record<
   { label: string; chip: string; dot: string }
 > = {
   confirmed: {
-    label: 'Kesinleşmiş',
+    label: 'Kesinleşmiş çekim',
     chip: 'border-[#34C759]/25 bg-[#34C759]/10 text-[#34C759]',
     dot: 'bg-[#34C759]',
   },
   pending: {
-    label: 'Onay Bekliyor',
+    label: 'Onay bekleniyor',
     chip: 'border-[#FF9F0A]/25 bg-[#FF9F0A]/10 text-[#FF9F0A]',
     dot: 'bg-[#FF9F0A]',
+  },
+  cancelled: {
+    label: 'İptal edilmiş',
+    chip: 'border-[#FF453A]/25 bg-[#FF453A]/10 text-[#FF453A]',
+    dot: 'bg-[#FF453A]',
   },
   note: {
     label: 'Not',
@@ -294,17 +299,25 @@ export default function DayEventsModal({
                 );
               }
 
-              const cardClass =
-                'w-full text-left rounded-2xl border border-white/[0.06] bg-[#1C1C1E]/55 p-4 sm:p-5 transition-all duration-300 ease-zebra';
+              const isTeamInfo = ev.isTeamInfo === true;
+              const cardClass = isTeamInfo
+                ? 'w-full text-left rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] p-4 sm:p-5 transition-all duration-300 ease-zebra'
+                : 'w-full text-left rounded-2xl border border-white/[0.06] bg-[#1C1C1E]/55 p-4 sm:p-5 transition-all duration-300 ease-zebra';
               const cardBody = (
                 <>
                   <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-medium tracking-wide ${meta.chip}`}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-medium tracking-wide ${
+                          meta.chip
+                        }`}
                       >
-                        <span className={`w-1 h-1 rounded-full ${meta.dot}`} />
-                        {ev.type === 'randevu' ? 'Çekim' : 'Not'}
+                        <span
+                          className={`w-1 h-1 rounded-full ${
+                            meta.dot
+                          }`}
+                        />
+                        {meta.label}
                       </span>
                       {ev.time && (
                         <span className="text-[12px] font-medium text-white/80 tabular-nums">
@@ -312,13 +325,17 @@ export default function DayEventsModal({
                         </span>
                       )}
                     </div>
-                    {(ev.type === 'note' || onEventClick) && (
+                    {!isTeamInfo && (ev.type === 'note' || onEventClick) && (
                       <span className="shrink-0 w-7 h-7 rounded-full bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-[#86868B]">
                         <Pencil className="w-3 h-3" strokeWidth={2} />
                       </span>
                     )}
                   </div>
-                  <p className="text-[15px] font-medium text-white leading-snug">
+                  <p
+                    className={`text-[15px] font-medium leading-snug ${
+                      isTeamInfo ? 'text-white/75' : 'text-white'
+                    }`}
+                  >
                     {ev.title}
                   </p>
                   {ev.subtitle && (
@@ -326,12 +343,11 @@ export default function DayEventsModal({
                       {ev.subtitle}
                     </p>
                   )}
-                  {ev.body && (
+                  {ev.body && !isTeamInfo && (
                     <p className="text-[13px] text-[#A1A1A6] mt-2 leading-relaxed line-clamp-3">
                       {ev.body}
                     </p>
                   )}
-                  <p className="text-[11px] text-[#636366] mt-3">{meta.label}</p>
                 </>
               );
 
@@ -348,16 +364,20 @@ export default function DayEventsModal({
                 );
               }
 
+              if (isTeamInfo || !onEventClick) {
+                return (
+                  <div key={ev.id} className={cardClass}>
+                    {cardBody}
+                  </div>
+                );
+              }
+
               return (
                 <button
                   key={ev.id}
                   type="button"
-                  onClick={() => onEventClick?.(ev)}
-                  className={`${cardClass} ${
-                    onEventClick
-                      ? 'hover:bg-[#1C1C1E] hover:border-white/10 cursor-pointer active:scale-[0.99]'
-                      : ''
-                  }`}
+                  onClick={() => onEventClick(ev)}
+                  className={`${cardClass} hover:bg-[#1C1C1E] hover:border-white/10 cursor-pointer active:scale-[0.99]`}
                 >
                   {cardBody}
                 </button>

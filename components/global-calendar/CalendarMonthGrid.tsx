@@ -145,7 +145,10 @@ export default function CalendarMonthGrid({
               `}
             >
               <span className="leading-none">{day}</span>
-              {(marker?.hasConfirmed || marker?.hasPending || marker?.hasNote) && (
+              {(marker?.hasConfirmed ||
+                marker?.hasPending ||
+                marker?.hasCancelled ||
+                marker?.hasNote) && (
                 <div className="absolute bottom-1.5 md:bottom-1 lg:bottom-2 flex items-center gap-0.5">
                   {marker.hasConfirmed && (
                     <span
@@ -158,6 +161,13 @@ export default function CalendarMonthGrid({
                     <span
                       className={`w-1 h-1 rounded-full ${
                         isSelected ? 'bg-[#FF9F0A]' : 'bg-[#FF9F0A]/90'
+                      }`}
+                    />
+                  )}
+                  {marker.hasCancelled && (
+                    <span
+                      className={`w-1 h-1 rounded-full ${
+                        isSelected ? 'bg-[#FF453A]' : 'bg-[#FF453A]/90'
                       }`}
                     />
                   )}

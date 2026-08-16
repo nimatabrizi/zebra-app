@@ -103,3 +103,19 @@ export function isOfferEndBlockedByConfirmed(opts: {
 }): boolean {
   return findOfferRangeConflicts(opts).confirmed.length > 0;
 }
+
+/** Başlangıçtan sonraki en kısa teklif aralığı (2 saat) dolu mu? */
+export function isOfferStartBlockedByConfirmed(opts: {
+  appointments: Appointment[];
+  date: string | null | undefined;
+  startHour: number;
+  pilotName?: string | null;
+  excludeId?: string | null;
+}): boolean {
+  return (
+    findOfferRangeConflicts({
+      ...opts,
+      endHour: opts.startHour + 2,
+    }).confirmed.length > 0
+  );
+}

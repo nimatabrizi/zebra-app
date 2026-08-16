@@ -12,7 +12,7 @@
  * * Structural Preservation (100% INTACT):
  * - Backend data flow, multi-user scaffolding, Supabase integrations, and custom slots (15:00 - 18:00) preserved perfectly.
  */
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { 
@@ -31,9 +31,17 @@ import {
   canApproveAppointments,
   canCreateManualAppointment,
   manualEntryDisplayName,
+  isUserAdmin,
+  isPilotRole,
+  isPilotAccount,
+  isUuid,
+  normalizeAppRole,
+  isPersonelRole,
+  PILOT_OPTIONS,
 } from '../lib/authIdentity';
 import { toTitleCaseName } from '../lib/formatName';
 import {
+  appointmentNamesMatch,
   formatAppointmentRow,
   isConfirmedStatus as isConfirmedStatusUtil,
   isPendingStatus as isPendingStatusUtil,
@@ -42,12 +50,12 @@ import {
   normalizeAppointmentStatus,
   ownerRoleFromPilot as ownerRoleFromPilotUtil,
   ownerRoleDisplayName as ownerRoleDisplayNameUtil,
+  pilotOwnsAppointment as pilotOwnsAppointmentUtil,
   parseDisplayDate,
   formatWeekdayTr,
 } from '../lib/appointmentUtils';
 import { DEFAULT_IL, TURKEY_ILLER, getIlceler } from '../lib/turkeyLocations';
 import {
-  TIME_SLOT_OPTIONS,
   OFFER_HOUR_OPTIONS,
   formatOfferHour,
   formatOfferRange,
@@ -57,6 +65,7 @@ import {
 import {
   findOfferRangeConflicts,
   isOfferEndBlockedByConfirmed,
+  isOfferStartBlockedByConfirmed,
 } from '../lib/offerConflicts';
 import { APPOINTMENT_STATUS_LABELS } from '../types/appointments';
 import {
@@ -71,13 +80,20 @@ import OverviewDashboard from '../components/OverviewDashboard';
 import SidebarNav from '../components/SidebarNav';
 import SmartSchedulingAssistant from '../components/SmartSchedulingAssistant';
 import WeatherBadge from '../components/WeatherBadge';
+import ZebraStudio from '../components/ZebraStudio';
+import SoldRentedStudio from '../components/SoldRentedStudio';
+import BatchProductionStudio from '../components/BatchProductionStudio';
+import UserManagement from '../components/UserManagement';
 import {
   buildConsultantNav,
   buildManagerNav,
   collectNavTabIds,
   isLiveContentTab,
 } from '../lib/sidebarNav';
-import { appointmentToCalendarEvent } from '../lib/calendarEvents';
+import {
+  appointmentToCalendarEvent,
+  buildDayMarkers,
+} from '../lib/calendarEvents';
 
 export default function App() {
   // --- PRESERVED LOGIC & STATE MANAGEMENT ---
@@ -91,13 +107,14 @@ const [username, setUsername] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-const [activeTab, setActiveTab] = useState('genel');
+  const [activeTab, setActiveTab] = useState('genel');
   const [fullName, setFullName] = useState(''); // Gerçek isim veritabanından çekilip buraya yazılacak
   const [currentUserId, setCurrentUserId] = useState(''); // Auth / profiles UUID
   const [isPilot, setIsPilot] = useState(false); // YENİ: Pilot yetkisi
   const isLoggedInRef = useRef(false);
   const currentUserIdRef = useRef('');
   const rememberMeRef = useRef(false);
+  const activeTabRef = useRef('genel');
   const mainScrollRef = useRef(null);
 
   useEffect(() => {
@@ -112,21 +129,90 @@ const [activeTab, setActiveTab] = useState('genel');
     rememberMeRef.current = rememberMe;
   }, [rememberMe]);
 
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  const REMEMBER_ME_KEY = 'zebra_remember_me';
+  const TAB_SESSION_KEY = 'zebra_session_active';
+  const ACTIVE_TAB_KEY = 'zebra_active_tab';
+
+  const normalizeAppTab = (tabId) => {
+    if (!tabId || typeof tabId !== 'string') return null;
+    if (tabId === 'teklif-onay') return 'randevu';
+    if (tabId === 'studio-sosyal') return 'studio-yeni-portfoy';
+    if (
+      tabId === 'kullanici-yonetimi' ||
+      tabId === 'users-edit' ||
+      tabId === 'users-delete'
+    ) {
+      return 'users-overview';
+    }
+    return tabId;
+  };
+
+  const readStoredActiveTab = () => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const fromUrl = new URLSearchParams(window.location.search).get('tab');
+      const normalizedUrl = normalizeAppTab(fromUrl);
+      if (normalizedUrl) return normalizedUrl;
+      return normalizeAppTab(sessionStorage.getItem(ACTIVE_TAB_KEY));
+    } catch {
+      return null;
+    }
+  };
+
+  const persistActiveTab = (tabId) => {
+    const next = normalizeAppTab(tabId) || 'genel';
+    activeTabRef.current = next;
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem(ACTIVE_TAB_KEY, next);
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', next);
+      window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  /** İlk boyamada URL / sessionStorage sekmesini geri yükle (auth'tan önce) */
+  useLayoutEffect(() => {
+    const stored = readStoredActiveTab();
+    if (stored && stored !== activeTabRef.current) {
+      setActiveTab(stored);
+      activeTabRef.current = stored;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /** Sekme değişince ana içerik her zaman en üstten açılsın */
   useEffect(() => {
     const el = mainScrollRef.current;
     if (el) el.scrollTop = 0;
   }, [activeTab]);
 
-  /** Eski teklif-onay URL/sekmesi → Randevu Talebi */
+  /** Eski teklif-onay / pilot randevu sekmesi → rolün canlı paneline */
   useEffect(() => {
     if (activeTab === 'teklif-onay') {
-      setActiveTab('randevu');
+      const next =
+        role === 'danisman' ? 'randevu' : isPersonelRole(role) ? 'takvim' : 'cekim';
+      setActiveTab(next);
+      persistActiveTab(next);
+      return;
     }
-  }, [activeTab]);
-
-  const REMEMBER_ME_KEY = 'zebra_remember_me';
-  const TAB_SESSION_KEY = 'zebra_session_active';
+    if (activeTab === 'randevu' && role && role !== 'danisman') {
+      const next = isPersonelRole(role) ? 'takvim' : 'cekim';
+      setActiveTab(next);
+      persistActiveTab(next);
+      return;
+    }
+    if (activeTab === 'cekim' && isPersonelRole(role)) {
+      setActiveTab('takvim');
+      persistActiveTab('takvim');
+    }
+  }, [activeTab, role]);
 
   const clearProfileCache = () => {
     localStorage.removeItem('zebra_auth_status');
@@ -181,6 +267,32 @@ const [activeTab, setActiveTab] = useState('genel');
     }
   };
 
+  const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
+
+  // Service-role API: profiles.role=pilot iken eski appointments RLS boş döner.
+  const fetchAppointments = async () => {
+    try {
+      const res = await fetch('/api/appointments', {
+        credentials: 'same-origin',
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error(
+          'Veri çekme hatası:',
+          payload?.error || res.statusText,
+          payload
+        );
+        return;
+      }
+      const data = Array.isArray(payload?.appointments)
+        ? payload.appointments
+        : [];
+      setBookedAppointments(data.map((row) => formatAppointmentRow(row)));
+    } catch (error) {
+      console.error('Veri çekme hatası:', error);
+    }
+  };
+
   // Kullanıcı değiştiğinde veya giriş yapıldığında bildirimleri yükle
   useEffect(() => {
     if (isLoggedIn && (fullName || currentUserId)) {
@@ -209,6 +321,16 @@ const [activeTab, setActiveTab] = useState('genel');
             if (prev.some((n) => String(n.id) === String(formatted.id))) return prev;
             return [formatted, ...prev];
           });
+          // Eski appointments RLS pilot realtime olayını gizleyebilir.
+          // Bildirim güvenilir tetikleyicidir; aktif akışı sunucu API'sinden yenile.
+          const title = String(formatted.title || '').toLocaleLowerCase('tr-TR');
+          if (
+            title.includes('çekim') ||
+            title.includes('cekim') ||
+            title.includes('talep')
+          ) {
+            void fetchAppointments();
+          }
           if (!isNotificationOpenRef.current) {
             showToastRef.current?.(String(formatted.title || 'Yeni bildirim'));
           }
@@ -249,7 +371,9 @@ const [activeTab, setActiveTab] = useState('genel');
       )
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('Bildirim Realtime kanal hatası');
+          // Supabase bağlantıyı kendisi yeniden dener. console.error Next.js
+          // geliştirme overlay'ini açarak ilgisiz işlemleri bölüyordu.
+          console.warn('Bildirim Realtime kanalı yeniden bağlanıyor');
         }
       });
 
@@ -302,15 +426,25 @@ const [activeTab, setActiveTab] = useState('genel');
 
   /** Bildirim kartı → ilgili sekme */
   const resolveNotificationTab = (notif) => {
-    if (notif?.link_tab) return notif.link_tab;
+    if (notif?.link_tab) {
+      // Personelde talep paneli yok; eski link_tab=cekim → takvim
+      if (isPersonelRole(role) && notif.link_tab === 'cekim') return 'takvim';
+      return notif.link_tab;
+    }
     const title = String(notif?.title || '').toLocaleLowerCase('tr-TR');
     const msg = String(notif?.message || '').toLocaleLowerCase('tr-TR');
     const blob = `${title} ${msg}`;
 
+    if (isPersonelRole(role)) return 'takvim';
+
     if (
       blob.includes('teklif') ||
       blob.includes('kesinleştirmenizi') ||
-      blob.includes('kesinlestirmenizi')
+      blob.includes('kesinlestirmenizi') ||
+      blob.includes('güncellendi') ||
+      blob.includes('guncellendi') ||
+      blob.includes('yeniden atandı') ||
+      blob.includes('yeniden atandi')
     ) {
       return role === 'danisman' ? 'randevu' : 'cekim';
     }
@@ -345,17 +479,30 @@ const [activeTab, setActiveTab] = useState('genel');
     }
   };
 
-const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
-
-  // 1. GÜNCELLEME: Veri çekme motorunu özgürleştirdik (Her yerden çağrılabilir)
-  const fetchAppointments = async () => {
-    const { data, error } = await supabase.from('appointments').select('*');
-    if (error) {
-      console.error("Veri çekme hatası:", error?.message || error, error);
-      return;
-    }
-    if (data) {
-      setBookedAppointments(data.map((row) => formatAppointmentRow(row)));
+  const patchAppointment = async (
+    id: string | number,
+    patch: Record<string, unknown>
+  ): Promise<{ ok: true } | { ok: false; message: string }> => {
+    try {
+      const res = await fetch(`/api/appointments/${encodeURIComponent(String(id))}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          ok: false,
+          message: String(payload?.error || res.statusText || 'Güncelleme başarısız'),
+        };
+      }
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Güncelleme başarısız',
+      };
     }
   };
 
@@ -383,7 +530,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       )
       .subscribe((status) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('Randevu Realtime kanal hatası');
+          console.warn('Randevu Realtime kanalı yeniden bağlanıyor');
         }
       });
 
@@ -434,7 +581,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const [offerCalMonth, setOfferCalMonth] = useState(new Date().getMonth());
   const [offerCalYear, setOfferCalYear] = useState(new Date().getFullYear());
 
-  // Takvim / slot (yönetici paneli — talep formundan bağımsız)
+  // Takvim / slot (personel paneli — talep formundan bağımsız)
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTimeBlock, setSelectedTimeBlock] = useState(null);
   const [locationStr, setLocationStr] = useState('');
@@ -478,10 +625,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const [isManualCalendarOpen, setIsManualCalendarOpen] = useState(false);
   const [manualCalMonth, setManualCalMonth] = useState(new Date().getMonth());
   const [manualCalYear, setManualCalYear] = useState(new Date().getFullYear());
+  const [manualStartHour, setManualStartHour] = useState('');
+  const [manualEndHour, setManualEndHour] = useState('');
   const [consultants, setConsultants] = useState([]);
   const [manualForm, setManualForm] = useState({
     tarih: '',
-    saatBlok: '',
     il: DEFAULT_IL,
     ilce: '',
     semt: '',
@@ -490,8 +638,6 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     danismanIsmi: '',
     pilot: '',
   });
-
-  const PILOT_OPTIONS = ['FATİMA BAYRAMOVA', 'MEHMET SELİM İDİZ'];
 
   const [currentDate] = useState(new Date());
   const [viewMonth, setViewMonth] = useState(currentDate.getMonth());
@@ -502,15 +648,15 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const [takvimSelectedDate, setTakvimSelectedDate] = useState(null);
   /** Günün randevuları filtresi: all | confirmed */
   const [dayListFilter, setDayListFilter] = useState('all');
-  /** Danışman Randevularım: kesinlesti | pilot_bekleniyor | danisman_onayi_bekliyor | iptal | all */
-  const [randevularimFilter, setRandevularimFilter] = useState('kesinlesti');
+  /** Danışman Randevularım: sayfa her açıldığında tüm kayıtlar. */
+  const [randevularimFilter, setRandevularimFilter] = useState('all');
 
   const RANDEVULARIM_FILTERS = [
-    { value: 'kesinlesti', label: 'Kesinleşmiş' },
+    { value: 'all', label: 'Tümü' },
     { value: 'danisman_onayi_bekliyor', label: 'Onay Bekliyor' },
     { value: 'pilot_bekleniyor', label: 'Teklif Bekleniyor' },
+    { value: 'kesinlesti', label: 'Kesinleşmiş' },
     { value: 'iptal', label: 'İptal' },
-    { value: 'all', label: 'Tümü' },
   ];
 
   const formatDateStr = (date: any) => {
@@ -548,17 +694,17 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     return '';
   };
 
-  /** Formdaki pilot ismi → owner_role enum */
+  /** Formdaki pilot ismi → owner_role (takvim kişi anahtarı; AppRole değil) */
   const ownerRoleFromPilot = (pilotName: string) => ownerRoleFromPilotUtil(pilotName);
+  const ownerRoleDisplayName = (ownerRole) => ownerRoleDisplayNameUtil(ownerRole);
+  const pilotOwnsAppointment = (app) =>
+    pilotOwnsAppointmentUtil(app, { fullName, userId: currentUserId });
 
   const showToast = (msg: any) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
   showToastRef.current = showToast;
-
-  /** owner_role → kartta gösterilecek işlem sorumlusu adı */
-  const ownerRoleDisplayName = (ownerRole) => ownerRoleDisplayNameUtil(ownerRole);
 
   /** Türkçe ayrılma eki: Fatima Bayramova'dan, Mehmet Selim İdiz'den */
   const withTurkishAblative = (name) => {
@@ -615,12 +761,14 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
   /** profiles'tan pilot tam adı */
   const resolvePilotFullName = async (pilotField, ownerRoleHint) => {
-    const ownerRole = ownerRoleHint || ownerRoleFromPilot(pilotField);
-    if (ownerRole === 'fatima' || ownerRole === 'selim') {
+    const ownerKey = ownerRoleHint || ownerRoleFromPilot(pilotField);
+    const displayFallback = ownerRoleDisplayName(ownerKey);
+    if (displayFallback) {
       const { data } = await supabase
         .from('profiles')
         .select('tam_isim')
-        .eq('role', ownerRole)
+        .eq('is_pilot', true)
+        .ilike('tam_isim', `%${displayFallback.split(' ')[0]}%`)
         .limit(1)
         .maybeSingle();
       if (data?.tam_isim) return data.tam_isim;
@@ -637,7 +785,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       if (data?.tam_isim) return data.tam_isim;
     }
 
-    return ownerRoleDisplayName(ownerRole) || pilotStr || fullName || '';
+    return displayFallback || pilotStr || fullName || '';
   };
 
   /** profiles.id (UUID) — tam isim ile */
@@ -662,19 +810,40 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     return fuzzy?.id || null;
   };
 
-  /** Pilot profil UUID — owner_role veya isim ile */
+  /** Pilot profil UUID — isim / takvim anahtarı ile (asla fatima/selim yazılmaz) */
   const resolvePilotProfileId = async (pilotField) => {
-    const ownerRole = ownerRoleFromPilot(pilotField);
-    if (ownerRole === 'fatima' || ownerRole === 'selim') {
+    const byName = await resolveProfileIdByName(pilotField);
+    if (byName) return byName;
+
+    const ownerKey = ownerRoleFromPilot(pilotField);
+    const displayName = ownerRoleDisplayName(ownerKey);
+    if (displayName) {
+      const { data: exact } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('tam_isim', displayName)
+        .limit(1)
+        .maybeSingle();
+      if (exact?.id) return exact.id;
+
       const { data } = await supabase
         .from('profiles')
         .select('id')
-        .eq('role', ownerRole)
+        .eq('is_pilot', true)
+        .ilike('tam_isim', `%${displayName.split(' ')[0]}%`)
         .limit(1)
         .maybeSingle();
       if (data?.id) return data.id;
     }
-    return resolveProfileIdByName(pilotField);
+    return null;
+  };
+
+  const resolvePilotUserId = async (appointmentLike) => {
+    const existing = appointmentLike?.pilotId ?? appointmentLike?.pilot_id;
+    if (isUuid(existing)) return existing;
+    return resolvePilotProfileId(
+      appointmentLike?.pilot || appointmentLike?.ownerRole || null
+    );
   };
 
   /** Danışman profil UUID — isim, yoksa created_by */
@@ -686,14 +855,15 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   };
 
   /**
-   * Kesinleşti: danışman + tüm broker'lara (UUID) bildirim.
-   * Sahip → standart kesinleşme metni; diğer broker'lar → çekim randevusu metni.
+   * Kesinleşti: danışman + tüm broker'lar + sorumlu pilot (UUID) bildirim.
+   * Sahip → standart kesinleşme metni; broker → çekim randevusu; pilot → kesinleşme.
    */
   const notifyAppointmentApproved = async (appointment) => {
     const danismanIsmi = String(appointment?.danismanIsmi || '').trim();
     const createdBy = appointment?.createdBy || null;
     const tarih = appointment?.tarih;
     const konum = appointment?.konum;
+    const saatBlok = appointment?.saatBlok || '';
     const pilotField = appointment?.pilot;
     const ownerRoleHint = appointment?.ownerRole || ownerRoleFromPilot(pilotField);
 
@@ -745,10 +915,14 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     const brokerIds = (brokers || []).map((b) => b.id).filter(Boolean);
 
-    // 3) Alıcı listesi (mükerrer yok)
+    // 3) Sorumlu pilot UUID
+    const pilotUserId = await resolvePilotUserId(appointment);
+
+    // 4) Alıcı listesi (mükerrer yok)
     const recipientIds = new Set();
     if (ownerId) recipientIds.add(ownerId);
     brokerIds.forEach((id) => recipientIds.add(id));
+    if (pilotUserId) recipientIds.add(pilotUserId);
 
     if (recipientIds.size === 0) {
       console.warn('Kesinleşme bildirimi: alıcı bulunamadı', { danismanIsmi, createdBy });
@@ -758,9 +932,21 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     const pilotTamAdi = await resolvePilotFullName(pilotField, ownerRoleHint);
     const ownerMessage = buildOwnerApprovedMessage(tarih, konum);
     const brokerMessage = buildBrokerApprovedMessage(danismanTamAdi, pilotTamAdi, tarih);
+    const dateLabel = tarih || '';
+    const pilotMessage = `${toTitleCaseName(danismanTamAdi)}, ${dateLabel}${
+      saatBlok ? ` • ${saatBlok}` : ''
+    } randevusu kesinleşti.`;
 
     const rows = Array.from(recipientIds).map((uid) => {
       const isOwner = ownerId && uid === ownerId;
+      const isPilotRecipient = pilotUserId && uid === pilotUserId && !isOwner;
+      if (isPilotRecipient) {
+        return {
+          user_id: uid,
+          title: 'Randevu Kesinleşti',
+          message: pilotMessage,
+        };
+      }
       return {
         user_id: uid,
         title: isOwner ? 'Talebiniz Kesinleşti' : 'Yeni Kesinleşen Çekim',
@@ -770,7 +956,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     const { error: notifError } = await supabase.from('notifications').insert(rows);
     if (notifError) {
-      console.error('Kesinleşme bildirimleri yazılamadı:', notifError.message, notifError);
+      console.error('Kesinleşme bildirimi yazılamadı:', notifError.message, notifError);
       return false;
     }
     await fetchNotifications();
@@ -778,8 +964,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   };
 
   /**
-   * Randevu içeriği güncellendi: ilgili danışman + tüm broker'lara bildirim.
-   * (Kesinleşme / iptal / yeniden teklif status bildirimlerinden ayrı.)
+   * Randevu içeriği güncellendi: ilgili karşı taraflara bildirim.
+   * Düzenleyen kişi hariç — danışman / pilot / broker.
    */
   const notifyAppointmentUpdated = async ({
     danismanIsmi,
@@ -788,16 +974,31 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     tarih,
     saatBlok,
     appointmentId,
+    pilot,
+    pilotId,
+    ownerRole,
+    previousPilotId = null,
+    changeKind = 'update',
   }) => {
-    const dateLabel = toDisplayDate(tarih) || String(tarih || '').trim() || '—';
+    const dateLabel = toDisplayDate(tarih) || String(tarih || '').trim();
     const timeLabel = String(saatBlok || '').trim();
     const place = String(konumLabel || '').trim() || 'Portföy';
-    const actor =
-      role === 'broker'
-        ? toTitleCaseName(fullName || 'Broker')
-        : toTitleCaseName(fullName || ownerRoleDisplayName(role) || 'Pilot');
+    const actor = toTitleCaseName(fullName || 'Bir kullanıcı');
+    const danismanLabel = toTitleCaseName(danismanIsmi) || 'danışman';
+    const schedule = timeLabel
+      ? `${dateLabel || '—'} • ${timeLabel}`
+      : dateLabel || null;
+    const scheduleSuffix = schedule ? ` Yeni plan: ${schedule}.` : '';
 
     const ownerUuid = await resolveDanismanProfileId(danismanIsmi, createdBy);
+    const assignedPilotId =
+      (isUuid(pilotId) ? pilotId : null) ||
+      (await resolvePilotUserId({
+        pilot,
+        ownerRole,
+        pilotId,
+      }));
+
     const { data: brokers, error: brokerError } = await supabase
       .from('profiles')
       .select('id')
@@ -806,30 +1007,110 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       console.error('Broker listesi alınamadı:', brokerError.message);
     }
 
-    const recipientIds = new Set();
-    if (ownerUuid) recipientIds.add(ownerUuid);
-    (brokers || []).forEach((b) => b?.id && recipientIds.add(b.id));
+    const actorId = currentUserId || null;
+    const rows = [];
+    const seen = new Set();
 
-    if (recipientIds.size === 0) {
-      console.warn('Güncelleme bildirimi: alıcı bulunamadı', { danismanIsmi, createdBy });
-      return false;
+    const pushRow = (userId, title, message, linkTab) => {
+      if (!userId || seen.has(userId) || (actorId && userId === actorId)) return;
+      seen.add(userId);
+      rows.push({
+        user_id: userId,
+        title,
+        message,
+        appointment_id: appointmentId ? String(appointmentId) : null,
+        link_tab: linkTab,
+        is_read: false,
+      });
+    };
+
+    // Danışman düzenlediyse → atanan pilot + broker
+    // Pilot / broker düzenlediyse → danışman + (diğer) pilot + broker
+    if (role === 'danisman') {
+      const pilotTitle =
+        changeKind === 'approval_required'
+          ? 'Randevu Değişiklik Talebi'
+          : changeKind === 'note'
+            ? 'Çekim Notu Güncellendi'
+            : 'Çekim Talebi Güncellendi';
+      const pilotMessage =
+        changeKind === 'approval_required'
+          ? `${actor}, ${place} çekiminde değişiklik istedi. İnceleyip yeni teklif gönderin.`
+          : changeKind === 'note'
+            ? `${actor}, ${place} çekiminin notunu güncelledi.`
+            : `${actor}, ${place} çekim talebini güncelledi. Tarih önerinizi bekliyor.`;
+      pushRow(
+        assignedPilotId,
+        pilotTitle,
+        pilotMessage,
+        'cekim'
+      );
+      (brokers || []).forEach((b) =>
+        pushRow(
+          b?.id,
+          'Çekim Talebi Güncellendi',
+          `${actor}, ${place} çekim talebini güncelledi.`,
+          'cekim'
+        )
+      );
+    } else {
+      const ownerTitle =
+        changeKind === 'approval_required'
+          ? 'Çekim Randevusu Değişikliği Onayınızda'
+          : changeKind === 'note'
+            ? 'Çekim Notu Güncellendi'
+            : 'Çekim Randevunuz Güncellendi';
+      const ownerMessage =
+        changeKind === 'approval_required'
+          ? `${actor}, ${place} çekimini güncelledi.${scheduleSuffix} Onayınızı bekliyor.`
+          : changeKind === 'note'
+            ? `${actor}, ${place} çekiminin notunu güncelledi.`
+            : `${actor}, ${place} çekim randevunuzu güncelledi.${scheduleSuffix}`;
+      pushRow(
+        ownerUuid,
+        ownerTitle,
+        ownerMessage,
+        'randevularim'
+      );
+      pushRow(
+        assignedPilotId,
+        'Çekim Güncellendi',
+        `${actor}, ${danismanLabel} — ${place} çekimini güncelledi.${scheduleSuffix}`,
+        'cekim'
+      );
+      (brokers || []).forEach((b) =>
+        pushRow(
+          b?.id,
+          'Çekim Güncellendi',
+          `${actor}, ${danismanLabel} — ${place} çekimini güncelledi.${scheduleSuffix}`,
+          'takvim'
+        )
+      );
     }
 
-    const schedule = timeLabel ? `${dateLabel} • ${timeLabel}` : dateLabel;
-    const ownerMessage = `${actor}, ${place} çekim randevunuzu güncelledi. Yeni plan: ${schedule}.`;
-    const brokerMessage = `${actor}, ${toTitleCaseName(danismanIsmi) || 'danışman'} — ${place} çekimini güncelledi (${schedule}).`;
+    // Pilot değiştiyse eski sorumluya da haber ver
+    if (
+      previousPilotId &&
+      assignedPilotId &&
+      previousPilotId !== assignedPilotId
+    ) {
+      pushRow(
+        previousPilotId,
+        'Çekim Talebi Yeniden Atandı',
+        `${actor}, ${place} talebini başka bir medya sorumlusuna taşıdı.`,
+        'cekim'
+      );
+    }
 
-    const rows = Array.from(recipientIds).map((uid) => {
-      const isOwner = ownerUuid && uid === ownerUuid;
-      return {
-        user_id: uid,
-        title: isOwner ? 'Çekim Randevunuz Güncellendi' : 'Çekim Güncellendi',
-        message: isOwner ? ownerMessage : brokerMessage,
-        appointment_id: appointmentId ? String(appointmentId) : null,
-        link_tab: isOwner ? 'randevularim' : 'takvim',
-        is_read: false,
-      };
-    });
+    if (rows.length === 0) {
+      console.warn('Güncelleme bildirimi: alıcı bulunamadı', {
+        danismanIsmi,
+        createdBy,
+        pilot,
+        pilotId: assignedPilotId,
+      });
+      return false;
+    }
 
     const { error: notifError } = await supabase.from('notifications').insert(rows);
     if (notifError) {
@@ -843,26 +1124,18 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const canEditAppointment = (app) => {
     if (!app || !role) return false;
     if (role === 'broker') return true;
-    if (role === 'selim' || role === 'fatima' || isPilot) {
-      const owner = app.ownerRole || ownerRoleFromPilot(app.pilot);
-      if (owner === role) return true;
-      // Pilot adına atanmış kesinleşmiş / aktif kayıtlar
-      if (
-        isPilot &&
-        fullName &&
-        String(app.pilot || '').toLocaleLowerCase('tr-TR') ===
-          String(fullName).toLocaleLowerCase('tr-TR')
-      ) {
-        return true;
-      }
-      return false;
+    if (isPilotRole(role) || isPilot) {
+      return pilotOwnsAppointment(app);
     }
     if (role === 'danisman') {
       const isOwner =
-        app.createdBy === currentUserId || app.danismanIsmi === fullName;
+        app.createdBy === currentUserId ||
+        appointmentNamesMatch(app.danismanIsmi, fullName);
+      const status = normalizeAppointmentStatus(app.status);
       return (
         isOwner &&
-        normalizeAppointmentStatus(app.status) === 'pilot_bekleniyor'
+        (status === 'pilot_bekleniyor' ||
+          status === 'kesinlesti')
       );
     }
     return false;
@@ -876,10 +1149,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const editIlceler = getIlceler(editForm.il);
   const manualIlceler = getIlceler(manualForm.il);
 
-  /** Manuel formda kilitli pilot adı */
-  const lockedPilotForRole = (appRole) => {
-    if (appRole === 'fatima') return 'FATİMA BAYRAMOVA';
-    if (appRole === 'selim') return 'MEHMET SELİM İDİZ';
+  /** Manuel formda kilitli pilot adı — rol değil, giriş yapan kişinin adı */
+  const lockedPilotForRole = () => {
+    if (isPilotRole(role) || isPilot) {
+      return String(fullName || '').trim();
+    }
     return '';
   };
 
@@ -904,11 +1178,10 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
   const openManualModal = () => {
     if (!canCreateManualAppointment(role)) return;
-    const locked = lockedPilotForRole(role);
+    const locked = lockedPilotForRole();
     const now = new Date();
     setManualForm({
       tarih: '',
-      saatBlok: '',
       il: DEFAULT_IL,
       ilce: '',
       semt: '',
@@ -917,6 +1190,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       danismanIsmi: '',
       pilot: locked || '',
     });
+    setManualStartHour('');
+    setManualEndHour('');
     setManualCalMonth(now.getMonth());
     setManualCalYear(now.getFullYear());
     setIsManualCalendarOpen(false);
@@ -979,11 +1254,21 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     }
 
     const effectivePilot =
-      role === 'broker' ? manualForm.pilot : lockedPilotForRole(role);
+      role === 'broker' ? manualForm.pilot : lockedPilotForRole();
     const ownerRole = ownerRoleFromPilot(effectivePilot);
+    const startHour = Number(manualStartHour);
+    const endHour = Number(manualEndHour);
+    const validEndHours = getOfferEndHours(startHour);
 
-    if (!manualForm.tarih || !manualForm.saatBlok || !manualForm.il || !manualForm.ilce) {
-      showToast('Tarih, saat, il ve ilçe zorunludur.');
+    if (
+      !manualForm.tarih ||
+      !manualStartHour ||
+      !manualEndHour ||
+      !validEndHours.includes(endHour) ||
+      !manualForm.il ||
+      !manualForm.ilce
+    ) {
+      showToast('Tarih, başlangıç/bitiş saati, il ve ilçe zorunludur.');
       return;
     }
     if (!manualForm.danismanIsmi.trim()) {
@@ -994,94 +1279,125 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       showToast('Geçerli bir sorumlu pilot seçin.');
       return;
     }
-    if ((role === 'selim' || role === 'fatima') && ownerRole !== role) {
+    if ((isPilotRole(role) || isPilot) && ownerRole !== ownerRoleFromPilot(fullName)) {
       showToast('Yalnızca kendi adınıza çekim ekleyebilirsiniz.');
+      return;
+    }
+
+    const manualConflicts = findOfferRangeConflicts({
+      appointments: bookedAppointments,
+      date: manualForm.tarih,
+      startHour,
+      endHour,
+      pilotName: effectivePilot,
+    });
+    if (manualConflicts.confirmed.length > 0) {
+      showToast('Bu saat aralığı kesinleşmiş bir çekimle çakışıyor; seçilemez.');
       return;
     }
 
     setIsManualSaving(true);
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const userId = session?.user?.id;
-    if (!userId) {
-      showToast('Oturum bulunamadı. Lütfen yeniden giriş yapın.');
-      setIsManualSaving(false);
-      return;
-    }
-
     const locationLabel = [manualForm.il, manualForm.ilce, manualForm.semt.trim()]
       .filter(Boolean)
       .join(' / ');
     const pilotUserId = await resolvePilotProfileId(effectivePilot);
-    const danismanUuid = await resolveDanismanProfileId(manualForm.danismanIsmi.trim());
+    if (!pilotUserId) {
+      showToast('Pilot profili bulunamadı. Fatima / Selim kaydını kontrol edin.');
+      setIsManualSaving(false);
+      return;
+    }
+    const saatBlok = formatOfferRange(startHour, endHour);
 
     const payload = {
-      created_by: userId,
-      owner_role: ownerRole,
       danisman_ismi: manualForm.danismanIsmi.trim(),
       pilot: effectivePilot,
-      pilot_id: pilotUserId || ownerRole,
+      pilot_id: pilotUserId,
       tarih: manualForm.tarih,
-      saat_blok: manualForm.saatBlok,
+      saat_blok: saatBlok,
       il: manualForm.il,
       ilce: manualForm.ilce,
       semt: manualForm.semt.trim() || null,
       konum: locationLabel,
       portfoy_turu: manualForm.portfoyTuru.trim() || null,
       aciklama: manualForm.aciklama.trim() || null,
-      status: 'kesinlesti',
-      source: 'other',
-      is_manual: true,
-      created_by_role: role,
-      reddedilme_sebebi: null,
     };
 
-    const { error } = await supabase.from('appointments').insert([payload]);
+    const response = await fetch('/api/appointments', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
 
-    if (error) {
-      console.error('Manuel çekim ekleme hatası:', error.message, error);
-      showToast(error.message || 'Kayıt sırasında bir hata oluştu.');
+    if (!response.ok) {
+      console.error('Manuel çekim ekleme hatası:', result?.error || response.statusText);
+      showToast(result?.error || 'Kayıt sırasında bir hata oluştu.');
       setIsManualSaving(false);
       return;
     }
 
-    const dateLabel = toDisplayDate(manualForm.tarih);
-    const notifRows = [];
-    if (danismanUuid) {
-      notifRows.push({
-        user_id: danismanUuid,
-        title: 'Yeni Kesinleşmiş Çekim',
-        message: `${locationLabel} için ${dateLabel} • ${manualForm.saatBlok} çekimi kesinleşti (${effectivePilot}).`,
-      });
-    }
-    if (pilotUserId) {
-      notifRows.push({
-        user_id: pilotUserId,
-        title: 'Yeni Kesinleşmiş Çekim',
-        message: `${toTitleCaseName(manualForm.danismanIsmi.trim())} — ${locationLabel} için ${dateLabel} • ${manualForm.saatBlok} çekimi takviminize eklendi.`,
-      });
-    }
-    if (notifRows.length > 0) {
-      const { error: notifError } = await supabase.from('notifications').insert(notifRows);
-      if (notifError) {
-        console.error('Manuel çekim bildirimleri yazılamadı:', notifError.message, notifError);
-      } else {
-        await fetchNotifications();
-      }
-    }
-
     await fetchAppointments();
+    await fetchNotifications();
     setIsManualSaving(false);
     setIsManualModalOpen(false);
-    showToast('Çekim kesinleşti ve bildirimler gönderildi');
+    showToast(
+      result?.notificationSent
+        ? 'Çekim kesinleşti ve danışmana bildirim gönderildi.'
+        : 'Çekim kesinleşti; danışman profili bulunamadığı için bildirim gönderilemedi.'
+    );
   };
 
   const isRejectedStatus = (status) => isRejectedStatusUtil(status);
   const isPendingStatus = (status) => isPendingStatusUtil(status);
   const isConfirmedStatus = (status) => isConfirmedStatusUtil(status);
 
-  /** Broker / yönetici: frontend'de created_by / owner_role / status filtresi yok */
-  const seesAllAppointments = role === 'broker' || role === 'yonetici';
+  /** Broker / personel: frontend'de created_by / owner_role / status filtresi yok */
+  const seesAllAppointments = role === 'broker' || isPersonelRole(role);
+
+  /**
+   * Çekim takvimi için tek görünür veri kaynağı.
+   * Gün noktaları ve gün modalı aynı listeyi kullanır; böylece başka kullanıcıya
+   * ait veya iptal edilmiş bir kayıt boş gün noktası oluşturamaz.
+   */
+  const takvimVisibleAppointments = useMemo(() => {
+    if (seesAllAppointments) return bookedAppointments;
+
+    if (isPilotRole(role) || isPilot) {
+      return bookedAppointments.filter((app) =>
+        pilotOwnsAppointmentUtil(app, {
+          fullName,
+          userId: currentUserId,
+        })
+      );
+    }
+
+    if (role === 'danisman') {
+      return bookedAppointments.filter(
+        (app) =>
+          appointmentNamesMatch(app.danismanIsmi, fullName) ||
+          (!!currentUserId && app.createdBy === currentUserId)
+      );
+    }
+
+    return [];
+  }, [
+    bookedAppointments,
+    role,
+    fullName,
+    currentUserId,
+    isPilot,
+    seesAllAppointments,
+  ]);
+
+  const takvimCalendarEvents = useMemo(
+    () =>
+      takvimVisibleAppointments
+        .map((app) => appointmentToCalendarEvent(app))
+        .filter(Boolean),
+    [takvimVisibleAppointments]
+  );
 
   const bookingStats = useMemo(() => {
     const stats = {};
@@ -1097,38 +1413,33 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     return stats; 
   }, [bookedAppointments]);
 
-  /** Takvim gün noktaları: aktif + reddedilen (broker arşiv görünürlüğü) */
-  const calendarDayMarkers = useMemo(() => {
-    const markers = {};
-    bookedAppointments.forEach(app => {
-      if (!app.tarih) return;
-      if (!markers[app.tarih]) {
-        markers[app.tarih] = { hasActive: false, hasRejected: false, hasPending: false };
-      }
-      if (isRejectedStatus(app.status)) markers[app.tarih].hasRejected = true;
-      else if (isPendingStatus(app.status)) {
-        markers[app.tarih].hasPending = true;
-        markers[app.tarih].hasActive = true;
-      } else if (isConfirmedStatus(app.status)) {
-        markers[app.tarih].hasActive = true;
-      }
-    });
-    return markers;
-  }, [bookedAppointments]);
+  /** Noktalar ve gün modalı aynı aktif etkinliklerden türetilir. */
+  const calendarDayMarkers = useMemo(
+    () => buildDayMarkers(takvimCalendarEvents),
+    [takvimCalendarEvents]
+  );
 
   const archiveAppointments = useMemo(() => {
     let filtered = [...bookedAppointments];
 
     if (seesAllAppointments) {
-      // broker + yonetici: tüm kayıtlar, tüm statüler — ekstra filtre yok
-    } else if (role === 'selim' || role === 'fatima' || isPilot) {
-      filtered = filtered.filter(app => app.pilot === fullName);
-      // Arşiv: yalnızca pilot_bekleniyor "Çekim Talepleri"nde
+      // broker + personel: tüm kayıtlar, tüm statüler — ekstra filtre yok
+    } else if (isPilotRole(role) || isPilot) {
+      filtered = filtered.filter((app) => pilotOwnsAppointment(app));
+      // Talep ve teklif aşamaları aktif Çekim Talepleri iş akışında kalır.
       filtered = filtered.filter(
-        (app) => normalizeAppointmentStatus(app.status) !== 'pilot_bekleniyor'
+        (app) => {
+          const status = normalizeAppointmentStatus(app.status);
+          return (
+            status !== 'pilot_bekleniyor' &&
+            status !== 'danisman_onayi_bekliyor'
+          );
+        }
       );
     } else {
-      filtered = filtered.filter(app => app.danismanIsmi === fullName);
+      filtered = filtered.filter((app) =>
+        appointmentNamesMatch(app.danismanIsmi, fullName)
+      );
     }
 
     return filtered.sort((a, b) => Number(b.id) - Number(a.id));
@@ -1139,7 +1450,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     if (role !== 'danisman') return [];
     let filtered = bookedAppointments.filter(
       (app) =>
-        app.danismanIsmi === fullName ||
+        appointmentNamesMatch(app.danismanIsmi, fullName) ||
         (!!currentUserId && app.createdBy === currentUserId)
     );
     if (randevularimFilter !== 'all') {
@@ -1166,26 +1477,9 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   /** Seçili gündeki rol-görünür randevular (segment filtresi hariç) */
   const takvimDayBaseAppointments = useMemo(() => {
     if (!selectedTakvimDateStr) return [];
-    let filtered = bookedAppointments.filter(
+    const filtered = takvimVisibleAppointments.filter(
       (app) => app.tarih === selectedTakvimDateStr
     );
-
-    if (seesAllAppointments) {
-      // broker + yonetici: o günün randevuları
-    } else if (role === 'selim' || role === 'fatima' || isPilot) {
-      filtered = filtered.filter((app) => app.pilot === fullName);
-    } else if (role === 'danisman') {
-      filtered = filtered.filter((app) => {
-        const st = normalizeAppointmentStatus(app.status);
-        return (
-          st === 'kesinlesti' ||
-          st === 'pilot_bekleniyor' ||
-          st === 'danisman_onayi_bekliyor'
-        );
-      });
-    } else {
-      filtered = filtered.filter((app) => app.danismanIsmi === fullName);
-    }
 
     return filtered.sort((a, b) => {
       const rank = (s) =>
@@ -1193,18 +1487,14 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return rank(a.status) - rank(b.status) || Number(b.id) - Number(a.id);
     });
   }, [
-    bookedAppointments,
+    takvimVisibleAppointments,
     selectedTakvimDateStr,
-    role,
-    fullName,
-    isPilot,
-    seesAllAppointments,
   ]);
 
   const takvimAppointmentsForSelectedDate = useMemo(() => {
-    // yonetici: filtre gizli; kalıcı olarak yalnızca kesinleşmişler
+    // personel: filtre gizli; kalıcı olarak yalnızca kesinleşmişler
     const effectiveDayFilter =
-      role === 'yonetici' ? 'confirmed' : dayListFilter;
+      isPersonelRole(role) ? 'confirmed' : dayListFilter;
     if (effectiveDayFilter === 'confirmed') {
       return takvimDayBaseAppointments.filter((app) =>
         isConfirmedStatus(app.status)
@@ -1213,7 +1503,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     return takvimDayBaseAppointments;
   }, [takvimDayBaseAppointments, role, dayListFilter]);
 
-  /** Pilot / yönetici çekim takvimi — gün popup içeriği */
+  /** Pilot / personel çekim takvimi — gün popup içeriği */
   const cekimTakvimDayEvents = useMemo(
     () =>
       takvimAppointmentsForSelectedDate
@@ -1291,54 +1581,60 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     if (error || !profile) {
       console.error('Profil yüklenemedi:', error);
       await supabase.auth.signOut();
-      showToast('Profil bulunamadı. Yöneticiye başvurun.');
+      showToast('Profil bulunamadı. Personele başvurun.');
       setIsLoggedIn(false);
       setIsLoading(false);
       return false;
     }
 
-    const appRole = profile.role;
-    const pilot =
-      profile.is_pilot === true || appRole === 'selim' || appRole === 'fatima';
+    const appRole = normalizeAppRole(profile.role);
+    const pilot = isPilotAccount({
+      role: profile.role,
+      fullName: profile.tam_isim,
+      is_pilot: profile.is_pilot,
+    });
 
     setRole(appRole);
-    setUsername(profile.kullanici_adi || profile.tam_isim);
+    setUsername(profile.tam_isim || '');
     setFullName(profile.tam_isim);
     setCurrentUserId(userId);
     setIsPilot(pilot);
     setIsLoggedIn(true);
-    const tabFromUrl =
-      typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search).get('tab')
-        : null;
-    const navItems = usesManagerShell(appRole)
-      ? buildManagerNav(appRole)
-      : buildConsultantNav();
-    const allowedTabs = collectNavTabIds(navItems);
-    let nextTab =
-      options.tab ||
-      (tabFromUrl && allowedTabs.includes(tabFromUrl) && tabFromUrl) ||
-      defaultTabForRole(appRole);
-    // Eski teklif-onay sekmesi → Randevu Talebi
-    if (tabFromUrl === 'teklif-onay' || nextTab === 'teklif-onay') {
-      nextTab = 'randevu';
-    }
-    // Çekim Raporu yalnızca broker — diğerleri Yakında sayfasına düşmesin, genel'e al
-    if (nextTab === 'cekim-raporu' && appRole !== 'broker') {
-      nextTab = 'genel';
-    }
-    setActiveTab(nextTab);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('tab', nextTab);
-      window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+
+    // Auth echo / tab-focus: sekme paneline dokunma
+    if (!options.preserveTab) {
+      const adminOpts = {
+        includeUserAdmin: isUserAdmin(profile.tam_isim, appRole),
+      };
+      const navItems = usesManagerShell(appRole)
+        ? buildManagerNav(appRole, adminOpts)
+        : buildConsultantNav(adminOpts);
+      const allowedTabs = collectNavTabIds(navItems);
+      const storedTab = readStoredActiveTab();
+      let nextTab =
+        normalizeAppTab(options.tab) ||
+        (storedTab && allowedTabs.includes(storedTab) ? storedTab : null) ||
+        (activeTabRef.current && allowedTabs.includes(activeTabRef.current)
+          ? activeTabRef.current
+          : null) ||
+        defaultTabForRole(appRole);
+
+      if (nextTab === 'cekim-raporu' && appRole !== 'broker') {
+        nextTab = storedTab && storedTab !== 'cekim-raporu' ? storedTab : 'genel';
+      }
+      if (nextTab === 'cekim' && isPersonelRole(appRole)) {
+        nextTab = 'takvim';
+      }
+
+      setActiveTab(nextTab);
+      persistActiveTab(nextTab);
     }
 
     // Beni hatırla: profil önbelleğini localStorage'a yaz; aksi halde temizle
     if (options.persist) {
       localStorage.setItem('zebra_auth_status', 'true');
       localStorage.setItem('zebra_user_role', appRole);
-      localStorage.setItem('zebra_username', profile.kullanici_adi || profile.tam_isim);
+      localStorage.setItem('zebra_username', profile.tam_isim || '');
       localStorage.setItem('zebra_fullname', profile.tam_isim);
       localStorage.setItem('zebra_is_pilot', String(pilot));
     } else {
@@ -1388,19 +1684,21 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
       if (!session?.user) return;
 
+      const alreadySynced =
+        isLoggedInRef.current && currentUserIdRef.current === session.user.id;
+
       // SIGNED_IN / INITIAL_SESSION: Beni hatırla tercihine göre persist
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (event === 'INITIAL_SESSION' && !canRestoreSession()) {
           await supabase.auth.signOut();
           return;
         }
+        // Tab focus / token yenileme SIGNED_IN echo → paneli sıfırlama
+        if (alreadySynced) return;
+
         const persist =
           rememberMeRef.current || shouldPersistProfileCache();
-        // Taze girişte her zaman Genel Bakış
-        await applyProfileSession(session.user.id, {
-          persist,
-          ...(event === 'SIGNED_IN' ? { tab: 'genel' } : {}),
-        });
+        await applyProfileSession(session.user.id, { persist });
         return;
       }
 
@@ -1410,8 +1708,6 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
           await supabase.auth.signOut();
           return;
         }
-        const alreadySynced =
-          isLoggedInRef.current && currentUserIdRef.current === session.user.id;
         if (alreadySynced) return;
         await applyProfileSession(session.user.id, {
           persist: shouldPersistProfileCache(),
@@ -1454,7 +1750,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!username || !password) {
-      showToast('Lütfen tam isim ve WhatsApp numaranızı girin.');
+      showToast('Lütfen tam isim ve telefon numaranızı girin.');
       return;
     }
 
@@ -1479,7 +1775,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     if (authError || !authData.user) {
       console.error('Auth giriş hatası:', authError);
-      showToast('Hatalı giriş! Tam isim veya WhatsApp numarası yanlış.');
+      showToast('Hatalı giriş! Tam isim veya telefon numarası yanlış.');
       localStorage.removeItem(REMEMBER_ME_KEY);
       sessionStorage.removeItem(TAB_SESSION_KEY);
       setIsLoading(false);
@@ -1500,6 +1796,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     setIsMobileMenuOpen(false);
     setIsNotificationOpen(false);
     setActiveTab('genel');
+    try {
+      sessionStorage.removeItem(ACTIVE_TAB_KEY);
+    } catch {
+      /* ignore */
+    }
     setUsername('');
     setPassword('');
     setRole('');
@@ -1551,7 +1852,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     const pilotUserId = await resolvePilotProfileId(selectedPilot);
     if (!pilotUserId) {
-      showToast('Pilot profili bulunamadı. Yöneticiye başvurun.');
+      showToast('Pilot profili bulunamadı. Personele başvurun.');
       setIsSubmitting(false);
       return;
     }
@@ -1641,18 +1942,15 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     const offerSaatBlok = formatOfferRange(startH, endH);
     setProcessingId(req.id);
 
-    const { error } = await supabase
-      .from('appointments')
-      .update({
-        tarih: offerTarih,
-        saat_blok: offerSaatBlok,
-        status: 'danisman_onayi_bekliyor',
-      })
-      .eq('id', req.id);
+    const patched = await patchAppointment(req.id, {
+      tarih: offerTarih,
+      saat_blok: offerSaatBlok,
+      status: 'danisman_onayi_bekliyor',
+    });
 
-    if (error) {
-      console.error('Teklif gönderme hatası:', error);
-      showToast(error.message || 'Teklif gönderilirken bir hata oluştu.');
+    if (!patched.ok) {
+      console.error('Teklif gönderme hatası:', patched.message);
+      showToast(patched.message || 'Teklif gönderilirken bir hata oluştu.');
       setProcessingId(null);
       return;
     }
@@ -1676,6 +1974,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     setProcessingId(null);
     setOfferingId(null);
+    setIsOfferCalendarOpen(false);
     setOfferTarih('');
     setOfferStartHour('');
     setOfferEndHour('');
@@ -1686,38 +1985,18 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const handleDanismanConfirm = async (req) => {
     setProcessingId(req.id);
 
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'kesinlesti' })
-      .eq('id', req.id);
+    const patched = await patchAppointment(req.id, { status: 'kesinlesti' });
 
-    if (error) {
-      console.error('Kesinleştirme hatası:', error);
-      showToast(error.message || 'Kesinleştirme sırasında bir hata oluştu.');
+    if (!patched.ok) {
+      console.error('Kesinleştirme hatası:', patched.message);
+      showToast(patched.message || 'Kesinleştirme sırasında bir hata oluştu.');
       setProcessingId(null);
       return;
     }
 
     await fetchAppointments();
 
-    const pilotUserId =
-      req.pilotId ||
-      (await resolvePilotProfileId(req.pilot));
-    if (pilotUserId) {
-      const dateLabel = req.tarih || '';
-      const { error: notifError } = await supabase.from('notifications').insert([{
-        user_id: pilotUserId,
-        title: 'Randevu Kesinleşti',
-        message: `${toTitleCaseName(req.danismanIsmi)}, ${dateLabel} • ${req.saatBlok || ''} teklifinizi kesinleştirdi. Randevu kesinleşti.`,
-      }]);
-      if (notifError) {
-        console.error('Pilot kesinleşme bildirimi yazılamadı:', notifError.message, notifError);
-      } else {
-        await fetchNotifications();
-      }
-    }
-
-    // Broker bildirimleri (kesinleşme akışı)
+    // Broker + danışman + pilot bildirimleri (ortak kesinleşme yolu)
     await notifyAppointmentApproved({ ...req, status: 'kesinlesti' });
 
     setProcessingId(null);
@@ -1736,22 +2015,20 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       setOfferTarih('');
       setOfferStartHour('');
       setOfferEndHour('');
-      setIsOfferCalendarOpen(false);
       const now = new Date();
       setOfferCalMonth(now.getMonth());
       setOfferCalYear(now.getFullYear());
+      // Form kartın altında uzamasın; Akıllı Planlama doğrudan viewport'ta açılsın.
+      setIsOfferCalendarOpen(true);
       return;
     }
     setProcessingId(req.id);
 
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'kesinlesti' })
-      .eq('id', req.id);
+    const patched = await patchAppointment(req.id, { status: 'kesinlesti' });
 
-    if (error) {
-      console.error('Kesinleştirme hatası:', error);
-      showToast('Kesinleştirme sırasında bir hata oluştu.');
+    if (!patched.ok) {
+      console.error('Kesinleştirme hatası:', patched.message);
+      showToast(patched.message || 'Kesinleştirme sırasında bir hata oluştu.');
       setProcessingId(null);
       return;
     }
@@ -1760,7 +2037,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     const notified = await notifyAppointmentApproved(req);
     setProcessingId(null);
     if (notified) {
-      showToast("Çekim kesinleşti. Danışman ve broker'lara bildirim gönderildi.");
+      showToast("Çekim kesinleşti. Danışman, broker ve pilot'a bildirim gönderildi.");
     } else {
       showToast('Çekim kesinleşti, ancak bildirim gönderilemedi.');
     }
@@ -1769,41 +2046,78 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const handleRejectSubmit = async (req) => {
     setProcessingId(req.id);
 
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'iptal', reddedilme_sebebi: rejectReason })
-      .eq('id', req.id);
+    const patched = await patchAppointment(req.id, {
+      status: 'iptal',
+      reddedilme_sebebi: rejectReason,
+    });
 
-    if (error) {
-      console.error('Reddetme hatası:', error);
-      showToast('Reddetme sırasında bir hata oluştu.');
+    if (!patched.ok) {
+      console.error('Reddetme hatası:', patched.message);
+      showToast(patched.message || 'Reddetme sırasında bir hata oluştu.');
       setProcessingId(null);
       return;
     }
 
     await fetchAppointments();
 
-    const ownerUuid = await resolveDanismanProfileId(req.danismanIsmi, req.createdBy);
-    if (ownerUuid) {
-      const { error: notifError } = await supabase.from('notifications').insert([{
-        user_id: ownerUuid,
-        title: 'Talebiniz İptal Edildi',
-        message: `${req.il || ''} ${req.ilce || req.konum || ''} talebiniz iptal edildi. Sebep: ${rejectReason}`,
-      }]);
+    const place = `${req.il || ''} ${req.ilce || req.konum || ''}`.trim() || 'Portföy';
+    const actorName = toTitleCaseName(fullName || 'Bir kullanıcı');
+    const cancelRows = [];
+
+    if (role === 'danisman') {
+      const pilotUuid = await resolvePilotUserId(req);
+      if (pilotUuid) {
+        cancelRows.push({
+          user_id: pilotUuid,
+          title: 'Çekim Teklifi Reddedildi',
+          message: `${actorName}, ${place} teklifinizi reddetti. Sebep: ${rejectReason}`,
+          appointment_id: String(req.id),
+          link_tab: 'cekim',
+          is_read: false,
+        });
+      }
+    } else {
+      const ownerUuid = await resolveDanismanProfileId(
+        req.danismanIsmi,
+        req.createdBy
+      );
+      if (ownerUuid) {
+        cancelRows.push({
+          user_id: ownerUuid,
+          title: 'Talebiniz İptal Edildi',
+          message: `${place} talebiniz iptal edildi. Sebep: ${rejectReason}`,
+          appointment_id: String(req.id),
+          link_tab: 'randevularim',
+          is_read: false,
+        });
+      } else {
+        console.warn(
+          'Danışman UUID bulunamadı, red bildirimi atlanıyor:',
+          req.danismanIsmi
+        );
+      }
+    }
+
+    if (cancelRows.length > 0) {
+      const { error: notifError } = await supabase
+        .from('notifications')
+        .insert(cancelRows);
       if (notifError) {
         console.error('Red bildirimi yazılamadı:', notifError.message, notifError);
       } else {
         await fetchNotifications();
       }
-    } else {
-      console.warn('Danışman UUID bulunamadı, red bildirimi atlanıyor:', req.danismanIsmi);
     }
 
     setProcessingId(null);
     setRejectingId(null);
     setRejectReason('');
     setOfferingId(null);
-    showToast('Talep iptal edildi ve danışmana bildirildi.');
+    showToast(
+      role === 'danisman'
+        ? 'Teklif reddedildi ve pilota bildirildi.'
+        : 'Talep iptal edildi ve danışmana bildirildi.'
+    );
   };
 
   const openEditModal = (app) => {
@@ -1815,7 +2129,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
     const currentStatus = normalizeAppointmentStatus(app.status);
     const canReoffer =
       currentStatus === 'iptal' &&
-      (role === 'broker' || role === 'selim' || role === 'fatima');
+      (canApproveAppointments(role));
     // Reddedilmiş kaydı açınca varsayılan: yeniden teklif (tarih/saat seçilince kaydet)
     const initialStatus = canReoffer ? 'danisman_onayi_bekliyor' : currentStatus;
     setEditingAppointment(app);
@@ -1929,13 +2243,47 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
     const normalizeStatus = (s) => normalizeAppointmentStatus(s);
     const oldStatus = normalizeStatus(editingAppointment.status);
+    const effectivePilot =
+      role === 'broker' || role === 'danisman'
+        ? editForm.pilot
+        : editingAppointment.pilot || editForm.pilot;
+    const oldIso = displayDateToIso(editingAppointment.tarih) || '';
+    const pilotChanged =
+      String(effectivePilot || '') !== String(editingAppointment.pilot || '');
+    const noteChanged =
+      (editForm.danismanNotu || '').trim() !==
+      String(
+        editingAppointment.danismanNotu || editingAppointment.aciklama || ''
+      ).trim();
+    const substantiveChanged =
+      (editForm.tarih || '') !== oldIso ||
+      (editForm.saatBlok || '') !== (editingAppointment.saatBlok || '') ||
+      (editForm.il || '') !== (editingAppointment.il || '') ||
+      (editForm.ilce || '') !== (editingAppointment.ilce || '') ||
+      (editForm.semt || '').trim() !==
+        String(editingAppointment.semt || '').trim() ||
+      (editForm.portfoyTuru || '').trim() !==
+        String(editingAppointment.portfoyTuru || '').trim() ||
+      (editForm.aciklama || '').trim() !==
+        String(editingAppointment.aciklama || '').trim() ||
+      pilotChanged;
     let newStatus = isDanismanEdit
       ? 'pilot_bekleniyor'
       : normalizeStatus(editForm.status);
 
+    // Kesinleşmiş çekimde not dışındaki değişiklik yeniden karşı taraf onayına gider.
+    if (oldStatus === 'kesinlesti' && substantiveChanged) {
+      newStatus =
+        role === 'danisman'
+          ? 'pilot_bekleniyor'
+          : isPilotRole(role) || isPilot
+            ? 'danisman_onayi_bekliyor'
+            : newStatus;
+    }
+
     // İptal kaydı + tarih/saat dolu + hâlâ iptal seçiliyse → otomatik yeniden teklif
     const canReofferRole =
-      role === 'broker' || role === 'selim' || role === 'fatima';
+      canApproveAppointments(role);
     if (
       oldStatus === 'iptal' &&
       canReofferRole &&
@@ -1992,10 +2340,6 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       }
     }
 
-    const effectivePilot =
-      role === 'broker' || role === 'danisman'
-        ? editForm.pilot
-        : editingAppointment.pilot || editForm.pilot;
     const ownerRole = ownerRoleFromPilot(effectivePilot);
 
     if (!ownerRole) {
@@ -2003,7 +2347,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       return;
     }
 
-    if ((role === 'selim' || role === 'fatima') && ownerRole !== role) {
+    if ((isPilotRole(role) || isPilot) && ownerRole !== ownerRoleFromPilot(fullName)) {
       showToast('Yalnızca kendi takviminizdeki randevuları güncelleyebilirsiniz.');
       return;
     }
@@ -2027,25 +2371,26 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         ? (fullName || 'Broker')
         : (ownerRoleDisplayName(role) || fullName || effectivePilot || 'Ekip');
 
-    const oldIso = displayDateToIso(editingAppointment.tarih) || '';
-    const contentChanged =
-      (editForm.tarih || '') !== oldIso ||
-      (editForm.saatBlok || '') !== (editingAppointment.saatBlok || '') ||
-      (editForm.il || '') !== (editingAppointment.il || '') ||
-      (editForm.ilce || '') !== (editingAppointment.ilce || '') ||
-      (editForm.semt || '').trim() !== String(editingAppointment.semt || '').trim() ||
-      (editForm.portfoyTuru || '').trim() !==
-        String(editingAppointment.portfoyTuru || '').trim() ||
-      (editForm.aciklama || '').trim() !==
-        String(editingAppointment.aciklama || '').trim() ||
-      (editForm.danismanNotu || '').trim() !==
-        String(editingAppointment.danismanNotu || editingAppointment.aciklama || '').trim() ||
-      String(effectivePilot || '') !== String(editingAppointment.pilot || '');
+    const contentChanged = substantiveChanged || noteChanged;
+    const updateChangeKind =
+      oldStatus === 'kesinlesti' && substantiveChanged
+        ? 'approval_required'
+        : noteChanged && !substantiveChanged
+          ? 'note'
+          : 'update';
 
     setIsEditSaving(true);
 
     try {
       const pilotUserId = await resolvePilotProfileId(effectivePilot);
+      const existingPilotId = isUuid(editingAppointment.pilotId)
+        ? editingAppointment.pilotId
+        : null;
+      const resolvedPilotId = pilotUserId || existingPilotId;
+      if (!resolvedPilotId) {
+        showToast('Pilot profili bulunamadı. Fatima / Selim kaydını kontrol edin.');
+        return;
+      }
       const updatePayload = isDanismanEdit
         ? {
             il: editForm.il,
@@ -2055,13 +2400,17 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
             danisman_notu: (editForm.danismanNotu || '').trim() || null,
             aciklama: (editForm.danismanNotu || '').trim() || null,
             pilot: effectivePilot,
-            pilot_id: pilotUserId || ownerRole,
+            pilot_id: resolvedPilotId,
             owner_role: ownerRole,
             status: 'pilot_bekleniyor',
           }
         : {
-            tarih: editForm.tarih || null,
-            saat_blok: editForm.saatBlok || null,
+            tarih:
+              role === 'danisman' && pilotChanged ? null : editForm.tarih || null,
+            saat_blok:
+              role === 'danisman' && pilotChanged
+                ? null
+                : editForm.saatBlok || null,
             il: editForm.il || editingAppointment.il || DEFAULT_IL,
             ilce: editForm.ilce || editingAppointment.ilce || 'Belirsiz',
             semt: (editForm.semt || '').trim() || editingAppointment.semt || null,
@@ -2070,7 +2419,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
             aciklama: (editForm.aciklama || '').trim() || null,
             danisman_notu: (editForm.danismanNotu || '').trim() || null,
             pilot: effectivePilot,
-            pilot_id: pilotUserId || ownerRole,
+            pilot_id: resolvedPilotId,
             owner_role: ownerRole,
             status: newStatus,
             reddedilme_sebebi:
@@ -2079,14 +2428,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 : null,
           };
 
-      const { error } = await supabase
-        .from('appointments')
-        .update(updatePayload)
-        .eq('id', editingAppointment.id);
+      const patched = await patchAppointment(editingAppointment.id, updatePayload);
 
-      if (error) {
-        console.error('Güncelleme hatası:', error.message, error.code, error.details, error);
-        showToast(error.message || 'Güncelleme sırasında bir hata oluştu.');
+      if (!patched.ok) {
+        console.error('Güncelleme hatası:', patched.message);
+        showToast(patched.message || 'Güncelleme sırasında bir hata oluştu.');
         return;
       }
 
@@ -2102,29 +2448,57 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
               ownerRole,
               createdBy: editingAppointment.createdBy,
             });
-          } else if (newStatus === 'iptal' && (danismanIsmi || editingAppointment.createdBy)) {
-            const ownerUuid = await resolveDanismanProfileId(
-              danismanIsmi,
-              editingAppointment.createdBy
-            );
-            if (ownerUuid) {
-              const notif = {
-                user_id: ownerUuid,
-                title: 'Talebiniz İptal Edildi',
-                message: `${konumLabel} için çekim talebiniz ${actorLabel} tarafından iptal edilmiştir.${
-                  editForm.reddedilmeSebebi
-                    ? ` Sebep: ${String(editForm.reddedilmeSebebi).trim()}`
-                    : ''
-                }`,
-              };
-              const { error: notifError } = await supabase.from('notifications').insert([notif]);
+          } else if (newStatus === 'iptal') {
+            const cancelReason = String(editForm.reddedilmeSebebi || '').trim();
+            const cancelRows = [];
+            const actorName = toTitleCaseName(fullName || actorLabel);
+
+            if (role === 'danisman') {
+              if (resolvedPilotId) {
+                cancelRows.push({
+                  user_id: resolvedPilotId,
+                  title: 'Çekim Talebi İptal Edildi',
+                  message: `${actorName}, ${konumLabel} talebini iptal etti.${
+                    cancelReason ? ` Sebep: ${cancelReason}` : ''
+                  }`,
+                  appointment_id: String(editingAppointment.id),
+                  link_tab: 'cekim',
+                  is_read: false,
+                });
+              }
+            } else {
+              const ownerUuid = await resolveDanismanProfileId(
+                danismanIsmi,
+                editingAppointment.createdBy
+              );
+              if (ownerUuid) {
+                cancelRows.push({
+                  user_id: ownerUuid,
+                  title: 'Talebiniz İptal Edildi',
+                  message: `${konumLabel} için çekim talebiniz ${actorName} tarafından iptal edilmiştir.${
+                    cancelReason ? ` Sebep: ${cancelReason}` : ''
+                  }`,
+                  appointment_id: String(editingAppointment.id),
+                  link_tab: 'randevularim',
+                  is_read: false,
+                });
+              } else {
+                console.warn(
+                  'Danışman UUID bulunamadı, red bildirimi atlanıyor:',
+                  danismanIsmi
+                );
+              }
+            }
+
+            if (cancelRows.length > 0) {
+              const { error: notifError } = await supabase
+                .from('notifications')
+                .insert(cancelRows);
               if (notifError) {
                 console.error('Bildirim yazılamadı:', notifError.message, notifError);
               } else {
                 await fetchNotifications();
               }
-            } else {
-              console.warn('Danışman UUID bulunamadı, red bildirimi atlanıyor:', danismanIsmi);
             }
           } else if (
             oldStatus === 'iptal' &&
@@ -2154,8 +2528,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
               );
               showToast('Teklif kaydedildi; danışman bildirimi iletilemedi (profil bulunamadı).');
             }
-          } else if (contentChanged && !isDanismanEdit) {
-            // Status değişti ama özel akış yok — yine de içerik güncellemesi bildir
+          } else if (contentChanged) {
             await notifyAppointmentUpdated({
               danismanIsmi,
               createdBy: editingAppointment.createdBy,
@@ -2163,13 +2536,18 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
               tarih: editForm.tarih || editingAppointment.tarih,
               saatBlok: editForm.saatBlok || editingAppointment.saatBlok,
               appointmentId: editingAppointment.id,
+              pilot: effectivePilot || editingAppointment.pilot,
+              pilotId: resolvedPilotId,
+              ownerRole,
+              previousPilotId: existingPilotId,
+              changeKind: updateChangeKind,
             });
           }
         } catch (notifErr) {
           console.error('Bildirim hatası:', notifErr);
         }
-      } else if (contentChanged && !isDanismanEdit) {
-        // Status aynı (ör. kesinlesti kaldı) ama tarih/saat/konum vb. değişti
+      } else if (contentChanged) {
+        // Status aynı ama içerik değişti (danışman talep düzenlemesi dahil)
         try {
           await notifyAppointmentUpdated({
             danismanIsmi,
@@ -2178,6 +2556,11 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
             tarih: editForm.tarih || editingAppointment.tarih,
             saatBlok: editForm.saatBlok || editingAppointment.saatBlok,
             appointmentId: editingAppointment.id,
+            pilot: effectivePilot || editingAppointment.pilot,
+            pilotId: resolvedPilotId,
+            ownerRole,
+            previousPilotId: existingPilotId,
+            changeKind: updateChangeKind,
           });
         } catch (notifErr) {
           console.error('Güncelleme bildirimi hatası:', notifErr);
@@ -2187,6 +2570,8 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
       await fetchAppointments();
       const reoffered =
         oldStatus === 'iptal' && newStatus === 'danisman_onayi_bekliyor';
+      const sentForReapproval =
+        oldStatus === 'kesinlesti' && substantiveChanged;
       setIsEditCalendarOpen(false);
       setEditingAppointment(null);
       setEditStartHour('');
@@ -2205,7 +2590,13 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
         semt: '',
         danismanNotu: '',
       });
-      showToast(reoffered ? 'Teklif danışmana iletildi' : 'Başarıyla güncellendi');
+      showToast(
+        reoffered
+          ? 'Teklif danışmana iletildi'
+          : sentForReapproval
+            ? 'Değişiklik karşı tarafın onayına gönderildi.'
+            : 'Başarıyla güncellendi'
+      );
     } catch (err) {
       console.error('Güncelleme istisnası:', err);
       showToast('Güncelleme sırasında beklenmeyen bir hata oluştu.');
@@ -2372,14 +2763,20 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
 
   const navigateToTab = (tabId) => {
     if (tabId === 'teklif-onay') tabId = 'randevu';
+    if (
+      tabId === 'kullanici-yonetimi' ||
+      tabId === 'users-edit' ||
+      tabId === 'users-delete'
+    ) {
+      tabId = 'users-overview';
+    }
+    if (tabId === 'randevularim') {
+      setRandevularimFilter('all');
+    }
     setActiveTab(tabId);
+    persistActiveTab(tabId);
     setIsMobileMenuOpen(false);
     if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.set('tab', tabId);
-      window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
-    }
   };
 
   useEffect(() => {
@@ -2446,7 +2843,7 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
                 type="password" 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="WhatsApp Numarası"
+                placeholder="Telefon Numarası"
                 autoComplete="current-password"
                 className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-[14px]"
                 required
@@ -2498,23 +2895,43 @@ const [bookedAppointments, setBookedAppointments] = useState<any[]>([]);
   const monthNames = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
   const weekDays = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
-const pendingRequests = bookedAppointments.filter(app => {
-    const isWaitingPilot = normalizeAppointmentStatus(app.status) === 'pilot_bekleniyor';
+  /** Pilotun işlem yapacağı talepler (sidebar rozeti yalnızca bu sayıyı gösterir). */
+  const pendingRequests = bookedAppointments.filter(app => {
+    const isWaitingPilot =
+      normalizeAppointmentStatus(app.status) === 'pilot_bekleniyor';
     if (!isWaitingPilot) return false;
     if (!canApproveAppointments(role)) return false;
-    if (role === 'selim' || role === 'fatima' || isPilot) {
-      return app.ownerRole === role || app.pilot === fullName;
+    if (isPilotRole(role) || isPilot) {
+      return pilotOwnsAppointment(app);
     }
     return true; // broker: tüm bekleyenler
   });
 
-  const pendingByIlce = groupAppointmentsByIlce(pendingRequests);
+  /**
+   * Çekim Talepleri aktif iş akışı:
+   * Talep → pilot teklifi → danışman onayı.
+   * Teklif gönderilince kayıt kaybolmamalı; danışman yanıtlayana kadar burada kalır.
+   */
+  const appointmentWorkflowRequests = bookedAppointments.filter((app) => {
+    const status = normalizeAppointmentStatus(app.status);
+    const isActiveWorkflow =
+      status === 'pilot_bekleniyor' ||
+      status === 'danisman_onayi_bekliyor';
+    if (!isActiveWorkflow || !canApproveAppointments(role)) return false;
+    if (isPilotRole(role) || isPilot) {
+      return pilotOwnsAppointment(app);
+    }
+    return true;
+  });
+
+  const pendingByIlce = groupAppointmentsByIlce(appointmentWorkflowRequests);
 
   const danismanConfirmRequests = bookedAppointments.filter(
     (app) =>
       role === 'danisman' &&
       normalizeAppointmentStatus(app.status) === 'danisman_onayi_bekliyor' &&
-      (app.createdBy === currentUserId || app.danismanIsmi === fullName)
+      (app.createdBy === currentUserId ||
+        appointmentNamesMatch(app.danismanIsmi, fullName))
   );
 
   const requestIlceler = getIlceler(requestIl);
@@ -2541,8 +2958,31 @@ const pendingRequests = bookedAppointments.filter(app => {
     setIsOfferCalendarOpen(true);
   };
 
+  const closeOfferFlow = () => {
+    if (processingId) return;
+    setIsOfferCalendarOpen(false);
+    setOfferingId(null);
+    setOfferTarih('');
+    setOfferStartHour('');
+    setOfferEndHour('');
+  };
+
   const handleOfferCalendarSelectIso = (iso) => {
     setOfferTarih(iso);
+    if (
+      offerStartHour &&
+      isOfferStartBlockedByConfirmed({
+        appointments: bookedAppointments,
+        date: iso,
+        startHour: Number(offerStartHour),
+        pilotName: offerPilotName,
+        excludeId: offeringId,
+      })
+    ) {
+      setOfferStartHour('');
+      setOfferEndHour('');
+      return;
+    }
     if (
       offerStartHour &&
       offerEndHour &&
@@ -2762,8 +3202,21 @@ const pendingRequests = bookedAppointments.filter(app => {
                   </>
                 ) : (
                   <>
+                    {normalizeAppointmentStatus(editingAppointment?.status) ===
+                      'kesinlesti' && (
+                      <div className="rounded-xl border border-[#0A84FF]/25 bg-[#0A84FF]/10 px-4 py-3 space-y-1">
+                        <p className="text-[13px] font-medium text-[#64AFFF]">
+                          Kesinleşmiş randevu
+                        </p>
+                        <p className="text-[12px] text-[#A1A1A6] leading-relaxed">
+                          Yalnızca notu değiştirirseniz randevu kesin kalır. Tarih,
+                          saat, konum, portföy veya pilot değişikliği karşı tarafın
+                          yeniden onayına gönderilir.
+                        </p>
+                      </div>
+                    )}
                     {normalizeAppointmentStatus(editingAppointment?.status) === 'iptal' &&
-                      (role === 'broker' || role === 'selim' || role === 'fatima') && (
+                      (canApproveAppointments(role)) && (
                       <div className="rounded-xl border border-[#E5B540]/25 bg-[#E5B540]/10 px-4 py-3 space-y-1">
                         <p className="text-[13px] font-medium text-[#E5B540]">Reddedilmiş randevu — yeniden teklif</p>
                         <p className="text-[12px] text-[#86868B] leading-relaxed">
@@ -2899,7 +3352,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                       </div>
                     )}
 
-                    {(role === 'broker' || role === 'selim' || role === 'fatima') && (
+                    {(canApproveAppointments(role)) && (
                       <div>
                         <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Durum</label>
                         <div className="relative">
@@ -2911,8 +3364,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                             <option value="pilot_bekleniyor">Pilot Bekleniyor</option>
                             <option value="danisman_onayi_bekliyor">Danışman Kesinleştirmesi Bekleniyor (Teklif)</option>
                             {(role === 'broker' ||
-                              role === 'selim' ||
-                              role === 'fatima' ||
+                              isPilotRole(role) ||
                               editForm.status === 'kesinlesti') && (
                               <option value="kesinlesti">Kesinleşti</option>
                             )}
@@ -2965,7 +3417,22 @@ const pendingRequests = bookedAppointments.filter(app => {
                       <textarea value={editForm.aciklama} onChange={(e) => handleEditFormChange('aciklama', e.target.value)} rows={3} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]" />
                     </div>
 
-                    {role === 'broker' && (
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                        Randevu Notu
+                      </label>
+                      <textarea
+                        value={editForm.danismanNotu}
+                        onChange={(e) =>
+                          handleEditFormChange('danismanNotu', e.target.value)
+                        }
+                        rows={3}
+                        className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]"
+                        placeholder="Pilot ve danışmanın görebileceği not"
+                      />
+                    </div>
+
+                    {(role === 'broker' || role === 'danisman') && (
                       <div>
                         <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Pilot</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3019,7 +3486,7 @@ const pendingRequests = bookedAppointments.filter(app => {
         pilotName={
           role === 'broker'
             ? manualForm.pilot || null
-            : lockedPilotForRole(role) || fullName || null
+            : lockedPilotForRole() || fullName || null
         }
         appointments={bookedAppointments}
         selectedIso={manualForm.tarih || ''}
@@ -3037,7 +3504,7 @@ const pendingRequests = bookedAppointments.filter(app => {
           onClick={closeManualModal}
         >
           <div
-            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
+            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-2xl shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-white/5 shrink-0">
@@ -3113,8 +3580,8 @@ const pendingRequests = bookedAppointments.filter(app => {
                   </div>
                 </div>
 
-                {/* 2) Akıllı tarih + 30 dk saat */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* 2) Akıllı tarih + başlangıç/bitiş aralığı */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
                       Tarih (Akıllı Planlama)
@@ -3136,18 +3603,70 @@ const pendingRequests = bookedAppointments.filter(app => {
                     )}
                   </div>
                   <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Saat</label>
+                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                      Başlangıç
+                    </label>
                     <div className="relative">
                       <select
                         required
-                        value={manualForm.saatBlok}
-                        onChange={(e) => handleManualFormChange('saatBlok', e.target.value)}
+                        value={manualStartHour}
+                        onChange={(e) => {
+                          setManualStartHour(e.target.value);
+                          setManualEndHour('');
+                        }}
                         className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
                       >
-                        <option value="">Saat seçin</option>
-                        {TIME_SLOT_OPTIONS.map((b) => (
-                          <option key={b} value={b}>{b}</option>
+                        <option value="">Başlangıç seçin</option>
+                        {OFFER_HOUR_OPTIONS.map((hour) => (
+                          <option key={hour} value={String(hour)}>
+                            {formatOfferHour(hour)}
+                          </option>
                         ))}
+                      </select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                      Bitiş
+                    </label>
+                    <div className="relative">
+                      <select
+                        required
+                        disabled={!manualStartHour}
+                        value={manualEndHour}
+                        onChange={(e) => setManualEndHour(e.target.value)}
+                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <option value="">
+                          {manualStartHour
+                            ? 'Bitiş seçin'
+                            : 'Önce başlangıç seçin'}
+                        </option>
+                        {getOfferEndHours(Number(manualStartHour)).map((hour) => {
+                          const blocked =
+                            !!manualForm.tarih &&
+                            isOfferEndBlockedByConfirmed({
+                              appointments: bookedAppointments,
+                              date: manualForm.tarih,
+                              startHour: Number(manualStartHour),
+                              endHour: hour,
+                              pilotName:
+                                role === 'broker'
+                                  ? manualForm.pilot
+                                  : lockedPilotForRole(),
+                            });
+                          return (
+                            <option
+                              key={hour}
+                              value={String(hour)}
+                              disabled={blocked}
+                            >
+                              {formatOfferHour(hour)}
+                              {blocked ? ' (dolu)' : ''}
+                            </option>
+                          );
+                        })}
                       </select>
                       <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
                     </div>
@@ -3236,8 +3755,8 @@ const pendingRequests = bookedAppointments.filter(app => {
                     </div>
                   ) : (
                     <div className="w-full bg-[#1C1C1E] border border-white/5 rounded-xl px-4 h-12 flex items-center text-[14px] text-[#86868B]">
-                      {manualForm.pilot || lockedPilotForRole(role)
-                        ? toTitleCaseName(manualForm.pilot || lockedPilotForRole(role))
+                      {manualForm.pilot || lockedPilotForRole()
+                        ? toTitleCaseName(manualForm.pilot || lockedPilotForRole())
                         : ''}
                       <span className="ml-auto text-[11px] uppercase tracking-wide">Kilitli</span>
                     </div>
@@ -3345,6 +3864,7 @@ const pendingRequests = bookedAppointments.filter(app => {
 
         <SidebarNav
           role={role}
+          fullName={fullName}
           activeTab={activeTab}
           badgeCounts={menuBadgeCounts}
           onNavigate={navigateToTab}
@@ -3424,6 +3944,7 @@ const pendingRequests = bookedAppointments.filter(app => {
         {/* SCROLLABLE CONTENT */}
         <div
           ref={mainScrollRef}
+          data-main-scroll
           className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-4 sm:px-6 md:px-12 lg:px-16 py-6 sm:py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
         >
           <div className="w-full mx-auto space-y-10 pb-20 max-w-7xl">
@@ -3435,6 +3956,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                 fullName={fullName}
                 role={role}
                 isPilot={isPilot}
+                currentUserId={currentUserId}
                 appointments={bookedAppointments}
                 pendingCount={pendingRequests.length}
                 confirmCount={danismanConfirmRequests.length}
@@ -3448,8 +3970,62 @@ const pendingRequests = bookedAppointments.filter(app => {
             )}
 
             {/* Henüz yayında olmayan sayfalar */}
-            {!isLiveContentTab(activeTab, role) && (
+            {!isLiveContentTab(activeTab, role, fullName) && (
               <ComingSoonPlaceholder />
+            )}
+
+            {(activeTab === 'users-overview' || activeTab === 'users-add') &&
+              isUserAdmin(fullName, role) && (
+                <UserManagement
+                  mode={activeTab === 'users-add' ? 'add' : 'overview'}
+                  onNavigate={navigateToTab}
+                />
+              )}
+
+            {/* --- ZEBRA STUDIO: Yeni Portföy (sekme değişince state korunur) --- */}
+            <div
+              aria-hidden={activeTab !== 'studio-yeni-portfoy'}
+              className={
+                activeTab === 'studio-yeni-portfoy'
+                  ? ''
+                  : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+              }
+            >
+              <ZebraStudio
+                userId={currentUserId}
+                fallbackName={fullName}
+                role={role}
+              />
+            </div>
+
+            {/* --- ZEBRA STUDIO: Satıldı / Kiralandı --- */}
+            <div
+              aria-hidden={activeTab !== 'studio-satildi-kiralandi'}
+              className={
+                activeTab === 'studio-satildi-kiralandi'
+                  ? ''
+                  : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+              }
+            >
+              <SoldRentedStudio
+                userId={currentUserId}
+                fallbackName={fullName}
+                role={role}
+                isActive={activeTab === 'studio-satildi-kiralandi'}
+              />
+            </div>
+
+            {usesManagerShell(role) && (
+              <div
+                aria-hidden={activeTab !== 'studio-toplu'}
+                className={
+                  activeTab === 'studio-toplu'
+                    ? ''
+                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                }
+              >
+                <BatchProductionStudio />
+              </div>
             )}
 
             {/* --- TAKVİM: danışman genel takvim --- */}
@@ -3457,13 +4033,13 @@ const pendingRequests = bookedAppointments.filter(app => {
               <GlobalCalendar
                 appointments={bookedAppointments}
                 userKey={currentUserId}
-                showTeamAppointments
+                showTeamAppointments={false}
                 fullName={fullName}
                 currentUserId={currentUserId}
               />
             )}
 
-            {/* --- TAKVİM: yönetici çekim takvimi --- */}
+            {/* --- TAKVİM: personel çekim takvimi --- */}
             {activeTab === 'takvim' && role !== 'danisman' && (
               <div className="panel-enter space-y-8">
                 <div className="mb-10">
@@ -3501,7 +4077,11 @@ const pendingRequests = bookedAppointments.filter(app => {
                       const dateStr = formatDateStr(currentDateObj);
                       
                       const dayMarker = calendarDayMarkers[dateStr];
-                      const hasAppointments = !!(dayMarker?.hasActive || dayMarker?.hasRejected || dayMarker?.hasPending);
+                      const hasAppointments = !!(
+                        dayMarker?.hasConfirmed ||
+                        dayMarker?.hasPending ||
+                        dayMarker?.hasCancelled
+                      );
                       
                       const isToday = dayNumber === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
                       const isSelected = takvimSelectedDate && dayNumber === takvimSelectedDate.getDate() && viewMonth === takvimSelectedDate.getMonth() && viewYear === takvimSelectedDate.getFullYear();
@@ -3520,11 +4100,14 @@ const pendingRequests = bookedAppointments.filter(app => {
                           <span>{dayNumber}</span>
                           {hasAppointments && (
                             <div className="absolute bottom-1.5 flex items-center gap-0.5">
-                              {dayMarker?.hasActive && (
-                                <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-[#34C759]' : 'bg-[#86868B]'}`} />
+                              {dayMarker?.hasConfirmed && (
+                                <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-[#34C759]' : 'bg-[#34C759]/90'}`} />
                               )}
-                              {dayMarker?.hasRejected && (
-                                <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-[#FF3B30]' : 'bg-[#FF3B30]/80'}`} />
+                              {dayMarker?.hasPending && (
+                                <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-[#FF9F0A]' : 'bg-[#FF9F0A]/90'}`} />
+                              )}
+                              {dayMarker?.hasCancelled && (
+                                <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-[#FF453A]' : 'bg-[#FF453A]/90'}`} />
                               )}
                             </div>
                           )}
@@ -3543,21 +4126,27 @@ const pendingRequests = bookedAppointments.filter(app => {
                   allowNotes={false}
                   eyebrow="Çekim günü"
                   emptyHint="Bu tarihte planlanmış çekim bulunmuyor."
-                  onEventClick={(ev) => {
-                    const sourceId = ev.sourceId || String(ev.id || '').replace(/^randevu-/, '');
-                    const app = bookedAppointments.find(
-                      (a) => String(a.id) === String(sourceId)
-                    );
-                    if (!app) return;
-                    if (!canEditAppointment(app)) {
-                      showToast('Bu randevuyu düzenleme yetkiniz yok.');
-                      return;
-                    }
-                    setTakvimSelectedDate(null);
-                    openEditModal(app);
-                  }}
+                  onEventClick={
+                    isPersonelRole(role)
+                      ? undefined
+                      : (ev) => {
+                          const sourceId =
+                            ev.sourceId ||
+                            String(ev.id || '').replace(/^randevu-/, '');
+                          const app = bookedAppointments.find(
+                            (a) => String(a.id) === String(sourceId)
+                          );
+                          if (!app) return;
+                          if (!canEditAppointment(app)) {
+                            showToast('Bu randevuyu düzenleme yetkiniz yok.');
+                            return;
+                          }
+                          setTakvimSelectedDate(null);
+                          openEditModal(app);
+                        }
+                  }
                   toolbar={
-                    role !== 'yonetici' ? (
+                    !isPersonelRole(role) ? (
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -3598,7 +4187,7 @@ const pendingRequests = bookedAppointments.filter(app => {
               <div className="panel-enter w-full">
                 <div className="mb-10 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div>
-                    <h1 className="text-3xl font-medium tracking-tight text-white">Çekim Talepleri</h1>
+                    <h1 className="text-3xl font-medium tracking-tight text-white">Randevu Talepleri</h1>
                     <p className="text-[#86868B] mt-2 text-[15px]">İlçeye göre gruplanmış taleplere tarih/saat teklif edin.</p>
                   </div>
                   {canCreateManualAppointment(role) && (
@@ -3615,7 +4204,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                 
                 <p className="text-[#86868B] text-[14px] mb-6">Talepler ilçeye göre gruplanır. Tarih/saat teklif ederek danışmana gönderin.</p>
 
-                {pendingRequests.length === 0 ? (
+                {appointmentWorkflowRequests.length === 0 ? (
                   <div className="bg-[#111111] border border-white/5 rounded-2xl p-20 flex flex-col items-center justify-center text-center w-full">
                     <div className="w-16 h-16 bg-[#1C1C1E] rounded-full flex items-center justify-center mb-6">
                       <Inbox className="w-6 h-6 text-[#86868B]" strokeWidth={1.5} />
@@ -3633,6 +4222,11 @@ const pendingRequests = bookedAppointments.filter(app => {
                           <span className="text-[12px] text-[#86868B] font-normal">({reqs.length})</span>
                         </h2>
                         {reqs.map((req) => {
+                          const requestStatus = normalizeAppointmentStatus(
+                            req.status
+                          );
+                          const waitingForConsultant =
+                            requestStatus === 'danisman_onayi_bekliyor';
                           const districtConfirmed = bookedAppointments.filter(
                             (a) =>
                               isConfirmedStatus(a.status) &&
@@ -3640,9 +4234,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                               a.il === req.il
                           );
                           const canAct =
-                            role === 'broker' ||
-                            role === req.ownerRole ||
-                            (isPilot && req.pilot === fullName);
+                            role === 'broker' || pilotOwnsAppointment(req);
                           return (
                             <div key={req.id} className="bg-[#161616] border border-white/5 rounded-2xl p-6 sm:p-8 flex flex-col shadow-sm w-full">
                               <div className="flex justify-between items-start mb-4 gap-3">
@@ -3654,7 +4246,78 @@ const pendingRequests = bookedAppointments.filter(app => {
                                 </div>
                                 {getStatusBadge(req.status)}
                               </div>
+                              <div className="mb-5 grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-2">
+                                {[
+                                  {
+                                    label: 'Talep',
+                                    active: true,
+                                    complete: waitingForConsultant,
+                                  },
+                                  {
+                                    label: 'Teklif',
+                                    active: waitingForConsultant,
+                                    complete: false,
+                                  },
+                                  {
+                                    label: 'Onay',
+                                    active: false,
+                                    complete: false,
+                                  },
+                                ].map((step, index) => (
+                                  <React.Fragment key={step.label}>
+                                    <div className="min-w-0 text-center">
+                                      <div
+                                        className={`mx-auto mb-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                                          step.complete
+                                            ? 'border-[#34C759]/30 bg-[#34C759]/15 text-[#34C759]'
+                                            : step.active
+                                              ? 'border-[#E5B540]/35 bg-[#E5B540]/15 text-[#E5B540]'
+                                              : 'border-white/10 bg-[#1C1C1E] text-[#636366]'
+                                        }`}
+                                      >
+                                        {step.complete ? '✓' : index + 1}
+                                      </div>
+                                      <span
+                                        className={`text-[11px] ${
+                                          step.active || step.complete
+                                            ? 'text-white'
+                                            : 'text-[#636366]'
+                                        }`}
+                                      >
+                                        {step.label}
+                                      </span>
+                                    </div>
+                                    {index < 2 ? (
+                                      <div
+                                        className={`h-px w-full ${
+                                          index === 0 && waitingForConsultant
+                                            ? 'bg-[#34C759]/40'
+                                            : 'bg-white/10'
+                                        }`}
+                                      />
+                                    ) : null}
+                                  </React.Fragment>
+                                ))}
+                              </div>
                               <div className="space-y-3 mb-4">
+                                {waitingForConsultant && (
+                                  <div className="rounded-xl border border-[#E5B540]/20 bg-[#E5B540]/10 p-4">
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-[#E5B540]">
+                                      Danışman onayı bekleniyor
+                                    </p>
+                                    <p className="mt-2 text-[17px] font-medium text-white">
+                                      {req.tarih || '—'}
+                                      {formatWeekdayTr(req.tarih) ? (
+                                        <span className="text-white/80">
+                                          {' '}· {formatWeekdayTr(req.tarih)}
+                                        </span>
+                                      ) : null}
+                                    </p>
+                                    <p className="mt-1 text-[20px] font-semibold tabular-nums text-white">
+                                      {req.saatBlok || '—'}
+                                    </p>
+                                  </div>
+                                )}
                                 {req.portfoyTuru && (
                                   <div className="flex items-start text-[13px] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
                                     <Building2 className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" />
@@ -3685,7 +4348,12 @@ const pendingRequests = bookedAppointments.filter(app => {
                                 )}
                               </div>
 
-                              {rejectingId === req.id ? (
+                              {waitingForConsultant ? (
+                                <div className="mt-auto flex items-center gap-2 rounded-xl border border-white/5 bg-[#1C1C1E]/70 px-4 py-3 text-[13px] text-[#AEAEB2]">
+                                  <Clock className="h-4 w-4 shrink-0 text-[#E5B540]" />
+                                  Teklif gönderildi; danışmanın onayı bekleniyor.
+                                </div>
+                              ) : rejectingId === req.id ? (
                                 <div className="animate-in fade-in duration-300">
                                   <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reddetme sebebi..." className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px] mb-4" />
                                   <div className="flex space-x-3">
@@ -3696,7 +4364,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                                   </div>
                                 </div>
                               ) : offeringId === req.id ? (
-                                <div className="space-y-4 border-t border-white/5 pt-4">
+                                <div className="hidden">
                                   <p className="text-[12px] font-medium text-[#86868B]">TARİH VE SAAT ARALIĞI TEKLİF ET</p>
                                   <div>
                                     <label className="block text-[12px] text-[#86868B] mb-2">Tarih</label>
@@ -3713,7 +4381,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                                       </button>
                                       <SmartSchedulingAssistant
                                         open={isOfferCalendarOpen}
-                                        onClose={() => setIsOfferCalendarOpen(false)}
+                                        onClose={closeOfferFlow}
                                         targetIl={offeringRequest?.il || req.il}
                                         targetIlce={offeringRequest?.ilce || req.ilce}
                                         pilotName={offeringRequest?.pilot || req.pilot || (isPilot ? fullName : null)}
@@ -3724,6 +4392,162 @@ const pendingRequests = bookedAppointments.filter(app => {
                                         year={offerCalYear}
                                         onPrevMonth={handleOfferCalPrevMonth}
                                         onNextMonth={handleOfferCalNextMonth}
+                                        footerContent={
+                                          <div className="space-y-2.5">
+                                            <div className="grid grid-cols-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] gap-2 sm:gap-3 items-end">
+                                              <label className="min-w-0">
+                                                <span className="block text-[10px] sm:text-[11px] text-[#86868B] mb-1.5">
+                                                  Başlangıç
+                                                </span>
+                                                <select
+                                                  value={offerStartHour}
+                                                  onChange={(e) => {
+                                                    setOfferStartHour(e.target.value);
+                                                    setOfferEndHour('');
+                                                  }}
+                                                  className="w-full min-w-0 appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-3 h-11 text-[13px] cursor-pointer"
+                                                >
+                                                  <option value="">Seçin</option>
+                                                  {OFFER_HOUR_OPTIONS.filter(
+                                                    (h) =>
+                                                      getOfferEndHours(h).length >
+                                                      0
+                                                  ).map((h) => {
+                                                    const blocked =
+                                                      !!offerTarih &&
+                                                        isOfferStartBlockedByConfirmed({
+                                                          appointments:
+                                                            bookedAppointments,
+                                                          date: offerTarih,
+                                                          startHour: h,
+                                                          pilotName:
+                                                            req.pilot ||
+                                                            offerPilotName,
+                                                          excludeId: req.id,
+                                                        });
+                                                    return (
+                                                      <option
+                                                        key={h}
+                                                        value={String(h)}
+                                                        disabled={blocked}
+                                                      >
+                                                        {formatOfferHour(h)}
+                                                        {blocked ? ' (dolu)' : ''}
+                                                      </option>
+                                                    );
+                                                  })}
+                                                </select>
+                                              </label>
+                                              <label className="min-w-0">
+                                                <span className="block text-[10px] sm:text-[11px] text-[#86868B] mb-1.5">
+                                                  Bitiş
+                                                </span>
+                                                <select
+                                                  value={offerEndHour}
+                                                  disabled={!offerStartHour}
+                                                  onChange={(e) => {
+                                                    const nextEnd = e.target.value;
+                                                    if (
+                                                      offerTarih &&
+                                                      nextEnd &&
+                                                      isOfferEndBlockedByConfirmed({
+                                                        appointments: bookedAppointments,
+                                                        date: offerTarih,
+                                                        startHour: Number(offerStartHour),
+                                                        endHour: Number(nextEnd),
+                                                        pilotName:
+                                                          req.pilot || offerPilotName,
+                                                        excludeId: req.id,
+                                                      })
+                                                    ) {
+                                                      showToast(
+                                                        'Bu saat aralığı kesinleşmiş bir çekimle çakışıyor; seçilemez.'
+                                                      );
+                                                      return;
+                                                    }
+                                                    setOfferEndHour(nextEnd);
+                                                  }}
+                                                  className="w-full min-w-0 appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-3 h-11 text-[13px] cursor-pointer disabled:opacity-40"
+                                                >
+                                                  <option value="">
+                                                    {offerStartHour
+                                                      ? 'Seçin'
+                                                      : 'Önce başlangıç'}
+                                                  </option>
+                                                  {getOfferEndHours(
+                                                    Number(offerStartHour)
+                                                  ).map((h) => {
+                                                    const blocked =
+                                                      !!offerTarih &&
+                                                      isOfferEndBlockedByConfirmed({
+                                                        appointments:
+                                                          bookedAppointments,
+                                                        date: offerTarih,
+                                                        startHour:
+                                                          Number(offerStartHour),
+                                                        endHour: h,
+                                                        pilotName:
+                                                          req.pilot ||
+                                                          offerPilotName,
+                                                        excludeId: req.id,
+                                                      });
+                                                    return (
+                                                      <option
+                                                        key={h}
+                                                        value={String(h)}
+                                                        disabled={blocked}
+                                                      >
+                                                        {formatOfferHour(h)}
+                                                        {blocked ? ' (dolu)' : ''}
+                                                      </option>
+                                                    );
+                                                  })}
+                                                </select>
+                                              </label>
+                                              <button
+                                                type="button"
+                                                onClick={closeOfferFlow}
+                                                disabled={!!processingId}
+                                                className="h-11 rounded-xl bg-[#1C1C1E] px-4 text-[13px] text-white cursor-pointer disabled:opacity-40"
+                                              >
+                                                Vazgeç
+                                              </button>
+                                              <button
+                                                type="button"
+                                                disabled={
+                                                  processingId === req.id ||
+                                                  !offerTarih ||
+                                                  !offerStartHour ||
+                                                  !offerEndHour ||
+                                                  offerRangeConflicts.confirmed
+                                                    .length > 0
+                                                }
+                                                onClick={() =>
+                                                  handlePilotOffer(req)
+                                                }
+                                                className="h-11 rounded-xl bg-white px-4 text-[13px] font-medium text-black cursor-pointer disabled:opacity-40 flex items-center justify-center whitespace-nowrap"
+                                              >
+                                                {processingId === req.id ? (
+                                                  <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                  'Teklifi Gönder'
+                                                )}
+                                              </button>
+                                            </div>
+                                            {!offerTarih && (
+                                              <p className="text-[10px] sm:text-[11px] text-[#E5B540]">
+                                                Önce takvimden bir tarih seçin.
+                                              </p>
+                                            )}
+                                            {offerRangeConflicts.confirmed.length >
+                                              0 && (
+                                              <p className="text-[10px] sm:text-[11px] text-[#FF453A]">
+                                                Bu saat aralığı kesinleşmiş bir
+                                                çekimle çakışıyor.
+                                              </p>
+                                            )}
+                                          </div>
+                                        }
                                       />
                                     </div>
                                   </div>
@@ -3855,7 +4679,7 @@ const pendingRequests = bookedAppointments.filter(app => {
                 {/* ARCHIVE COMPONENT FOR MANAGER */}
                 <div className="pt-16 mt-8 border-t border-white/5">
                   <h2 className="text-2xl font-medium tracking-tight text-white mb-8 flex items-center">
-                    <History className="w-5 h-5 mr-3 text-white/70" /> Geçmiş Çekim Talepleri / Arşiv
+                    <History className="w-5 h-5 mr-3 text-white/70" /> Geçmiş Randevu Talepleri / Arşiv
                   </h2>
                   <div className="space-y-4 w-full">
                     {archiveAppointments.length === 0 ? (
@@ -3952,6 +4776,29 @@ const pendingRequests = bookedAppointments.filter(app => {
                               </div>
                             </div>
                             {getStatusBadge(app.status)}
+                          </div>
+                          <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-2">
+                            {['Talep', 'Teklif', 'Onay'].map((label, index) => (
+                              <React.Fragment key={label}>
+                                <div className="min-w-0 text-center">
+                                  <div
+                                    className={`mx-auto mb-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                                      index < 2
+                                        ? 'border-[#34C759]/30 bg-[#34C759]/15 text-[#34C759]'
+                                        : 'border-[#E5B540]/35 bg-[#E5B540]/15 text-[#E5B540]'
+                                    }`}
+                                  >
+                                    {index < 2 ? '✓' : '3'}
+                                  </div>
+                                  <span className="text-[11px] text-white">
+                                    {label}
+                                  </span>
+                                </div>
+                                {index < 2 ? (
+                                  <div className="h-px w-full bg-[#34C759]/40" />
+                                ) : null}
+                              </React.Fragment>
+                            ))}
                           </div>
                           {(app.danismanNotu || app.aciklama) && (
                             <p className="text-[13px] text-[#86868B] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
@@ -4078,6 +4925,29 @@ const pendingRequests = bookedAppointments.filter(app => {
                             </div>
                           </div>
                           {getStatusBadge(req.status)}
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-2">
+                          {['Talep', 'Teklif', 'Onay'].map((label, index) => (
+                            <React.Fragment key={label}>
+                              <div className="min-w-0 text-center">
+                                <div
+                                  className={`mx-auto mb-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                                    index < 2
+                                      ? 'border-[#34C759]/30 bg-[#34C759]/15 text-[#34C759]'
+                                      : 'border-[#E5B540]/35 bg-[#E5B540]/15 text-[#E5B540]'
+                                  }`}
+                                >
+                                  {index < 2 ? '✓' : '3'}
+                                </div>
+                                <span className="text-[11px] text-white">
+                                  {label}
+                                </span>
+                              </div>
+                              {index < 2 ? (
+                                <div className="h-px w-full bg-[#34C759]/40" />
+                              ) : null}
+                            </React.Fragment>
+                          ))}
                         </div>
                         {(req.danismanNotu || req.aciklama) && (
                           <p className="text-[13px] text-[#86868B] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">

@@ -4,11 +4,24 @@
  * Pasif ürün sayfaları menüde aktif; içerik "Yakında" placeholder gösterir.
  */
 
-export type SidebarChild = {
+import { isUserAdmin, isPilotRole, isPersonelRole } from './authIdentity';
+
+export type SidebarLeaf = {
   id: string;
   label: string;
   isEnabled: boolean;
+  children?: never;
 };
+
+export type SidebarGroupChild = {
+  id: string;
+  label: string;
+  isEnabled: boolean;
+  children: SidebarLeaf[];
+};
+
+/** Leaf veya nested grup (Sosyal Medya → Yeni Portföy / Satıldı) */
+export type SidebarChild = SidebarLeaf | SidebarGroupChild;
 
 export type SidebarItem = {
   id: string;
@@ -38,10 +51,25 @@ export const CORE_LIVE_TABS = [
   'randevu',
   'cekim',
   'cekim-raporu',
+  'studio-yeni-portfoy',
+  'studio-satildi-kiralandi',
+  'studio-toplu',
+  'users-overview',
+  'users-add',
 ] as const;
 
-function sharedProductModules(options?: { includeMusteri?: boolean }): SidebarItem[] {
+/** Eski sekme id → güncel leaf */
+export function migrateStudioTabId(tabId: string): string {
+  if (tabId === 'studio-sosyal') return 'studio-yeni-portfoy';
+  return tabId;
+}
+
+function sharedProductModules(options?: {
+  includeMusteri?: boolean;
+  includeTopluUretim?: boolean;
+}): SidebarItem[] {
   const includeMusteri = options?.includeMusteri !== false;
+  const includeTopluUretim = options?.includeTopluUretim === true;
   return [
     ...(includeMusteri
       ? [
@@ -69,7 +97,26 @@ function sharedProductModules(options?: { includeMusteri?: boolean }): SidebarIt
       icon: 'Aperture',
       isEnabled: true,
       children: [
-        { id: 'studio-sosyal', label: 'Sosyal Medya Tasarımları', isEnabled: true },
+        {
+          id: 'studio-sosyal-group',
+          label: 'Sosyal Medya Tasarımları',
+          isEnabled: true,
+          children: [
+            {
+              id: 'studio-yeni-portfoy',
+              label: 'Yeni Portföy',
+              isEnabled: true,
+            },
+            {
+              id: 'studio-satildi-kiralandi',
+              label: 'Satıldı/Kiralandı',
+              isEnabled: true,
+            },
+          ],
+        },
+        ...(includeTopluUretim
+          ? [{ id: 'studio-toplu', label: 'Toplu Üretim', isEnabled: true }]
+          : []),
         { id: 'studio-branda', label: 'Branda', isEnabled: true },
         { id: 'studio-brosur', label: 'Broşür', isEnabled: true },
         { id: 'studio-sunum', label: 'Sunum Dosyaları', isEnabled: true },
@@ -128,8 +175,22 @@ function productTreeTail(options?: { includeMarketingAnalytics?: boolean }): Sid
   ];
 }
 
+const userAdminNavItem: SidebarItem = {
+  id: 'kullanici-yonetimi',
+  label: 'Kullanıcı Yönetimi',
+  icon: 'Users',
+  isEnabled: true,
+  children: [
+    { id: 'users-overview', label: 'Tüm Kullanıcılar', isEnabled: true },
+    { id: 'users-add', label: 'Kullanıcı Ekle', isEnabled: true },
+  ],
+};
+
 /** Danışman kabuğu */
-export function buildConsultantNav(): SidebarItem[] {
+export function buildConsultantNav(options?: {
+  includeUserAdmin?: boolean;
+}): SidebarItem[] {
+  const includeUserAdmin = options?.includeUserAdmin === true;
   return [
     {
       id: 'genel',
@@ -154,13 +215,19 @@ export function buildConsultantNav(): SidebarItem[] {
         { id: 'randevu', label: 'Randevu Talebi', isEnabled: true },
       ],
     },
+    ...(includeUserAdmin ? [userAdminNavItem] : []),
     ...productTreeTail(),
   ];
 }
 
-/** Yönetici / pilot kabuğu — müşteri, reklam, analiz yok */
-export function buildManagerNav(role: string): SidebarItem[] {
+/** Personel / pilot kabuğu — müşteri, reklam, analiz yok */
+export function buildManagerNav(
+  role: string,
+  options?: { includeUserAdmin?: boolean }
+): SidebarItem[] {
   const isBroker = role === 'broker';
+  const isPersonel = isPersonelRole(role);
+  const includeUserAdmin = options?.includeUserAdmin === true;
   return [
     {
       id: 'genel',
@@ -168,7 +235,7 @@ export function buildManagerNav(role: string): SidebarItem[] {
       icon: 'LayoutGrid',
       isEnabled: true,
     },
-    ...sharedProductModules({ includeMusteri: false }),
+    ...sharedProductModules({ includeMusteri: false, includeTopluUretim: true }),
     {
       id: 'randevu-sistemi',
       label: 'Randevu Sistemi',
@@ -176,23 +243,36 @@ export function buildManagerNav(role: string): SidebarItem[] {
       isEnabled: true,
       children: [
         { id: 'takvim', label: 'Çekim takvimi', isEnabled: true },
-        { id: 'cekim', label: 'Çekim Talepleri', isEnabled: true },
+        // Personel yalnızca pilot programlarını görür; talep onay akışı yok.
+        ...(!isPersonel
+          ? [{ id: 'cekim', label: 'Randevu Talepleri', isEnabled: true }]
+          : []),
         ...(isBroker
           ? [{ id: 'cekim-raporu', label: 'Çekim Raporu', isEnabled: true }]
           : []),
-        { id: 'randevu', label: 'Randevu Talebi', isEnabled: true },
       ],
     },
+    ...(includeUserAdmin ? [userAdminNavItem] : []),
     ...productTreeTail({ includeMarketingAnalytics: false }),
   ];
 }
 
-/** Menüdeki tüm navigasyon id'leri (URL / allowedTabs) */
+function childHasNested(child: SidebarChild): child is SidebarGroupChild {
+  return Array.isArray(child.children) && child.children.length > 0;
+}
+
+/** Menüdeki tüm navigasyon leaf id'leri (URL / allowedTabs) */
 export function collectNavTabIds(items: SidebarItem[]): string[] {
   const ids: string[] = [];
   for (const item of items) {
     if (item.children?.length) {
-      for (const child of item.children) ids.push(child.id);
+      for (const child of item.children) {
+        if (childHasNested(child)) {
+          for (const leaf of child.children) ids.push(leaf.id);
+        } else {
+          ids.push(child.id);
+        }
+      }
     } else {
       ids.push(item.id);
     }
@@ -200,12 +280,19 @@ export function collectNavTabIds(items: SidebarItem[]): string[] {
   return ids;
 }
 
+/** Leaf sekmenin üst accordion grubu (zebra-studio vb.) */
 export function findParentNavId(
   items: SidebarItem[],
   childId: string
 ): string | null {
   for (const item of items) {
-    if (item.children?.some((c) => c.id === childId)) return item.id;
+    if (!item.children?.length) continue;
+    for (const child of item.children) {
+      if (child.id === childId) return item.id;
+      if (childHasNested(child) && child.children.some((leaf) => leaf.id === childId)) {
+        return item.id;
+      }
+    }
   }
   return null;
 }
@@ -214,17 +301,35 @@ export function findParentNavId(
  * Canlı içerik mi, yoksa "Yakında" mı?
  * Rol yetkisi olmayan core sekmeler de Yakında gösterir.
  */
-export function isLiveContentTab(tabId: string, role: string): boolean {
-  if (tabId === 'genel') return true;
-  if (tabId === 'takvim') return true;
-  if (tabId === 'randevularim' && role === 'danisman') return true;
-  if (tabId === 'randevu' && role === 'danisman') return true;
+export function isLiveContentTab(
+  tabId: string,
+  role: string,
+  fullName?: string
+): boolean {
+  const id = migrateStudioTabId(tabId);
+  if (id === 'genel') return true;
+  if (id === 'takvim') return true;
+  if (id === 'randevularim' && role === 'danisman') return true;
+  if (id === 'randevu' && role === 'danisman') return true;
   if (
-    tabId === 'cekim' &&
-    (role === 'broker' || role === 'selim' || role === 'fatima')
+    id === 'cekim' &&
+    (role === 'broker' || isPilotRole(role))
   ) {
     return true;
   }
-  if (tabId === 'cekim-raporu' && role === 'broker') return true;
+  if (id === 'cekim-raporu' && role === 'broker') return true;
+  if (id === 'studio-yeni-portfoy') return true;
+  if (id === 'studio-satildi-kiralandi') return true;
+  if (
+    id === 'studio-toplu' &&
+    (role === 'broker' ||
+      isPilotRole(role) ||
+      isPersonelRole(role))
+  ) {
+    return true;
+  }
+  if (id === 'users-overview' || id === 'users-add') {
+    return isUserAdmin(fullName, role);
+  }
   return false;
 }

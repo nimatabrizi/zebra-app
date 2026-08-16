@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CalendarDays,
   ChevronLeft,
@@ -16,6 +17,7 @@ import { normalizeAppointmentStatus } from '../lib/appointmentUtils';
 import { toTitleCaseName } from '../lib/formatName';
 import {
   getBusyDatesInMonth,
+  getDayAvailability,
   getDayAgenda,
   getSameDistrictConfirmedDates,
 } from '../lib/smartScheduling';
@@ -53,6 +55,12 @@ function toIsoDate(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function formatAvailabilityHour(value: number): string {
+  const hours = Math.floor(value);
+  const minutes = Math.round((value - hours) * 60);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function daysInMonth(month: number, year: number): number {
@@ -93,6 +101,8 @@ export type SmartSchedulingAssistantProps = {
   year: number;
   onPrevMonth: () => void;
   onNextMonth: () => void;
+  /** Teklif akışında tarih + saat + gönder eylemlerini sabit alt bölümde tutar. */
+  footerContent?: React.ReactNode;
 };
 
 export default function SmartSchedulingAssistant({
@@ -108,6 +118,7 @@ export default function SmartSchedulingAssistant({
   year,
   onPrevMonth,
   onNextMonth,
+  footerContent,
 }: SmartSchedulingAssistantProps) {
   const today = useMemo(() => {
     const t = new Date();
@@ -176,15 +187,35 @@ export default function SmartSchedulingAssistant({
     () => getDayAgenda(appointments, selectedDisplay, pilotName),
     [appointments, selectedDisplay, pilotName]
   );
+  const dayAvailability = useMemo(
+    () => getDayAvailability(appointments, selectedDisplay, pilotName),
+    [appointments, selectedDisplay, pilotName]
+  );
+  const availabilityText = useMemo(() => {
+    const prefix = selectedIso === toIsoDate(today) ? 'Bugün' : 'Seçilen gün';
+    if (dayAvailability.kind === 'free') {
+      return `${prefix} tamamen müsaitsin.`;
+    }
+    if (dayAvailability.kind === 'full') {
+      return `${prefix} programın dolu.`;
+    }
+    const ranges = dayAvailability.freeRanges
+      .map(
+        ({ start, end }) =>
+          `${formatAvailabilityHour(start)}–${formatAvailabilityHour(end)}`
+      )
+      .join(' ve ');
+    return `${prefix} ${ranges} saatlerinde müsaitsin.`;
+  }, [dayAvailability, selectedIso, today]);
 
   const selectedIsSameDistrict =
     selectedDisplay !== '' && sameDistrictDates.has(selectedDisplay);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center sm:p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[160] flex items-center justify-center p-2.5 sm:p-4 lg:p-6 animate-in fade-in duration-200"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -192,7 +223,7 @@ export default function SmartSchedulingAssistant({
     >
       <div className="absolute inset-0 bg-[#0A0A0A]/60 backdrop-blur-md" />
       <div
-        className="relative z-10 w-full sm:max-w-[860px] h-[min(96dvh,960px)] sm:h-auto sm:max-h-[min(92vh,680px)] flex flex-col bg-[#161616] border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra overflow-hidden"
+        className="relative z-10 w-full max-w-[940px] h-[min(94dvh,780px)] sm:h-[min(90dvh,760px)] lg:h-[min(88dvh,740px)] flex flex-col bg-[#161616] border border-white/10 rounded-2xl sm:rounded-[24px] shadow-2xl animate-in zoom-in-95 duration-300 ease-zebra overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header — sabit */}
@@ -224,7 +255,7 @@ export default function SmartSchedulingAssistant({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-[#86868B]">
             <span className="inline-flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-[#E5B540] shadow-[0_0_6px_rgba(229,181,64,0.7)]" />
-              Aynı bölge
+              Önerilen gün
             </span>
           </div>
         </div>
@@ -274,7 +305,10 @@ export default function SmartSchedulingAssistant({
 
               <div className="grid grid-cols-7 gap-1">
                 {Array.from({ length: firstDayOffset(month, year) }).map((_, i) => (
-                  <div key={`empty-${i}`} className="h-[52px] sm:h-[56px]" />
+                  <div
+                    key={`empty-${i}`}
+                    className="h-[clamp(2.75rem,7dvh,3.25rem)] sm:h-[56px]"
+                  />
                 ))}
                 {Array.from({ length: daysInMonth(month, year) }).map((_, i) => {
                   const dayNumber = i + 1;
@@ -303,7 +337,7 @@ export default function SmartSchedulingAssistant({
                       title={tipParts.length ? tipParts.join(' · ') : undefined}
                       onClick={() => onSelectDate(iso)}
                       className={`
-                        h-[52px] sm:h-[56px] w-full rounded-xl flex flex-col items-center justify-center gap-[3px] px-0.5
+                        h-[clamp(2.75rem,7dvh,3.25rem)] sm:h-[56px] w-full rounded-xl flex flex-col items-center justify-center gap-[3px] px-0.5
                         text-[13px] font-medium transition-all duration-200 active:scale-[0.97]
                         ${isPast ? 'opacity-30 cursor-not-allowed text-[#86868B] bg-neutral-800/30' : 'cursor-pointer'}
                         ${!isPast && !isSelected && !isSameDistrict ? 'bg-[#1C1C1E] text-white hover:bg-white/10' : ''}
@@ -321,18 +355,24 @@ export default function SmartSchedulingAssistant({
                       >
                         {!isPast && dayWx ? dayWx.emoji : '\u00a0'}
                       </span>
-                      {/* 3) Durum noktası — sabit yükseklik, ortalı */}
-                      <span className="h-[6px] flex items-center justify-center" aria-hidden>
+                      {/* 3) Öneri / doluluk — tarih seçilmeden önce görünür */}
+                      <span className="h-[10px] flex items-center justify-center" aria-hidden>
                         {!isPast && (isSameDistrict || isBusy) ? (
                           isSameDistrict ? (
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#E5B540] shadow-[0_0_4px_rgba(229,181,64,0.8)]" />
+                            <span
+                              className={`text-[8px] leading-none font-semibold uppercase tracking-[0.04em] ${
+                                isSelected ? 'text-black/60' : 'text-[#E5B540]'
+                              }`}
+                            >
+                              Öneri
+                            </span>
                           ) : (
                             <span
                               className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-black/35' : 'bg-white/40'}`}
                             />
                           )
                         ) : (
-                          <span className="w-1.5 h-1.5" />
+                          <span className="h-[10px]" />
                         )}
                       </span>
                     </button>
@@ -395,6 +435,18 @@ export default function SmartSchedulingAssistant({
                     </div>
                   </div>
 
+                  <div
+                    className={`rounded-xl border px-3.5 py-2.5 text-[12px] font-medium ${
+                      dayAvailability.kind === 'full'
+                        ? 'border-[#FF453A]/25 bg-[#FF453A]/08 text-[#FF8A82]'
+                        : dayAvailability.kind === 'free'
+                          ? 'border-[#34C759]/25 bg-[#34C759]/08 text-[#72D98B]'
+                          : 'border-[#E5B540]/25 bg-[#E5B540]/08 text-[#E5B540]'
+                    }`}
+                  >
+                    {availabilityText}
+                  </div>
+
                   {dayAgenda.length === 0 ? (
                     <p className="text-[12px] text-[#86868B] bg-[#1C1C1E]/60 border border-white/5 rounded-xl px-4 py-3">
                       Bu günde aktif çekim yok — teklif için uygun bir seçenek.
@@ -453,25 +505,32 @@ export default function SmartSchedulingAssistant({
           </div>
         </div>
 
-        {/* Footer — sabit + safe area */}
-        <div className="px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/5 shrink-0 flex gap-3 bg-[#161616]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 h-12 rounded-xl bg-[#1C1C1E] text-white text-[14px] font-medium hover:bg-[#2C2C2E] cursor-pointer active:scale-[0.99] transition-all"
-          >
-            Vazgeç
-          </button>
-          <button
-            type="button"
-            disabled={!selectedIso}
-            onClick={onClose}
-            className="flex-1 h-12 rounded-xl bg-white text-black text-[14px] font-medium hover:bg-gray-200 disabled:opacity-40 cursor-pointer active:scale-[0.99] transition-all"
-          >
-            Bu Tarihi Kullan
-          </button>
-        </div>
+        {/* Footer — teklif işlemlerinin tamamı popup içinde */}
+        {footerContent ? (
+          <div className="px-3 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/5 shrink-0 bg-[#161616]">
+            {footerContent}
+          </div>
+        ) : (
+          <div className="px-4 sm:px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-white/5 shrink-0 flex gap-3 bg-[#161616]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 h-12 rounded-xl bg-[#1C1C1E] text-white text-[14px] font-medium hover:bg-[#2C2C2E] cursor-pointer active:scale-[0.99] transition-all"
+            >
+              Vazgeç
+            </button>
+            <button
+              type="button"
+              disabled={!selectedIso}
+              onClick={onClose}
+              className="flex-1 h-12 rounded-xl bg-white text-black text-[14px] font-medium hover:bg-gray-200 disabled:opacity-40 cursor-pointer active:scale-[0.99] transition-all"
+            >
+              Bu Tarihi Kullan
+            </button>
+          </div>
+        )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

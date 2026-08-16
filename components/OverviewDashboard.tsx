@@ -15,10 +15,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import {
+  appointmentNamesMatch,
   isConfirmedStatus,
   parseDisplayDate,
+  pilotOwnsAppointment,
 } from '../lib/appointmentUtils';
-import { usesManagerShell } from '../lib/authIdentity';
+import { isPilotRole, isPersonelRole, isUserAdmin, usesManagerShell } from '../lib/authIdentity';
 import { toTitleCaseName } from '../lib/formatName';
 import {
   fetchLocationForecast,
@@ -32,6 +34,7 @@ type OverviewDashboardProps = {
   fullName: string;
   role: string;
   isPilot?: boolean;
+  currentUserId?: string | null;
   appointments: Appointment[];
   pendingCount?: number;
   confirmCount?: number;
@@ -63,22 +66,25 @@ function findUpcomingConfirmed(
   appointments: Appointment[],
   role: string,
   fullName: string,
-  isPilot: boolean
+  isPilot: boolean,
+  currentUserId?: string | null
 ): Appointment | null {
   const today = startOfToday();
-  const seesAll = role === 'broker' || role === 'yonetici';
+  const seesAll = role === 'broker' || isPersonelRole(role);
 
   let pool = appointments.filter(
     (app) => isConfirmedStatus(app.status) && app.tarih
   );
 
   if (!seesAll) {
-    if (role === 'selim' || role === 'fatima' || isPilot) {
-      pool = pool.filter(
-        (app) => app.ownerRole === role || app.pilot === fullName
+    if (isPilotRole(role) || isPilot) {
+      pool = pool.filter((app) =>
+        pilotOwnsAppointment(app, { fullName, userId: currentUserId })
       );
     } else {
-      pool = pool.filter((app) => app.danismanIsmi === fullName);
+      pool = pool.filter((app) =>
+        appointmentNamesMatch(app.danismanIsmi, fullName)
+      );
     }
   }
 
@@ -169,8 +175,8 @@ function WeatherChip({
 }
 
 const STUDIO_LINKS = [
-  { id: 'studio-sosyal', label: 'Sosyal Medya', icon: Camera },
-  { id: 'studio-branda', label: 'Branda', icon: Briefcase },
+  { id: 'studio-yeni-portfoy', label: 'Yeni Portföy', icon: Camera },
+  { id: 'studio-satildi-kiralandi', label: 'Satıldı/Kiralandı', icon: Briefcase },
   { id: 'studio-qr', label: 'QR Kod', icon: QrCode },
 ] as const;
 
@@ -179,6 +185,7 @@ export default function OverviewDashboard({
   fullName,
   role,
   isPilot = false,
+  currentUserId = null,
   appointments,
   pendingCount = 0,
   confirmCount = 0,
@@ -189,14 +196,32 @@ export default function OverviewDashboard({
   const isManager = usesManagerShell(role);
 
   const upcoming = useMemo(
-    () => findUpcomingConfirmed(appointments, role, fullName, isPilot),
-    [appointments, role, fullName, isPilot]
+    () =>
+      findUpcomingConfirmed(
+        appointments,
+        role,
+        fullName,
+        isPilot,
+        currentUserId
+      ),
+    [appointments, role, fullName, isPilot, currentUserId]
   );
   const until = upcoming ? daysUntil(upcoming.tarih) : null;
 
   const pathways: Pathway[] = useMemo(() => {
-    const randevuTab = isManager ? 'takvim' : 'randevularim';
-    const randevuBadge = isManager ? pendingCount : confirmCount;
+    const canApprove = role === 'broker' || isPilotRole(role) || isPilot;
+    const randevuTab =
+      isPersonelRole(role)
+        ? 'takvim'
+        : isManager
+          ? pendingCount > 0 && canApprove
+            ? 'cekim'
+            : 'takvim'
+          : confirmCount > 0
+            ? 'randevu'
+            : 'randevularim';
+    const randevuBadge =
+      isPersonelRole(role) ? 0 : isManager ? pendingCount : confirmCount;
     const analizTab = role === 'broker' ? 'cekim-raporu' : 'pazar';
 
     const items: Pathway[] = [];
@@ -230,7 +255,12 @@ export default function OverviewDashboard({
     items.push({
       id: 'randevu',
       title: 'Randevu Sistemi',
-      hint: isManager ? 'Takvim & talepler' : 'Randevularım & talep',
+      hint:
+        isPersonelRole(role)
+          ? 'Pilot çekim programları'
+          : isManager
+            ? 'Takvim & randevu talepleri'
+            : 'Randevularım & talep',
       icon: CalendarCheck,
       tab: randevuTab,
       className: isManager
@@ -266,8 +296,23 @@ export default function OverviewDashboard({
       );
     }
 
+    if (isUserAdmin(fullName, role)) {
+      items.push({
+        id: 'users',
+        title: 'Kullanıcı Yönetimi',
+        hint: 'Hesaplar, ekleme & Excel',
+        icon: Users,
+        tab: 'users-overview',
+        className: isManager
+          ? 'md:col-span-6 lg:col-span-12'
+          : 'md:col-span-2 lg:col-span-4',
+        tone: 'mesh-a',
+        delay: isManager ? 400 : 580,
+      });
+    }
+
     return items;
-  }, [isManager, pendingCount, confirmCount, role]);
+  }, [isManager, pendingCount, confirmCount, role, isPilot, fullName]);
 
   return (
     <div className="overview-root w-full">
@@ -299,8 +344,8 @@ export default function OverviewDashboard({
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06]">
                 <Aperture className="h-5 w-5 text-white/85" strokeWidth={1.75} />
               </div>
-              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-medium tracking-[0.1em] text-[#86868B]">
-                Yakında
+              <span className="rounded-full border border-[#34C759]/25 bg-[#34C759]/10 px-2.5 py-1 text-[10px] font-medium tracking-[0.1em] text-[#34C759]">
+                Canlı
               </span>
             </div>
             <h2 className="mt-6 text-[28px] sm:text-[32px] font-medium tracking-tight text-white leading-tight">

@@ -1,0 +1,15 @@
+# Fixed pilots
+
+The only pilot people in this product are:
+
+- **Fatima Bayramova** (`owner_role` / legacy key: `fatima`)
+- **Mehmet Selim İdiz** (`owner_role` / legacy key: `selim`)
+
+## Rules
+
+1. Login / `profiles.role` for them is always **`pilot`** (never `personel`, never person names as AppRole).
+2. Excel "Personel" may list them as Personel/Yönetici — **ignore**; import must not demote them. Prefer forcing `role=pilot` + `is_pilot=true` on match.
+3. Appointment calendar ownership stays person keys via `ownerRoleFromPilot` → `fatima` | `selim` (not AppRole).
+4. Canonical helpers live in `lib/authIdentity.ts`: `KNOWN_PILOT_PERSONS`, `isKnownPilotPerson`, `enforcePilotRoleForPerson`, `profilePilotFlagsForPerson`, `PILOT_OPTIONS`.
+5. Do not invent additional pilots without updating `KNOWN_PILOT_PERSONS`.
+6. App role `personel` replaces legacy `yonetici` (UI label: Personel). `normalizeAppRole` maps old `yonetici` → `personel`.

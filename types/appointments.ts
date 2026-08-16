@@ -34,6 +34,7 @@ export type AppointmentRow = {
   id: string;
   created_by?: string | null;
   created_by_role?: string | null;
+  /** Takvim sahibi kişi anahtarı (fatima/selim) — AppRole değil */
   owner_role?: 'selim' | 'fatima' | string | null;
   danisman_ismi: string;
   /** Pilot görünen adı (geri uyumluluk) */

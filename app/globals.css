@@ -1,9 +1,19 @@
 @import "tailwindcss";
 
+/* Zalando Sans Expanded — Google Fonts 600 ağırlığının Türkçe alt kümesi */
+@font-face {
+  font-family: "Zalando Sans Expanded App";
+  src: url("/fonts/zalando-sans-expanded-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
   --zebra-ease: cubic-bezier(0.625, 0.05, 0, 1);
+  --font-zalando-expanded: "Zalando Sans Expanded App", sans-serif;
 }
 
 @theme inline {
@@ -38,6 +48,8 @@ body {
 }
 
 /* Panel entrance + skeleton shimmer (tüm sekmeler) */
+/* Bitiş karesinde `transform: none` şart: `both` dolgusuyla kalan bir matris
+   panelin içindeki `position: fixed` katmanlara içerme bloğu yaratıyor. */
 @keyframes panel-fade-up {
   from {
     opacity: 0;
@@ -45,7 +57,7 @@ body {
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 
@@ -82,7 +94,7 @@ body {
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
   }
 }
 

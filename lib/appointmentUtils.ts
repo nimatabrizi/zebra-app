@@ -5,6 +5,14 @@ import type {
   AppointmentStatus,
 } from '../types/appointments';
 import { APPOINTMENT_STATUSES } from '../types/appointments';
+import {
+  knownPilotKeyFromName,
+  KNOWN_PILOT_PERSONS,
+  PILOT_OPTIONS,
+  type KnownPilotKey,
+} from './authIdentity';
+
+export { PILOT_OPTIONS };
 
 export function formatDateStr(date: Date | null | undefined): string {
   if (!date) return '';
@@ -42,17 +50,54 @@ export function formatWeekdayTr(value: unknown): string {
   return label.charAt(0).toLocaleUpperCase('tr-TR') + label.slice(1);
 }
 
-export function ownerRoleFromPilot(pilotName: string): 'fatima' | 'selim' | null {
-  const key = (pilotName || '').trim().toLocaleUpperCase('tr-TR');
-  if (key.includes('FATİMA') || key.includes('FATIMA')) return 'fatima';
-  if (key.includes('SELİM') || key.includes('SELIM')) return 'selim';
-  return null;
+/**
+ * Takvim sahibi anahtarı (kişi kimliği).
+ * appointments.owner_role kolonunda tutulur — AppRole değildir.
+ * Fatima / Selim isimden türetilir; login rolü `pilot`tır.
+ */
+export type PilotOwnerKey = KnownPilotKey;
+
+export function ownerRoleFromPilot(pilotName: string): PilotOwnerKey | null {
+  return knownPilotKeyFromName(pilotName);
 }
 
-export function ownerRoleDisplayName(ownerRole: string | null | undefined): string | null {
-  if (ownerRole === 'fatima') return 'Fatima Bayramova';
-  if (ownerRole === 'selim') return 'Mehmet Selim İdiz';
-  return null;
+export function ownerRoleDisplayName(
+  ownerRole: string | null | undefined
+): string | null {
+  const key = String(ownerRole || '').trim().toLocaleLowerCase('tr-TR');
+  return (
+    KNOWN_PILOT_PERSONS.find((p) => p.key === key)?.displayName || null
+  );
+}
+
+/** Danışman / pilot isim karşılaştırması (büyük-küçük harf duyarsız, TR). */
+export function appointmentNamesMatch(
+  a: string | null | undefined,
+  b: string | null | undefined
+): boolean {
+  const left = String(a || '')
+    .trim()
+    .toLocaleLowerCase('tr-TR');
+  const right = String(b || '')
+    .trim()
+    .toLocaleLowerCase('tr-TR');
+  return Boolean(left && right && left === right);
+}
+
+/** Bu randevu giriş yapan pilota mı ait? (owner_role / isim / pilot_id) */
+export function pilotOwnsAppointment(
+  app: {
+    ownerRole?: string | null;
+    pilot?: string | null;
+    pilotId?: string | null;
+  },
+  opts: { fullName?: string | null; userId?: string | null }
+): boolean {
+  const myKey = ownerRoleFromPilot(opts.fullName || '');
+  const appKey = app.ownerRole || ownerRoleFromPilot(app.pilot || '');
+  if (myKey && appKey && myKey === appKey) return true;
+  if (opts.userId && app.pilotId && opts.userId === app.pilotId) return true;
+  return appointmentNamesMatch(app.pilot, opts.fullName);
 }
 
 /** Eski DB değerlerini yeni ENUM'a normalize et (UI geçiş dönemi) */

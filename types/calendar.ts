@@ -5,7 +5,7 @@
 export type CalendarEventKind = 'randevu' | 'note';
 
 /** Visual / filter status for day dots and badges */
-export type CalendarEventStatus = 'pending' | 'confirmed' | 'note';
+export type CalendarEventStatus = 'pending' | 'confirmed' | 'cancelled' | 'note';
 
 export type CalendarEvent = {
   id: string;
@@ -20,6 +20,8 @@ export type CalendarEvent = {
   sourceId?: string | null;
   /** Free-form body (notes) */
   body?: string | null;
+  /** Diğer danışman çekimi — gün kutusunda nokta üretmez, yalnızca bilgi */
+  isTeamInfo?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -27,5 +29,6 @@ export type CalendarEvent = {
 export type CalendarDayMarkers = {
   hasPending: boolean;
   hasConfirmed: boolean;
+  hasCancelled: boolean;
   hasNote: boolean;
 };
