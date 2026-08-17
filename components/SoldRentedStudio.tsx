@@ -8,7 +8,10 @@ import {
   Film,
   ImagePlus,
   Loader2,
+  Minus,
+  Plus,
   RectangleVertical,
+  RefreshCcw,
   Square,
   Upload,
   Volume2,
@@ -34,6 +37,11 @@ import {
   terminateStatusFFmpeg,
   type StatusExportProgress,
 } from '../lib/statusVideoExport';
+import {
+  useImageTransformGestures,
+  type ImageTransform,
+} from '../lib/useImageTransformGestures';
+import { usePageZoomLock } from '../lib/usePageZoomLock';
 import ZebraStudio from './ZebraStudio';
 
 type SlotState = {
@@ -50,6 +58,7 @@ type SoldRentedStudioProps = {
 };
 
 const EMPTY_SLOT: SlotState = { file: null, url: null, label: null };
+const DEFAULT_IMAGE_TRANSFORM: ImageTransform = { x: 0, y: 0, zoom: 1 };
 
 function revokeUrl(url: string | null) {
   if (url) URL.revokeObjectURL(url);
@@ -168,6 +177,8 @@ function FormatPreview({
   sourceUrl,
   overlayUrl,
   overlayHevcUrl,
+  imageTransform = DEFAULT_IMAGE_TRANSFORM,
+  onImageTransformChange,
   playing,
   soundOn,
   onToggleSound,
@@ -179,6 +190,8 @@ function FormatPreview({
   sourceUrl: string | null;
   overlayUrl: string;
   overlayHevcUrl: string;
+  imageTransform?: ImageTransform;
+  onImageTransformChange?: (next: ImageTransform) => void;
   playing: boolean;
   soundOn: boolean;
   onToggleSound: () => void;
@@ -188,6 +201,13 @@ function FormatPreview({
 }) {
   const canvas = SOCIAL_STUDIO_CANVAS[format];
   const maxPreviewWidth = format === 'post' ? 300 : 230;
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const imageGestures = useImageTransformGestures({
+    targetRef: surfaceRef,
+    enabled: fullscreen && Boolean(sourceUrl) && Boolean(onImageTransformChange),
+    transform: imageTransform,
+    onChange: onImageTransformChange || (() => undefined),
+  });
 
   const outerStyle: React.CSSProperties = fullscreen
     ? {
@@ -215,13 +235,39 @@ function FormatPreview({
         className="relative overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-[0_20px_60px_rgba(0,0,0,0.45)]"
         style={outerStyle}
       >
-        <div className="absolute inset-0">
+        <div
+          ref={surfaceRef}
+          className={`absolute inset-0 ${
+            fullscreen && sourceUrl
+              ? 'cursor-grab active:cursor-grabbing'
+              : ''
+          }`}
+          style={{
+            touchAction:
+              fullscreen && sourceUrl && onImageTransformChange
+                ? 'none'
+                : 'auto',
+          }}
+          onPointerDown={imageGestures.onPointerDown}
+          onPointerMove={imageGestures.onPointerMove}
+          onPointerUp={imageGestures.onPointerUp}
+          onPointerCancel={imageGestures.onPointerCancel}
+        >
           {sourceUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={sourceUrl}
               alt={`${canvas.label} kaynak görseli`}
-              className="absolute inset-0 h-full w-full object-cover"
+              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+              style={{
+                transform: `translate(${
+                  imageTransform.x * ((imageTransform.zoom - 1) * 50)
+                }%, ${
+                  imageTransform.y * ((imageTransform.zoom - 1) * 50)
+                }%) scale(${imageTransform.zoom})`,
+                transformOrigin: 'center',
+              }}
+              draggable={false}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-950 text-sm text-zinc-500">
@@ -235,6 +281,52 @@ function FormatPreview({
             playing={playing && Boolean(sourceUrl)}
             clockRef={clockRef}
           />
+          {fullscreen && sourceUrl && onImageTransformChange ? (
+            <div
+              className="pointer-events-auto absolute bottom-3 left-3 z-20 flex items-center gap-1 rounded-full border border-white/15 bg-black/65 p-1 text-white backdrop-blur-sm"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  onImageTransformChange({
+                    ...imageTransform,
+                    zoom: Math.max(1, imageTransform.zoom - 0.1),
+                    x: imageTransform.zoom - 0.1 <= 1 ? 0 : imageTransform.x,
+                    y: imageTransform.zoom - 0.1 <= 1 ? 0 : imageTransform.y,
+                  })
+                }
+                className="flex h-8 w-8 items-center justify-center rounded-full"
+                aria-label="Uzaklaştır"
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+              <span className="w-11 text-center text-[11px] tabular-nums">
+                %{Math.round(imageTransform.zoom * 100)}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onImageTransformChange({
+                    ...imageTransform,
+                    zoom: Math.min(1.8, imageTransform.zoom + 0.1),
+                  })
+                }
+                className="flex h-8 w-8 items-center justify-center rounded-full"
+                aria-label="Yakınlaştır"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onImageTransformChange(DEFAULT_IMAGE_TRANSFORM)}
+                className="flex h-8 w-8 items-center justify-center rounded-full"
+                aria-label="Konumu sıfırla"
+              >
+                <RefreshCcw className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {sourceUrl && (
@@ -275,6 +367,8 @@ function FullscreenPreviewModal({
   sourceUrl,
   overlayUrl,
   overlayHevcUrl,
+  imageTransform,
+  onImageTransformChange,
   statusLabel,
   soundOn,
   onToggleSound,
@@ -285,12 +379,16 @@ function FullscreenPreviewModal({
   sourceUrl: string;
   overlayUrl: string;
   overlayHevcUrl: string;
+  imageTransform: ImageTransform;
+  onImageTransformChange: (next: ImageTransform) => void;
   statusLabel: string;
   soundOn: boolean;
   onToggleSound: () => void;
   onClose: () => void;
   clockRef: React.RefObject<Record<StudioFormat, number>>;
 }) {
+  usePageZoomLock(true);
+
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -319,6 +417,9 @@ function FullscreenPreviewModal({
           <p className="text-sm font-semibold text-white">
             {statusLabel} · {SOCIAL_STUDIO_CANVAS[format].label}
           </p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            Sürükleyin · iki parmak veya tekerlek ile yakınlaştırın
+          </p>
         </div>
         <button
           type="button"
@@ -337,6 +438,8 @@ function FullscreenPreviewModal({
           sourceUrl={sourceUrl}
           overlayUrl={overlayUrl}
           overlayHevcUrl={overlayHevcUrl}
+          imageTransform={imageTransform}
+          onImageTransformChange={onImageTransformChange}
           playing
           soundOn={soundOn}
           onToggleSound={onToggleSound}
@@ -482,6 +585,12 @@ export default function SoldRentedStudio({
   const [kind, setKind] = useState<StatusVideoKind>('satildi');
   const [sourceMode, setSourceMode] = useState<'upload' | 'design'>('upload');
   const [previewFormat, setPreviewFormat] = useState<StudioFormat>('post');
+  const [imageTransforms, setImageTransforms] = useState<
+    Record<StudioFormat, ImageTransform>
+  >({
+    post: { ...DEFAULT_IMAGE_TRANSFORM },
+    story: { ...DEFAULT_IMAGE_TRANSFORM },
+  });
   const [designHost, setDesignHost] = useState<HTMLDivElement | null>(null);
   const [designReady, setDesignReady] = useState(false);
   const designCaptureRef = useRef<
@@ -561,6 +670,10 @@ export default function SoldRentedStudio({
     };
     if (format === 'post') setPost((prev) => apply(prev));
     else setStory((prev) => apply(prev));
+    setImageTransforms((current) => ({
+      ...current,
+      [format]: { ...DEFAULT_IMAGE_TRANSFORM },
+    }));
     setError(null);
   }, []);
 
@@ -657,6 +770,9 @@ export default function SoldRentedStudio({
             sourceFile: file,
             kind,
             format,
+            sourceTransform: designMode
+              ? DEFAULT_IMAGE_TRANSFORM
+              : imageTransforms[format],
             onProgress: (p) => {
               setProgress({
                 ratio: baseRatio + p.ratio * span,
@@ -684,7 +800,7 @@ export default function SoldRentedStudio({
         window.setTimeout(() => setProgress(null), 1800);
       }
     },
-    [designMode, designReady, kind, post.file, story.file]
+    [designMode, designReady, imageTransforms, kind, post.file, story.file]
   );
 
   return (
@@ -876,6 +992,7 @@ export default function SoldRentedStudio({
               sourceUrl={previewFormat === 'post' ? post.url : story.url}
               overlayUrl={statusMeta.overlayUrl}
               overlayHevcUrl={statusMeta.overlayHevcUrl}
+              imageTransform={imageTransforms[previewFormat]}
               playing={
                 previewPlaying &&
                 Boolean(previewFormat === 'post' ? post.url : story.url)
@@ -980,6 +1097,13 @@ export default function SoldRentedStudio({
             }
             overlayUrl={statusMeta.overlayUrl}
             overlayHevcUrl={statusMeta.overlayHevcUrl}
+            imageTransform={imageTransforms[fullscreenFormat]}
+            onImageTransformChange={(next) =>
+              setImageTransforms((current) => ({
+                ...current,
+                [fullscreenFormat]: next,
+              }))
+            }
             statusLabel={statusMeta.label}
             soundOn={soundFormat === fullscreenFormat}
             onToggleSound={() =>

@@ -11,6 +11,7 @@ import {
   type StatusVideoKind,
   type StudioFormat,
 } from './studioAssets';
+import type { ImageTransform } from './useImageTransformGestures';
 
 export type StatusExportProgress = {
   ratio: number;
@@ -102,9 +103,14 @@ export async function encodeStatusMp4(options: {
   sourceFile: File;
   kind: StatusVideoKind;
   format: StudioFormat;
+  sourceTransform?: ImageTransform;
   onProgress?: (progress: StatusExportProgress) => void;
 }): Promise<Blob> {
   const { sourceFile, kind, format, onProgress } = options;
+  const sourceTransform = options.sourceTransform || { x: 0, y: 0, zoom: 1 };
+  const sourceZoom = Math.max(1, Math.min(1.8, sourceTransform.zoom));
+  const sourceX = Math.max(-1, Math.min(1, sourceTransform.x));
+  const sourceY = Math.max(-1, Math.min(1, sourceTransform.y));
   const canvas = SOCIAL_STUDIO_CANVAS[format];
   const meta = statusMeta(kind);
   activeProgressHandler = onProgress;
@@ -135,14 +141,19 @@ export async function encodeStatusMp4(options: {
   const dur = STATUS_VIDEO_DURATION_SEC;
   const rotation = `${layout.rotationDeg}*PI/180`;
 
-  // Kaynak: tek kareyi 5 sn döngüle + ölçek/crop (cover)
+  // Kaynak: tek kareyi 5 sn döngüle + cover, ardından önizlemedeki zoom/konum.
   // Overlay: 6. kareden başlar; referans ölçüsünde, eğik, merkezin üstünde ve
   // videonun başından STATUS_OVERLAY_DELAY_SEC kadar sonra girer
   // Ses: 0'dan 5 sn
   const delay = STATUS_OVERLAY_DELAY_SEC;
   const filter = [
     `[0:v]scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=increase,` +
-      `crop=${canvas.width}:${canvas.height},setsar=1,fps=30,` +
+      `crop=${canvas.width}:${canvas.height},` +
+      `scale=ceil(${canvas.width}*${sourceZoom}/2)*2:ceil(${canvas.height}*${sourceZoom}/2)*2,` +
+      `crop=${canvas.width}:${canvas.height}:` +
+      `x=(in_w-out_w)/2-(${sourceX})*(in_w-out_w)/2:` +
+      `y=(in_h-out_h)/2-(${sourceY})*(in_h-out_h)/2,` +
+      `setsar=1,fps=30,` +
       `trim=duration=${dur},setpts=PTS-STARTPTS[base]`,
     `[1:v]scale=${layout.width}:${layout.height},format=rgba,` +
       `rotate=${rotation}:ow=rotw(${rotation}):oh=roth(${rotation}):c=none,` +

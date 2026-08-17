@@ -17,9 +17,9 @@ import {
   Eye,
   ImagePlus,
   Loader2,
-  Move,
+  Minus,
+  Plus,
   RectangleVertical,
-  RefreshCcw,
   Square,
   User,
   Users,
@@ -41,6 +41,8 @@ import {
   DEFAULT_CONSULTANT_TITLE,
   resolveConsultantTitle,
 } from '../lib/consultantTitles';
+import { useImageTransformGestures } from '../lib/useImageTransformGestures';
+import { usePageZoomLock } from '../lib/usePageZoomLock';
 import {
   downloadGeneratedImages,
   supportsNativeImageDelivery,
@@ -440,13 +442,13 @@ export default function ZebraStudio({
   const previewAreaRef = useRef<HTMLDivElement>(null);
   const selectedConsultantIdRef = useRef('');
   const selectedPartnerIdRef = useRef('');
-  const dragRef = useRef<{
-    pointerId: number;
-    clientX: number;
-    clientY: number;
-    startX: number;
-    startY: number;
-  } | null>(null);
+  const portfolioSurfaceRef = useRef<HTMLDivElement>(null);
+  const portfolioGestures = useImageTransformGestures({
+    targetRef: portfolioSurfaceRef,
+    enabled: fullscreenPreview && Boolean(portfolioPreview) && !exporting,
+    transform: portfolioTransform,
+    onChange: setPortfolioTransform,
+  });
 
   useEffect(() => {
     selectedConsultantIdRef.current = selectedConsultantId;
@@ -680,6 +682,8 @@ export default function ZebraStudio({
     };
   }, [fullscreenPreview]);
 
+  usePageZoomLock(fullscreenPreview);
+
   const selectProfile = (id: string, target: 'primary' | 'partner') => {
     const selected = consultants.find((item) => item.id === id);
     if (target === 'primary') {
@@ -712,50 +716,6 @@ export default function ZebraStudio({
     };
     reader.onerror = () => setPortfolioPreview(null);
     reader.readAsDataURL(file);
-  };
-
-  const onPortfolioPointerDown = (
-    event: React.PointerEvent<HTMLDivElement>
-  ) => {
-    if (!fullscreenPreview || !portfolioPreview || exporting) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = {
-      pointerId: event.pointerId,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      startX: portfolioTransform.x,
-      startY: portfolioTransform.y,
-    };
-  };
-
-  const onPortfolioPointerMove = (
-    event: React.PointerEvent<HTMLDivElement>
-  ) => {
-    if (!fullscreenPreview) return;
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const maxX = (canvasSize.width * (portfolioTransform.zoom - 1)) / 2;
-    const maxY = (canvasSize.height * (portfolioTransform.zoom - 1)) / 2;
-    const dx = (event.clientX - drag.clientX) / previewScale;
-    const dy = (event.clientY - drag.clientY) / previewScale;
-    setPortfolioTransform((current) => ({
-      ...current,
-      x:
-        maxX > 0
-          ? Math.max(-1, Math.min(1, drag.startX + dx / maxX))
-          : 0,
-      y:
-        maxY > 0
-          ? Math.max(-1, Math.min(1, drag.startY + dy / maxY))
-          : 0,
-    }));
-  };
-
-  const stopPortfolioDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId === event.pointerId) {
-      dragRef.current = null;
-    }
   };
 
   const captureSpec = async (spec: ExportSpec): Promise<Blob> => {
@@ -1082,17 +1042,55 @@ export default function ZebraStudio({
                     </p>
                     <p className="text-[12px] text-[#86868B] mt-0.5">
                       {format === 'post' ? 'Post' : 'Story'} ·{' '}
-                      {canvasSize.width}×{canvasSize.height}
+                      {canvasSize.width}×{canvasSize.height} · Sürükle ve
+                      yakınlaştır
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setFullscreenPreview(false)}
-                    className="w-10 h-10 rounded-full bg-white/10 border border-white/10 text-white flex items-center justify-center cursor-pointer"
-                    aria-label="Kapat"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {portfolioPreview ? (
+                      <div className="flex items-center rounded-full border border-white/10 bg-white/10 p-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPortfolioTransform((current) => ({
+                              ...current,
+                              zoom: Math.max(1, current.zoom - 0.1),
+                              x: current.zoom - 0.1 <= 1 ? 0 : current.x,
+                              y: current.zoom - 0.1 <= 1 ? 0 : current.y,
+                            }))
+                          }
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-white"
+                          aria-label="Uzaklaştır"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="w-12 text-center text-[11px] tabular-nums text-white">
+                          %{Math.round(portfolioTransform.zoom * 100)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPortfolioTransform((current) => ({
+                              ...current,
+                              zoom: Math.min(1.8, current.zoom + 0.1),
+                            }))
+                          }
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-white"
+                          aria-label="Yakınlaştır"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setFullscreenPreview(false)}
+                      className="w-10 h-10 rounded-full bg-white/10 border border-white/10 text-white flex items-center justify-center cursor-pointer"
+                      aria-label="Kapat"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ) : null}
 
@@ -1145,10 +1143,11 @@ export default function ZebraStudio({
                     touchAction:
                       fullscreenPreview && portfolioPreview ? 'none' : 'auto',
                   }}
-                  onPointerDown={onPortfolioPointerDown}
-                  onPointerMove={onPortfolioPointerMove}
-                  onPointerUp={stopPortfolioDrag}
-                  onPointerCancel={stopPortfolioDrag}
+                  ref={portfolioSurfaceRef}
+                  onPointerDown={portfolioGestures.onPointerDown}
+                  onPointerMove={portfolioGestures.onPointerMove}
+                  onPointerUp={portfolioGestures.onPointerUp}
+                  onPointerCancel={portfolioGestures.onPointerCancel}
                 >
                   {portfolioPreview ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -1332,42 +1331,6 @@ export default function ZebraStudio({
               </div>
             </div>
             </PortalWhen>
-
-            {portfolioPreview ? (
-              <div className="mt-3 flex items-center gap-3">
-                <Move className="w-4 h-4 text-[#636366] shrink-0" />
-                <input
-                  type="range"
-                  min="1"
-                  max="1.8"
-                  step="0.01"
-                  value={portfolioTransform.zoom}
-                  onChange={(event) =>
-                    setPortfolioTransform((current) => ({
-                      ...current,
-                      zoom: Number(event.target.value),
-                      x: Number(event.target.value) === 1 ? 0 : current.x,
-                      y: Number(event.target.value) === 1 ? 0 : current.y,
-                    }))
-                  }
-                  className="flex-1 accent-white"
-                  aria-label="Portföy görseli yakınlaştırma"
-                />
-                <span className="w-11 text-right text-[11px] text-[#86868B] tabular-nums">
-                  %{Math.round(portfolioTransform.zoom * 100)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPortfolioTransform({ x: 0, y: 0, zoom: 1.15 })
-                  }
-                  className="w-9 h-9 rounded-full border border-white/10 text-[#86868B] hover:text-white inline-flex items-center justify-center cursor-pointer"
-                  aria-label="Görsel konumunu sıfırla"
-                >
-                  <RefreshCcw className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : null}
 
             {!embedded ? (
               <button
