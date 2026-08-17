@@ -41,6 +41,12 @@ import {
   DEFAULT_CONSULTANT_TITLE,
   resolveConsultantTitle,
 } from '../lib/consultantTitles';
+import {
+  downloadGeneratedImages,
+  supportsNativeImageDelivery,
+  type GeneratedImageFile,
+} from '../lib/generatedImageDelivery';
+import GeneratedImageShareSheet from './GeneratedImageShareSheet';
 
 type ProfileFields = {
   name: string;
@@ -176,17 +182,6 @@ async function inlineNodeImages(node: HTMLElement) {
       else img.setAttribute('crossorigin', crossOrigin);
     }
   };
-}
-
-function triggerBlobDownload(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.download = fileName;
-  link.href = url;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** Hedef verilmişse içeriği o konteynere taşır, yoksa yerinde bırakır. */
@@ -435,6 +430,8 @@ export default function ZebraStudio({
   const [brokenPhoto, setBrokenPhoto] = useState('');
   const [brokenPartnerPhoto, setBrokenPartnerPhoto] = useState('');
   const [exporting, setExporting] = useState<string | null>(null);
+  const [imagesToDeliver, setImagesToDeliver] =
+    useState<GeneratedImageFile[] | null>(null);
   const [previewScale, setPreviewScale] = useState(0.35);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
 
@@ -720,7 +717,7 @@ export default function ZebraStudio({
   const onPortfolioPointerDown = (
     event: React.PointerEvent<HTMLDivElement>
   ) => {
-    if (!portfolioPreview || exporting) return;
+    if (!fullscreenPreview || !portfolioPreview || exporting) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
@@ -735,6 +732,7 @@ export default function ZebraStudio({
   const onPortfolioPointerMove = (
     event: React.PointerEvent<HTMLDivElement>
   ) => {
+    if (!fullscreenPreview) return;
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const maxX = (canvasSize.width * (portfolioTransform.zoom - 1)) / 2;
@@ -865,10 +863,19 @@ export default function ZebraStudio({
       if (onImageReady) {
         await onImageReady(spec.format, blob);
       } else {
-        triggerBlobDownload(
-          blob,
-          `zebra-${spec.identity === 'anonymous' ? 'isimsiz' : fileBase}-${spec.format}.png`
-        );
+        const images = [
+          {
+            blob,
+            fileName: `zebra-${
+              spec.identity === 'anonymous' ? 'isimsiz' : fileBase
+            }-${spec.format}.png`,
+          },
+        ];
+        if (supportsNativeImageDelivery(images)) {
+          setImagesToDeliver(images);
+        } else {
+          await downloadGeneratedImages(images);
+        }
       }
     } catch (error) {
       console.error('Zebra Studio indirme hatası:', error);
@@ -905,18 +912,20 @@ export default function ZebraStudio({
         { format: 'post', identity: 'anonymous' },
         { format: 'story', identity: 'anonymous' },
       ];
-      for (const [index, spec] of specs.entries()) {
+      const images: GeneratedImageFile[] = [];
+      for (const spec of specs) {
         const blob = await captureSpec(spec);
         const identity =
           spec.identity === 'anonymous' ? 'isimsiz' : fileBase;
-        triggerBlobDownload(
+        images.push({
           blob,
-          `zebra-${identity}-${spec.format}.png`
-        );
-        // Tarayıcı birden fazla indirmeyi engellemesin diye kısa ara
-        if (index < specs.length - 1) {
-          await new Promise((resolve) => window.setTimeout(resolve, 350));
-        }
+          fileName: `zebra-${identity}-${spec.format}.png`,
+        });
+      }
+      if (supportsNativeImageDelivery(images)) {
+        setImagesToDeliver(images);
+      } else {
+        await downloadGeneratedImages(images);
       }
     } catch (error) {
       console.error('Zebra Studio paket hatası:', error);
@@ -1128,9 +1137,14 @@ export default function ZebraStudio({
               >
                 <div
                   className={`absolute inset-0 z-0 bg-[#263648] ${
-                    portfolioPreview ? 'cursor-grab active:cursor-grabbing' : ''
+                    fullscreenPreview && portfolioPreview
+                      ? 'cursor-grab active:cursor-grabbing'
+                      : ''
                   }`}
-                  style={{ touchAction: 'none' }}
+                  style={{
+                    touchAction:
+                      fullscreenPreview && portfolioPreview ? 'none' : 'auto',
+                  }}
                   onPointerDown={onPortfolioPointerDown}
                   onPointerMove={onPortfolioPointerMove}
                   onPointerUp={stopPortfolioDrag}
@@ -1635,6 +1649,12 @@ export default function ZebraStudio({
           </section>
         </div>
       </div>
+      {imagesToDeliver ? (
+        <GeneratedImageShareSheet
+          images={imagesToDeliver}
+          onClose={() => setImagesToDeliver(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -19,6 +19,8 @@ import {
   SOCIAL_STUDIO_CANVAS,
   STATUS_AUDIO_URL,
   STATUS_OVERLAY_DELAY_SEC,
+  STATUS_OVERLAY_HEVC_MIME,
+  STATUS_OVERLAY_VP9_MIME,
   STATUS_VIDEO_DURATION_SEC,
   STATUS_VIDEO_OPTIONS,
   statusOverlayLayout,
@@ -60,11 +62,13 @@ function revokeUrl(url: string | null) {
 function StatusOverlayLayer({
   format,
   overlayUrl,
+  overlayHevcUrl,
   playing,
   clockRef,
 }: {
   format: StudioFormat;
   overlayUrl: string;
+  overlayHevcUrl: string;
   playing: boolean;
   clockRef: React.RefObject<Record<StudioFormat, number>>;
 }) {
@@ -72,6 +76,11 @@ function StatusOverlayLayer({
   const layout = statusOverlayLayout(format);
   const overlayRef = useRef<HTMLVideoElement>(null);
   const [overlayVisible, setOverlayVisible] = useState(false);
+
+  // <source> listesi değişince Safari yeni kaynağı ancak load() ile seçer.
+  useEffect(() => {
+    overlayRef.current?.load();
+  }, [overlayUrl, overlayHevcUrl]);
 
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -128,9 +137,13 @@ function StatusOverlayLayer({
   return (
     <video
       ref={overlayRef}
-      src={overlayUrl}
       muted
       playsInline
+      // Eski WebKit sürümleri yalnızca bu özniteliği tanır.
+      webkit-playsinline="true"
+      disablePictureInPicture
+      disableRemotePlayback
+      preload="auto"
       className="pointer-events-none absolute"
       style={{
         left: `${(layout.left / canvas.width) * 100}%`,
@@ -139,8 +152,14 @@ function StatusOverlayLayer({
         height: `${(layout.height / canvas.height) * 100}%`,
         transform: `rotate(${layout.rotationDeg}deg)`,
         visibility: overlayVisible ? 'visible' : 'hidden',
+        backgroundColor: 'transparent',
       }}
-    />
+    >
+      {/* Safari/iOS: alpha yalnızca HEVC hvc1 .mov ile korunur. */}
+      <source src={overlayHevcUrl} type={STATUS_OVERLAY_HEVC_MIME} />
+      {/* Chrome / Firefox / Edge: VP9 alpha WebM. */}
+      <source src={overlayUrl} type={STATUS_OVERLAY_VP9_MIME} />
+    </video>
   );
 }
 
@@ -148,6 +167,7 @@ function FormatPreview({
   format,
   sourceUrl,
   overlayUrl,
+  overlayHevcUrl,
   playing,
   soundOn,
   onToggleSound,
@@ -158,6 +178,7 @@ function FormatPreview({
   format: StudioFormat;
   sourceUrl: string | null;
   overlayUrl: string;
+  overlayHevcUrl: string;
   playing: boolean;
   soundOn: boolean;
   onToggleSound: () => void;
@@ -210,6 +231,7 @@ function FormatPreview({
           <StatusOverlayLayer
             format={format}
             overlayUrl={overlayUrl}
+            overlayHevcUrl={overlayHevcUrl}
             playing={playing && Boolean(sourceUrl)}
             clockRef={clockRef}
           />
@@ -252,6 +274,7 @@ function FullscreenPreviewModal({
   format,
   sourceUrl,
   overlayUrl,
+  overlayHevcUrl,
   statusLabel,
   soundOn,
   onToggleSound,
@@ -261,6 +284,7 @@ function FullscreenPreviewModal({
   format: StudioFormat;
   sourceUrl: string;
   overlayUrl: string;
+  overlayHevcUrl: string;
   statusLabel: string;
   soundOn: boolean;
   onToggleSound: () => void;
@@ -312,6 +336,7 @@ function FullscreenPreviewModal({
           format={format}
           sourceUrl={sourceUrl}
           overlayUrl={overlayUrl}
+          overlayHevcUrl={overlayHevcUrl}
           playing
           soundOn={soundOn}
           onToggleSound={onToggleSound}
@@ -799,6 +824,7 @@ export default function SoldRentedStudio({
               <StatusOverlayLayer
                 format={previewFormat}
                 overlayUrl={statusMeta.overlayUrl}
+                overlayHevcUrl={statusMeta.overlayHevcUrl}
                 playing={previewPlaying}
                 clockRef={clockRef}
               />
@@ -849,6 +875,7 @@ export default function SoldRentedStudio({
               format={previewFormat}
               sourceUrl={previewFormat === 'post' ? post.url : story.url}
               overlayUrl={statusMeta.overlayUrl}
+              overlayHevcUrl={statusMeta.overlayHevcUrl}
               playing={
                 previewPlaying &&
                 Boolean(previewFormat === 'post' ? post.url : story.url)
@@ -866,9 +893,8 @@ export default function SoldRentedStudio({
         </div>
         {designMode ? (
           <p className="mt-3 text-xs leading-relaxed text-zinc-500">
-            Fotoğrafı tuval üzerinde sürükleyerek konumlandırın; durum
-            animasyonu yalnızca önizlemede görünür, MP4 çıktısına encode
-            sırasında eklenir.
+            Fotoğrafı konumlandırmak için tam ekran önizlemeyi açın. Durum
+            animasyonu MP4 çıktısına encode sırasında eklenir.
           </p>
         ) : null}
       </section>
@@ -953,6 +979,7 @@ export default function SoldRentedStudio({
               (fullscreenFormat === 'post' ? post.url : story.url) as string
             }
             overlayUrl={statusMeta.overlayUrl}
+            overlayHevcUrl={statusMeta.overlayHevcUrl}
             statusLabel={statusMeta.label}
             soundOn={soundFormat === fullscreenFormat}
             onToggleSound={() =>

@@ -29,10 +29,20 @@ encode_one() {
     return 1
   fi
   echo "==> $slug"
+  local common_vf="scale=${OW}:${OH}:force_original_aspect_ratio=decrease,pad=${OW}:${OH}:(ow-iw)/2:(oh-ih)/2:color=0x00000000"
+
+  # Chrome / Firefox / Edge: VP9 alpha WebM
   "$FFMPEG" -y -ss "$START" -i "$src" -t "$DUR" \
-    -vf "scale=${OW}:${OH}:force_original_aspect_ratio=decrease,pad=${OW}:${OH}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=yuva420p" \
+    -vf "${common_vf},format=yuva420p" \
     -c:v libvpx-vp9 -pix_fmt yuva420p -auto-alt-ref 0 -deadline good -cpu-used 2 -b:v 0 -crf 32 \
     -an "$OUT/${slug}.webm"
+
+  # Safari / iOS: alpha yalnızca HEVC hvc1 .mov ile korunur (VP9 alpha siyah çıkar)
+  "$FFMPEG" -y -ss "$START" -i "$src" -t "$DUR" \
+    -vf "${common_vf},format=bgra" \
+    -c:v hevc_videotoolbox -alpha_quality 0.9 -q:v 55 -pix_fmt bgra \
+    -tag:v hvc1 -movflags +faststart \
+    -an "$OUT/${slug}.mov"
 }
 
 AUDIO_SRC=$(find "$SRC_DIR" -maxdepth 1 -iname '*.mp3' | head -n1 || true)

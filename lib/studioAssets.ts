@@ -123,20 +123,27 @@ export const STATUS_VIDEO_OPTIONS = [
     label: 'Satıldı',
     fileSlug: 'satildi',
     overlayUrl: '/studio/status/satildi.webm',
+    overlayHevcUrl: '/studio/status/satildi.mov',
   },
   {
     id: 'kiralandi' as const,
     label: 'Kiralandı',
     fileSlug: 'kiralandi',
     overlayUrl: '/studio/status/kiralandi.webm',
+    overlayHevcUrl: '/studio/status/kiralandi.mov',
   },
   {
     id: 'kapora' as const,
     label: 'Kaporası Alındı',
     fileSlug: 'kapora',
     overlayUrl: '/studio/status/kapora.webm',
+    overlayHevcUrl: '/studio/status/kapora.mov',
   },
 ] as const;
+
+/** Safari alpha'yı yalnızca HEVC/hvc1 .mov ile çözer; VP9 alpha siyah kutu verir. */
+export const STATUS_OVERLAY_HEVC_MIME = 'video/quicktime; codecs="hvc1"';
+export const STATUS_OVERLAY_VP9_MIME = 'video/webm; codecs="vp9"';
 
 export const STATUS_AUDIO_URL = '/studio/status/status-audio.mp3';
 

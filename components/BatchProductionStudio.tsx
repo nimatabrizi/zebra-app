@@ -35,6 +35,12 @@ import {
   resolveConsultantTitle,
 } from '../lib/consultantTitles';
 import { toTurkishUpper } from '../lib/formatName';
+import {
+  downloadGeneratedImages,
+  supportsNativeImageDelivery,
+  type GeneratedImageFile,
+} from '../lib/generatedImageDelivery';
+import GeneratedImageShareSheet from './GeneratedImageShareSheet';
 
 const DEFAULT_TITLE = toTurkishUpper(DEFAULT_CONSULTANT_TITLE);
 const PHOTO_H_MIN = 200;
@@ -1208,6 +1214,8 @@ export default function BatchProductionStudio() {
   const [brokenPhoto, setBrokenPhoto] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [batchRunning, setBatchRunning] = useState(false);
+  const [imagesToDeliver, setImagesToDeliver] =
+    useState<GeneratedImageFile[] | null>(null);
   const [fullscreenPreview, setFullscreenPreview] = useState(false);
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [previewScale, setPreviewScale] = useState(0.28);
@@ -1577,12 +1585,17 @@ export default function BatchProductionStudio() {
         const slug =
           toConsultantPhotoSlug(consultant.rawName) ||
           consultant.id.slice(0, 8);
-        const link = document.createElement('a');
-        link.download = `toplu-${format}-${slug}.png`;
-        link.href = dataUrl;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
+        const images = [
+          {
+            blob: await (await fetch(dataUrl)).blob(),
+            fileName: `toplu-${format}-${slug}.png`,
+          },
+        ];
+        if (supportsNativeImageDelivery(images)) {
+          setImagesToDeliver(images);
+        } else {
+          await downloadGeneratedImages(images);
+        }
       });
     } catch (err) {
       console.error(err);
@@ -2182,6 +2195,12 @@ export default function BatchProductionStudio() {
             />
           </div>
         </div>
+      ) : null}
+      {imagesToDeliver ? (
+        <GeneratedImageShareSheet
+          images={imagesToDeliver}
+          onClose={() => setImagesToDeliver(null)}
+        />
       ) : null}
     </div>
   );
