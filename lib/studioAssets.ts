@@ -193,7 +193,7 @@ export async function waitForStudioFonts(): Promise<void> {
   try {
     await Promise.all(
       families.flatMap((family) =>
-        ['400', '600', '700'].map((weight) =>
+        ['200', '300', '400', '600', '700'].map((weight) =>
           document.fonts.load(`${weight} 40px ${family}`, sample)
         )
       )

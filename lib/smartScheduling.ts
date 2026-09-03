@@ -1,171 +1,132 @@
-/** Pilot teklif — akıllı planlama yardımcıları */
-
-import type { Appointment, AppointmentStatus } from '../types/appointments';
+import type { Appointment } from '../types/appointments';
 import {
-  isConfirmedStatus,
   normalizeAppointmentStatus,
-  ownerRoleFromPilot,
+  parseDisplayDate,
+  toDisplayDate,
 } from './appointmentUtils';
-import { resolveSaatBlokRange } from './timeSlots';
 
-/** Günlük ajandada gösterilecek aktif statüler */
-export const SMART_AGENDA_STATUSES: readonly AppointmentStatus[] = [
-  'kesinlesti',
-  'pilot_bekleniyor',
-  'danisman_onayi_bekliyor',
-] as const;
+type HourRange = { start: number; end: number };
 
-export function isSmartAgendaStatus(status: unknown): boolean {
-  const n = normalizeAppointmentStatus(status);
-  return (SMART_AGENDA_STATUSES as readonly string[]).includes(n);
-}
+export type DayAvailability =
+  | { kind: 'free'; freeRanges: HourRange[] }
+  | { kind: 'full'; freeRanges: HourRange[] }
+  | { kind: 'partial'; freeRanges: HourRange[] };
 
-function matchesPilot(
-  app: Appointment,
-  pilotName?: string | null
-): boolean {
-  if (!pilotName) return true;
-  const a = String(app.pilot || '')
+function normalizeText(value: unknown): string {
+  return String(value || '')
+    .normalize('NFC')
     .trim()
     .toLocaleLowerCase('tr-TR');
-  const b = String(pilotName).trim().toLocaleLowerCase('tr-TR');
-  if (a && b && a === b) return true;
-  const roleA = app.ownerRole || ownerRoleFromPilot(app.pilot || '');
-  const roleB = ownerRoleFromPilot(pilotName);
-  return !!(roleA && roleB && roleA === roleB);
 }
 
-/** DD.MM.YYYY veya YYYY-MM-DD → karşılaştırma anahtarı (DD.MM.YYYY) */
-function toDisplayDateKey(value: unknown): string {
-  if (!value) return '';
-  const raw = String(value).trim().slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    const [y, m, d] = raw.split('-');
-    return `${d}.${m}.${y}`;
-  }
-  if (/^\d{2}\.\d{2}\.\d{4}/.test(String(value))) {
-    return String(value).trim().slice(0, 10);
-  }
-  return String(value).trim();
+function samePilot(app: Appointment, pilotName?: string | null): boolean {
+  const target = normalizeText(pilotName);
+  if (!target) return true;
+  return normalizeText(app.pilot) === target;
 }
 
-/** Seçili güne ait aktif randevular — saat sırası */
-export function getDayAgenda(
-  appointments: Appointment[],
-  displayDate: string,
-  pilotName?: string | null
-): Appointment[] {
-  if (!displayDate) return [];
-  const dayKey = toDisplayDateKey(displayDate);
-  return appointments
-    .filter((app) => {
-      if (!app.tarih) return false;
-      if (toDisplayDateKey(app.tarih) !== dayKey) return false;
-      const st = normalizeAppointmentStatus(app.status);
-      // Kesinleşmiş + danışman kesinleştirmesi bekleyen (+ tarihli pilot bekleyen)
-      if (
-        st !== 'kesinlesti' &&
-        st !== 'danisman_onayi_bekliyor' &&
-        st !== 'pilot_bekleniyor'
-      ) {
-        return false;
-      }
-      return matchesPilot(app, pilotName);
-    })
-    .sort((a, b) => {
-      const ta = a.saatBlok || '99:99';
-      const tb = b.saatBlok || '99:99';
-      return ta.localeCompare(tb) || Number(a.id) - Number(b.id);
-    });
+function isActiveStatus(status: unknown): boolean {
+  const n = normalizeAppointmentStatus(status);
+  return n === 'kesinlesti' || n === 'danisman_onayi_bekliyor';
 }
 
-export type DayAvailability = {
-  kind: 'free' | 'partial' | 'full';
-  freeRanges: Array<{ start: number; end: number }>;
-};
+function parseHour(value: string): number | null {
+  const m = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h + min / 60;
+}
 
-/**
- * 09:00–19:00 çalışma aralığında kesinleşmiş çekimlerden kalan boşluklar.
- * Çakışan veya bitişik çekimler önce birleştirilir.
- */
-export function getDayAvailability(
-  appointments: Appointment[],
-  displayDate: string,
-  pilotName?: string | null
-): DayAvailability {
-  const workStart = 9;
-  const workEnd = 19;
-  const busy = getDayAgenda(appointments, displayDate, pilotName)
-    .filter((app) => isConfirmedStatus(app.status))
-    .map((app) => resolveSaatBlokRange(app.saatBlok))
-    .filter(
-      (range): range is { start: number; end: number } =>
-        Boolean(range && range.end > workStart && range.start < workEnd)
-    )
-    .map((range) => ({
-      start: Math.max(workStart, range.start),
-      end: Math.min(workEnd, range.end),
-    }))
-    .sort((a, b) => a.start - b.start);
+function parseSaatBlokRange(saatBlok?: string | null): HourRange | null {
+  const raw = String(saatBlok || '').trim();
+  if (!raw) return null;
+  const parts = raw
+    .replace(/[—–]/g, '-')
+    .split('-')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length !== 2) return null;
+  const start = parseHour(parts[0]!);
+  const end = parseHour(parts[1]!);
+  if (start == null || end == null || end <= start) return null;
+  return { start, end };
+}
 
-  if (busy.length === 0) {
-    return {
-      kind: 'free',
-      freeRanges: [{ start: workStart, end: workEnd }],
-    };
-  }
-
-  const merged: Array<{ start: number; end: number }> = [];
-  for (const range of busy) {
-    const previous = merged.at(-1);
-    if (previous && range.start <= previous.end) {
-      previous.end = Math.max(previous.end, range.end);
+function mergeRanges(ranges: HourRange[]): HourRange[] {
+  if (!ranges.length) return [];
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  const out: HourRange[] = [sorted[0]!];
+  for (let i = 1; i < sorted.length; i += 1) {
+    const cur = sorted[i]!;
+    const last = out[out.length - 1]!;
+    if (cur.start <= last.end) {
+      last.end = Math.max(last.end, cur.end);
     } else {
-      merged.push({ ...range });
+      out.push({ ...cur });
     }
   }
-
-  const freeRanges: Array<{ start: number; end: number }> = [];
-  let cursor = workStart;
-  for (const range of merged) {
-    if (range.start > cursor) freeRanges.push({ start: cursor, end: range.start });
-    cursor = Math.max(cursor, range.end);
-  }
-  if (cursor < workEnd) freeRanges.push({ start: cursor, end: workEnd });
-
-  return {
-    kind: freeRanges.length === 0 ? 'full' : 'partial',
-    freeRanges,
-  };
+  return out;
 }
 
-/**
- * Aynı il/ilçede kesinleşmiş VEYA danışman kesinleştirmesi bekleyen çekimi olan günler.
- * Pilotun o bölgede zaten işi / teklifi olduğu günleri vurgulamak için.
- */
+function freeRangesFromBusy(
+  busy: HourRange[],
+  dayStart = 9,
+  dayEnd = 21
+): HourRange[] {
+  const merged = mergeRanges(
+    busy
+      .map((r) => ({
+        start: Math.max(dayStart, r.start),
+        end: Math.min(dayEnd, r.end),
+      }))
+      .filter((r) => r.end > r.start)
+  );
+  if (!merged.length) return [{ start: dayStart, end: dayEnd }];
+  const free: HourRange[] = [];
+  let cursor = dayStart;
+  for (const r of merged) {
+    if (r.start > cursor) free.push({ start: cursor, end: r.start });
+    cursor = Math.max(cursor, r.end);
+  }
+  if (cursor < dayEnd) free.push({ start: cursor, end: dayEnd });
+  return free.filter((r) => r.end - r.start >= 0.25);
+}
+
+function toDisplay(value: unknown): string {
+  const d = parseDisplayDate(value);
+  if (!d) return '';
+  return toDisplayDate(
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate()
+    ).padStart(2, '0')}`
+  );
+}
+
 export function getSameDistrictConfirmedDates(
   appointments: Appointment[],
-  il: string | null | undefined,
-  ilce: string | null | undefined,
+  targetIl?: string | null,
+  targetIlce?: string | null,
   pilotName?: string | null
 ): Set<string> {
+  const il = normalizeText(targetIl);
+  const ilce = normalizeText(targetIlce);
   const set = new Set<string>();
   if (!ilce) return set;
-  appointments.forEach((app) => {
-    if (!app.tarih) return;
-    const st = normalizeAppointmentStatus(app.status);
-    const isRegionRelevant =
-      isConfirmedStatus(app.status) || st === 'danisman_onayi_bekliyor';
-    if (!isRegionRelevant) return;
-    if (app.ilce !== ilce) return;
-    if (il && app.il && app.il !== il) return;
-    if (!matchesPilot(app, pilotName)) return;
-    set.add(app.tarih);
-  });
+
+  for (const app of appointments) {
+    if (!samePilot(app, pilotName)) continue;
+    if (normalizeAppointmentStatus(app.status) !== 'kesinlesti') continue;
+    if (normalizeText(app.ilce) !== ilce) continue;
+    if (il && normalizeText(app.il) && normalizeText(app.il) !== il) continue;
+    const d = toDisplay(app.tarih);
+    if (d) set.add(d);
+  }
   return set;
 }
 
-/** Ay içindeki her gün için ajanda yoğunluğu (nokta göstergesi) */
 export function getBusyDatesInMonth(
   appointments: Appointment[],
   month: number,
@@ -173,15 +134,60 @@ export function getBusyDatesInMonth(
   pilotName?: string | null
 ): Set<string> {
   const set = new Set<string>();
-  appointments.forEach((app) => {
-    if (!app.tarih || !isSmartAgendaStatus(app.status)) return;
-    if (!matchesPilot(app, pilotName)) return;
-    const parts = String(app.tarih).split('.');
-    if (parts.length !== 3) return;
-    const d = Number(parts[0]);
-    const m = Number(parts[1]) - 1;
-    const y = Number(parts[2]);
-    if (m === month && y === year && d >= 1) set.add(app.tarih);
-  });
+  for (const app of appointments) {
+    if (!samePilot(app, pilotName)) continue;
+    if (!isActiveStatus(app.status)) continue;
+    const d = parseDisplayDate(app.tarih);
+    if (!d) continue;
+    if (d.getMonth() !== month || d.getFullYear() !== year) continue;
+    const display = toDisplay(app.tarih);
+    if (display) set.add(display);
+  }
   return set;
 }
+
+export function getDayAgenda(
+  appointments: Appointment[],
+  displayDate: string,
+  pilotName?: string | null
+): Appointment[] {
+  if (!displayDate) return [];
+  return appointments
+    .filter((app) => {
+      if (!samePilot(app, pilotName)) return false;
+      if (!isActiveStatus(app.status)) return false;
+      return toDisplay(app.tarih) === displayDate;
+    })
+    .sort((a, b) => {
+      const ar = parseSaatBlokRange(a.saatBlok);
+      const br = parseSaatBlokRange(b.saatBlok);
+      if (!ar && !br) return 0;
+      if (!ar) return 1;
+      if (!br) return -1;
+      return ar.start - br.start;
+    });
+}
+
+export function getDayAvailability(
+  appointments: Appointment[],
+  displayDate: string,
+  pilotName?: string | null
+): DayAvailability {
+  const agenda = getDayAgenda(appointments, displayDate, pilotName);
+  if (!agenda.length) {
+    return { kind: 'free', freeRanges: [{ start: 9, end: 21 }] };
+  }
+  const busyRanges = agenda
+    .map((a) => parseSaatBlokRange(a.saatBlok))
+    .filter((r): r is HourRange => Boolean(r));
+  if (!busyRanges.length) {
+    return { kind: 'partial', freeRanges: [{ start: 9, end: 21 }] };
+  }
+  const freeRanges = freeRangesFromBusy(busyRanges);
+  if (!freeRanges.length) return { kind: 'full', freeRanges: [] };
+  if (freeRanges.length === 1 && freeRanges[0]!.start <= 9 && freeRanges[0]!.end >= 21) {
+    return { kind: 'free', freeRanges };
+  }
+  return { kind: 'partial', freeRanges };
+}
+

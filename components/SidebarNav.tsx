@@ -65,7 +65,9 @@ export default function SidebarNav({
   badgeCounts = {},
   onNavigate,
 }: SidebarNavProps) {
-  const adminOpts = { includeUserAdmin: isUserAdmin(fullName, role) };
+  const adminOpts = {
+    includeUserAdmin: isUserAdmin(fullName, role),
+  };
   const items = usesManagerShell(role)
     ? buildManagerNav(role, adminOpts)
     : buildConsultantNav(adminOpts);

@@ -83,6 +83,7 @@ import WeatherBadge from '../components/WeatherBadge';
 import ZebraStudio from '../components/ZebraStudio';
 import SoldRentedStudio from '../components/SoldRentedStudio';
 import BatchProductionStudio from '../components/BatchProductionStudio';
+import BadgeCardStudio from '../components/BadgeCardStudio';
 import UserManagement from '../components/UserManagement';
 import {
   buildConsultantNav,
@@ -4025,6 +4026,19 @@ const [username, setUsername] = useState('');
                 }
               >
                 <BatchProductionStudio />
+              </div>
+            )}
+
+            {usesManagerShell(role) && (
+              <div
+                aria-hidden={activeTab !== 'studio-yaka-karti'}
+                className={
+                  activeTab === 'studio-yaka-karti'
+                    ? ''
+                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                }
+              >
+                <BadgeCardStudio />
               </div>
             )}
 

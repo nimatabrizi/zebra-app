@@ -212,6 +212,10 @@ const FONT_OPTIONS = [
   },
 ] as const;
 
+const DEFAULT_NAME_FONT_FAMILY =
+  FONT_OPTIONS.find((f) => f.id === 'oswald')?.value ||
+  FONT_OPTIONS[0].value;
+
 const LAYER_META: { id: LayerId; label: string; icon: typeof User }[] = [
   { id: 'photo', label: 'Danışman görseli', icon: User },
   { id: 'name', label: 'İsim soyisim', icon: Type },
@@ -251,7 +255,7 @@ const defaultLayout = (format: StudioFormat = 'story'): LayoutState => {
       ...defaultEffect(),
       x: 540,
       y: isPost ? 760 : 1380,
-      fontFamily: FONT_OPTIONS[0].value,
+      fontFamily: DEFAULT_NAME_FONT_FAMILY,
       fontSize: isPost ? 40 : 46,
       fontWeight: 700,
       letterSpacing: 0.04,

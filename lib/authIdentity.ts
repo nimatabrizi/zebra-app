@@ -225,8 +225,16 @@ export function isUuid(value: string | null | undefined): boolean {
   );
 }
 
-/** Kullanıcı yönetimi paneli — sabit yetkili isimler */
-const USER_ADMIN_NAMES = [
+/** Kullanıcı yönetimi paneli — yalnızca Nima Tabrizi */
+export function isNimaTabrizi(
+  fullName: string | null | undefined
+): boolean {
+  if (!fullName || typeof fullName !== 'string') return false;
+  return normalizePersonKey(fullName) === 'nima tabrizi';
+}
+
+/** Korunan hesaplar (silinemez) — Nima, Cansu Koç, Elizaveta */
+const PROTECTED_USER_NAMES = [
   'nima tabrizi',
   'cansu koc',
   'elizaveta',
@@ -246,28 +254,23 @@ function normalizePersonKey(fullName: string): string {
     .replace(/ç/g, 'c');
 }
 
-/** İsimle kilitli yetkili (silinemez) — Nima, Cansu Koç, Elizaveta */
+/** İsimle kilitli hesap (silinemez) — Nima, Cansu Koç, Elizaveta */
 export function isNamedUserAdmin(
   fullName: string | null | undefined
 ): boolean {
   if (!fullName || typeof fullName !== 'string') return false;
   const normalized = normalizePersonKey(fullName);
-  return USER_ADMIN_NAMES.some(
+  return PROTECTED_USER_NAMES.some(
     (name) => normalized === name || normalized.startsWith(`${name} `)
   );
 }
 
-/**
- * Kullanıcı yönetimi paneli erişimi:
- * - broker rolü
- * - veya isimle yetkili hesaplar (Nima, Cansu Koç, Elizaveta)
- */
+/** Kullanıcı yönetimi paneli erişimi — yalnızca Nima Tabrizi */
 export function isUserAdmin(
   fullName?: string | null,
-  role?: AppRole | string | null
+  _role?: AppRole | string | null
 ): boolean {
-  if (normalizeAppRole(role) === 'broker') return true;
-  return isNamedUserAdmin(fullName);
+  return isNimaTabrizi(fullName);
 }
 
 /** Rol → giriş sonrası varsayılan panel sekmesi (her zaman Genel Bakış) */

@@ -1,56 +1,40 @@
-/** Varsayılan danışman ünvanı (stüdyo / toplu üretim) */
+import { toTurkishUpper } from './formatName';
+
 export const DEFAULT_CONSULTANT_TITLE = 'Gayrimenkul Danışmanı';
 
-/**
- * Rol = danışman kalır; ünvan ayrı alandır.
- * DB’de `profiles.unvan` yoksa veya boşsa bu eşleme kullanılır.
- */
-const TITLE_OVERRIDES: Record<string, string> = {
-  'esra uslu': 'Saha Direktörü',
-  'yunus örük': 'Saha Direktörü',
-  'yunus oruk': 'Saha Direktörü',
-  'alper topbaşoğlu': 'Saha Direktörü',
-  'alper topbasoglu': 'Saha Direktörü',
-  'semih nihat uysal': 'Saha Direktörü',
-  'semih nşhat uysal': 'Saha Direktörü',
+const TITLE_ALIASES: Record<string, string> = {
+  broker: 'Broker',
+  danisman: DEFAULT_CONSULTANT_TITLE,
+  danışman: DEFAULT_CONSULTANT_TITLE,
+  personel: 'Personel',
+  pilot: 'Pilot',
+  'saha direktoru': 'Saha Direktörü',
+  'saha direktörü': 'Saha Direktörü',
 };
 
-function nameKey(value: string): string {
-  return String(value || '')
+function normalizeKey(value: string): string {
+  return value
     .normalize('NFC')
+    .trim()
     .toLocaleLowerCase('tr-TR')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** ASCII’ye yakın anahtar (ö→o vb.) — slug / eski yazımlar için */
-function asciiKey(value: string): string {
-  return nameKey(value)
-    .replace(/ğ/g, 'g')
-    .replace(/ü/g, 'u')
-    .replace(/ş/g, 's')
-    .replace(/ı/g, 'i')
-    .replace(/ö/g, 'o')
-    .replace(/ç/g, 'c');
+    .replace(/\s+/g, ' ');
 }
 
 /**
- * Öncelik: profiles.unvan → isim override → varsayılan.
+ * Danışman ünvanını tek noktadan normalize eder.
+ * - explicitTitle doluysa onu kullanır.
+ * - boşsa varsayılan danışman ünvanına döner.
  */
 export function resolveConsultantTitle(
-  tamIsim: string,
-  unvanFromDb?: string | null
+  _fullName: string | null | undefined,
+  explicitTitle?: string | null
 ): string {
-  const fromDb = String(unvanFromDb || '').trim();
-  if (fromDb) return fromDb;
-
-  const key = nameKey(tamIsim);
-  if (TITLE_OVERRIDES[key]) return TITLE_OVERRIDES[key];
-
-  const folded = asciiKey(tamIsim);
-  for (const [k, title] of Object.entries(TITLE_OVERRIDES)) {
-    if (asciiKey(k) === folded) return title;
-  }
-
-  return DEFAULT_CONSULTANT_TITLE;
+  const raw = String(explicitTitle || '').trim();
+  if (!raw) return DEFAULT_CONSULTANT_TITLE;
+  const key = normalizeKey(raw);
+  const mapped = TITLE_ALIASES[key] || raw;
+  return toTurkishUpper(mapped)
+    .toLocaleLowerCase('tr-TR')
+    .replace(/\b\w/g, (c) => c.toLocaleUpperCase('tr-TR'));
 }
+

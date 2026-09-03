@@ -40,6 +40,7 @@ export const montserrat = Montserrat({
 });
 
 export const oswald = Oswald({
+  weight: ["200", "300", "400", "500", "600", "700"],
   variable: "--font-oswald",
   subsets: ["latin", "latin-ext"],
 });

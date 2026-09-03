@@ -54,6 +54,7 @@ export const CORE_LIVE_TABS = [
   'studio-yeni-portfoy',
   'studio-satildi-kiralandi',
   'studio-toplu',
+  'studio-yaka-karti',
   'users-overview',
   'users-add',
 ] as const;
@@ -67,9 +68,11 @@ export function migrateStudioTabId(tabId: string): string {
 function sharedProductModules(options?: {
   includeMusteri?: boolean;
   includeTopluUretim?: boolean;
+  includeYakaKarti?: boolean;
 }): SidebarItem[] {
   const includeMusteri = options?.includeMusteri !== false;
   const includeTopluUretim = options?.includeTopluUretim === true;
+  const includeYakaKarti = options?.includeYakaKarti === true;
   return [
     ...(includeMusteri
       ? [
@@ -116,6 +119,9 @@ function sharedProductModules(options?: {
         },
         ...(includeTopluUretim
           ? [{ id: 'studio-toplu', label: 'Toplu Üretim', isEnabled: true }]
+          : []),
+        ...(includeYakaKarti
+          ? [{ id: 'studio-yaka-karti', label: 'Yaka Kartı', isEnabled: true }]
           : []),
         { id: 'studio-branda', label: 'Branda', isEnabled: true },
         { id: 'studio-brosur', label: 'Broşür', isEnabled: true },
@@ -235,7 +241,11 @@ export function buildManagerNav(
       icon: 'LayoutGrid',
       isEnabled: true,
     },
-    ...sharedProductModules({ includeMusteri: false, includeTopluUretim: true }),
+    ...sharedProductModules({
+      includeMusteri: false,
+      includeTopluUretim: true,
+      includeYakaKarti: true,
+    }),
     {
       id: 'randevu-sistemi',
       label: 'Randevu Sistemi',
@@ -322,6 +332,14 @@ export function isLiveContentTab(
   if (id === 'studio-satildi-kiralandi') return true;
   if (
     id === 'studio-toplu' &&
+    (role === 'broker' ||
+      isPilotRole(role) ||
+      isPersonelRole(role))
+  ) {
+    return true;
+  }
+  if (
+    id === 'studio-yaka-karti' &&
     (role === 'broker' ||
       isPilotRole(role) ||
       isPersonelRole(role))

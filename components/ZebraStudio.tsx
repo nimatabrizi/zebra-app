@@ -105,6 +105,19 @@ const FIXED_ASSETS = {
   motto: '/templates/social-motto.png',
 } as const;
 
+/** Konum, ilan başlığı ve ilan özellikleri — koyu drop-shadow (örnek stile uygun) */
+const LISTING_TEXT_SHADOW =
+  '1px 1px 0 rgba(0,0,0,.98), 2px 2px 0 rgba(0,0,0,.96), 3px 3px 4px rgba(0,0,0,.94), 4px 4px 10px rgba(0,0,0,.9), 0 0 14px rgba(0,0,0,.75)';
+
+function listingFeatureLines(description: string): string[] {
+  return description
+    .trim()
+    .normalize('NFC')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 function pickProfileFields(row: Record<string, unknown> | null): ProfileFields {
   if (!row) return EMPTY_PROFILE;
   const rawName = String(row.tam_isim ?? row.full_name ?? '')
@@ -302,12 +315,23 @@ function IdentityLayer({
         ) : null}
 
         {photoSrc && !failed ? (
-          // Radial: kutu kenarlarında iz bırakmadan görselin altını koyulaştırır
+          // Gradient yalnızca PNG silüeti üzerinde; kutu boşluğuna taşmasın.
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
               background:
                 'radial-gradient(ellipse 78% 58% at 50% 100%, rgba(3,10,22,.92) 0%, rgba(5,14,30,.72) 38%, rgba(7,18,36,.34) 62%, rgba(8,20,40,0) 82%)',
+              WebkitMaskImage: `url("${photoSrc}")`,
+              maskImage: `url("${photoSrc}")`,
+              maskMode: 'alpha',
+              WebkitMaskSize: 'contain',
+              maskSize: 'contain',
+              WebkitMaskPosition: 'center bottom',
+              maskPosition: 'center bottom',
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat',
+              transform: `scale(${partnership ? 1.05 : 1.08})`,
+              transformOrigin: 'bottom center',
             }}
           />
         ) : null}
@@ -1204,13 +1228,12 @@ export default function ZebraStudio({
                 </div>
 
                 <div
-                  className="absolute z-[3] pointer-events-none"
+                  className="absolute z-[3] pointer-events-none text-left"
                   style={{
                     top: post ? 66 : 300,
                     left: post ? 55 : 50,
                     maxWidth: post ? 650 : 720,
-                    textShadow:
-                      '0 3px 3px rgba(0,0,0,.9), 0 0 10px rgba(0,0,0,.7)',
+                    textShadow: LISTING_TEXT_SHADOW,
                   }}
                 >
                   {subheadline.trim() ? (
@@ -1227,7 +1250,7 @@ export default function ZebraStudio({
                   ) : null}
                   {headline.trim() ? (
                     <h2
-                      className="text-white font-extrabold leading-[1.02] mt-3 tracking-[-0.035em]"
+                      className="text-white font-extrabold leading-[1.02] mt-3 tracking-[-0.035em] whitespace-pre-line"
                       style={{
                         fontSize: post ? 92 : 102,
                         fontFamily: 'var(--font-oswald), sans-serif',
@@ -1240,21 +1263,29 @@ export default function ZebraStudio({
                 </div>
 
                 {description.trim() ? (
-                  <p
-                    className="absolute z-[3] text-right text-white font-extrabold whitespace-pre-line leading-[1.18] pointer-events-none"
+                  <div
+                    className="absolute z-[3] pointer-events-none flex flex-col items-end gap-[0.18em]"
                     style={{
                       top: post ? 350 : 565,
-                      right: post ? 48 : 46,
-                      maxWidth: 280,
+                      right: post ? 58 : 54,
+                      left: post ? 55 : 50,
                       fontSize: post ? 34 : 38,
-                      fontFamily: 'var(--font-oswald), sans-serif',
-                      fontWeight: 700,
-                      textShadow:
-                        '0 3px 2px rgba(0,0,0,.95), 0 0 10px rgba(0,0,0,.8)',
                     }}
                   >
-                    {description.trim().normalize('NFC')}
-                  </p>
+                    {listingFeatureLines(description).map((line, index) => (
+                      <p
+                        key={`${index}-${line}`}
+                        className="text-right text-white font-extrabold whitespace-nowrap leading-none"
+                        style={{
+                          fontFamily: 'var(--font-oswald), sans-serif',
+                          fontWeight: 700,
+                          textShadow: LISTING_TEXT_SHADOW,
+                        }}
+                      >
+                        {line}
+                      </p>
+                    ))}
+                  </div>
                 ) : null}
 
                 {identityMode === 'named' && profile.name ? (
@@ -1463,11 +1494,12 @@ export default function ZebraStudio({
               <span className="text-[12px] font-medium tracking-wide text-[#AEAEB2] uppercase">
                 İlan başlığı
               </span>
-              <input
+              <textarea
                 value={headline}
                 onChange={(event) => setHeadline(event.target.value)}
-                placeholder="Satılık Daire"
-                className="w-full h-12 rounded-xl bg-[#0A0A0A] border border-white/10 focus:border-white/25 text-white placeholder:text-[#636366] px-4 outline-none"
+                placeholder={'Satılık\n3+1 daireler'}
+                rows={2}
+                className="w-full rounded-xl bg-[#0A0A0A] border border-white/10 focus:border-white/25 text-white placeholder:text-[#636366] px-4 py-3 outline-none resize-none leading-relaxed"
               />
             </label>
             <label className="block space-y-2">

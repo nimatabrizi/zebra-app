@@ -7,6 +7,7 @@ import {
   Briefcase,
   CalendarCheck,
   Camera,
+  IdCard,
   LineChart,
   Megaphone,
   QrCode,
@@ -174,12 +175,6 @@ function WeatherChip({
   );
 }
 
-const STUDIO_LINKS = [
-  { id: 'studio-yeni-portfoy', label: 'Yeni Portföy', icon: Camera },
-  { id: 'studio-satildi-kiralandi', label: 'Satıldı/Kiralandı', icon: Briefcase },
-  { id: 'studio-qr', label: 'QR Kod', icon: QrCode },
-] as const;
-
 export default function OverviewDashboard({
   greeting,
   fullName,
@@ -194,6 +189,15 @@ export default function OverviewDashboard({
   const displayName = toTitleCaseName(fullName);
   const firstName = displayName.split(/\s+/)[0] || '';
   const isManager = usesManagerShell(role);
+
+  const studioLinks = [
+    { id: 'studio-yeni-portfoy', label: 'Yeni Portföy', icon: Camera },
+    { id: 'studio-satildi-kiralandi', label: 'Satıldı/Kiralandı', icon: Briefcase },
+    ...(isManager
+      ? [{ id: 'studio-yaka-karti', label: 'Yaka Kartı', icon: IdCard }]
+      : []),
+    { id: 'studio-qr', label: 'QR Kod', icon: QrCode },
+  ];
 
   const upcoming = useMemo(
     () =>
@@ -356,7 +360,7 @@ export default function OverviewDashboard({
             </p>
           </div>
           <div className="flex flex-wrap gap-2 lg:justify-end">
-            {STUDIO_LINKS.map((link) => {
+            {studioLinks.map((link) => {
               const Icon = link.icon;
               return (
                 <button

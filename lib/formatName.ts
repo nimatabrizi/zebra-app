@@ -49,6 +49,32 @@ export function toTitleCaseName(value: unknown): string {
 }
 
 /**
+ * Yaka kartı: ilk ad(lar) ince, soyad kalın.
+ * "Aslı Çeşme" → given Aslı, family Çeşme
+ * "Semih Nihat Uysal" → given Semih Nihat, family Uysal
+ * "Dr. Bahtiyar Cilli" → given Bahtiyar, family Cilli
+ */
+export function splitGivenAndFamilyName(value: unknown): {
+  given: string;
+  family: string;
+} {
+  const titled = toTitleCaseName(value);
+  const parts = titled
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((part) => {
+      const bare = part.replace(/\./g, '').toLocaleLowerCase('tr-TR');
+      return bare !== 'dr' && bare !== 'prof' && bare !== 'doç' && bare !== 'doc';
+    });
+  if (parts.length === 0) return { given: '', family: '' };
+  if (parts.length === 1) return { given: '', family: parts[0] };
+  return {
+    given: parts.slice(0, -1).join(' '),
+    family: parts[parts.length - 1],
+  };
+}
+
+/**
  * TR locale büyük harf: "iz" → "İZ", "ılık" → "ILIK".
  * i/ı eşlemesi elle yapılır; html-to-image gibi kopya DOM'larda
  * `lang="tr"` kaybolduğunda CSS `text-transform` yanlış harf üretir.
