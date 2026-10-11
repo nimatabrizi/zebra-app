@@ -963,6 +963,7 @@ function BatchCanvas({
     <div
       ref={canvasRef}
       data-batch-canvas={interactive ? 'true' : undefined}
+      data-theme-locked="export"
       className="relative overflow-hidden bg-[#111] text-white select-none"
       style={{
         width: canvasW,
@@ -979,7 +980,7 @@ function BatchCanvas({
           draggable={false}
         />
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-[#636366]">
+        <div className="z-canvas-empty absolute inset-0 flex flex-col items-center justify-center gap-3 text-[#636366]">
           <ImagePlus className="w-16 h-16 opacity-40" strokeWidth={1.25} />
           <span className="text-[28px] font-medium">Şablon yükleyin</span>
         </div>

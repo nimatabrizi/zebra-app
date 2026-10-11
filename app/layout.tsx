@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "Zebra 360",
   },
   icons: {
@@ -22,22 +22,19 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#070708" },
-    { media: "(prefers-color-scheme: light)", color: "#f3f3f5" },
-  ],
-  colorScheme: "dark light",
+  themeColor: "#f3f3f5",
+  colorScheme: "light dark",
 };
 
 const themeBootScript = `
 (function(){
   try {
     var t = localStorage.getItem('zebra-theme');
-    if (t !== 'light' && t !== 'dark') t = 'dark';
+    if (t !== 'light' && t !== 'dark') t = 'light';
     document.documentElement.setAttribute('data-theme', t);
     document.documentElement.style.colorScheme = t;
   } catch (e) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 `;
@@ -50,7 +47,7 @@ export default function RootLayout({
   return (
     <html
       lang="tr"
-      data-theme="dark"
+      data-theme="light"
       suppressHydrationWarning
       className={`${studioFontVariables} h-full antialiased`}
     >

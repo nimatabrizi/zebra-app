@@ -67,6 +67,7 @@ export default function SidebarNav({
 }: SidebarNavProps) {
   const adminOpts = {
     includeUserAdmin: isUserAdmin(fullName, role),
+    fullName,
   };
   const items = usesManagerShell(role)
     ? buildManagerNav(role, adminOpts)

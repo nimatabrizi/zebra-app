@@ -1147,6 +1147,7 @@ export default function ZebraStudio({
                   ) : null}
               <div
                 ref={canvasRef}
+                data-theme-locked="export"
                 className="absolute top-0 left-0 overflow-hidden text-white select-none"
                 style={{
                   width: canvasSize.width,

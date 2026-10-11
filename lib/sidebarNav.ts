@@ -62,6 +62,24 @@ export const CORE_LIVE_TABS = [
   'users-add',
 ] as const;
 
+/** Toplu Üretim, Sıralama, Giriş Görselleri, Kullanıcı Yönetimi */
+export function canSeeNimaOnlyTools(fullName?: string | null): boolean {
+  return isNimaTabrizi(fullName);
+}
+
+/** Doğum Günü ve Yaka Kartı: personel rolü + Nima Tabrizi */
+export function canSeePersonelStudios(
+  role?: string | null,
+  fullName?: string | null
+): boolean {
+  return isPersonelRole(role) || isNimaTabrizi(fullName);
+}
+
+export type NavAccessOptions = {
+  includeUserAdmin?: boolean;
+  fullName?: string | null;
+};
+
 /** Eski sekme id → güncel leaf */
 export function migrateStudioTabId(tabId: string): string {
   if (tabId === 'studio-sosyal') return 'studio-yeni-portfoy';
@@ -74,12 +92,14 @@ function sharedProductModules(options?: {
   includeYakaKarti?: boolean;
   includeSiralama?: boolean;
   includeDogumGunu?: boolean;
+  includeGiris?: boolean;
 }): SidebarItem[] {
   const includeMusteri = options?.includeMusteri !== false;
   const includeTopluUretim = options?.includeTopluUretim === true;
   const includeYakaKarti = options?.includeYakaKarti === true;
   const includeSiralama = options?.includeSiralama === true;
   const includeDogumGunu = options?.includeDogumGunu === true;
+  const includeGiris = options?.includeGiris === true;
   return [
     ...(includeMusteri
       ? [
@@ -134,10 +154,10 @@ function sharedProductModules(options?: {
           ? [{ id: 'studio-siralama', label: 'Sıralama Görselleri', isEnabled: true }]
           : []),
         ...(includeDogumGunu
-          ? [
-              { id: 'studio-dogum-gunu', label: 'Doğum Günü', isEnabled: true },
-              { id: 'studio-giris', label: 'Giriş Görselleri', isEnabled: true },
-            ]
+          ? [{ id: 'studio-dogum-gunu', label: 'Doğum Günü', isEnabled: true }]
+          : []),
+        ...(includeGiris
+          ? [{ id: 'studio-giris', label: 'Giriş Görselleri', isEnabled: true }]
           : []),
         { id: 'studio-branda', label: 'Branda', isEnabled: true },
         { id: 'studio-brosur', label: 'Broşür', isEnabled: true },
@@ -209,10 +229,11 @@ const userAdminNavItem: SidebarItem = {
 };
 
 /** Danışman kabuğu */
-export function buildConsultantNav(options?: {
-  includeUserAdmin?: boolean;
-}): SidebarItem[] {
+export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
   const includeUserAdmin = options?.includeUserAdmin === true;
+  const nima = canSeeNimaOnlyTools(options?.fullName);
+  // Danışman kabuğunda personel rolü olmaz; Doğum Günü / Yaka Kartı yalnızca Nima'da.
+  const personelStudios = nima;
   return [
     {
       id: 'genel',
@@ -227,8 +248,11 @@ export function buildConsultantNav(options?: {
       isEnabled: true,
     },
     ...sharedProductModules({
-      includeSiralama: includeUserAdmin,
-      includeDogumGunu: includeUserAdmin,
+      includeTopluUretim: nima,
+      includeYakaKarti: personelStudios,
+      includeSiralama: nima,
+      includeDogumGunu: personelStudios,
+      includeGiris: nima,
     }),
     {
       id: 'randevu-sistemi',
@@ -248,11 +272,13 @@ export function buildConsultantNav(options?: {
 /** Personel / pilot kabuğu — müşteri, reklam, analiz yok */
 export function buildManagerNav(
   role: string,
-  options?: { includeUserAdmin?: boolean }
+  options?: NavAccessOptions
 ): SidebarItem[] {
   const isBroker = role === 'broker';
   const isPersonel = isPersonelRole(role);
   const includeUserAdmin = options?.includeUserAdmin === true;
+  const nima = canSeeNimaOnlyTools(options?.fullName);
+  const personelStudios = canSeePersonelStudios(role, options?.fullName);
   return [
     {
       id: 'genel',
@@ -262,10 +288,11 @@ export function buildManagerNav(
     },
     ...sharedProductModules({
       includeMusteri: false,
-      includeTopluUretim: true,
-      includeYakaKarti: true,
-      includeSiralama: includeUserAdmin,
-      includeDogumGunu: includeUserAdmin,
+      includeTopluUretim: nima,
+      includeYakaKarti: personelStudios,
+      includeSiralama: nima,
+      includeDogumGunu: personelStudios,
+      includeGiris: nima,
     }),
     {
       id: 'randevu-sistemi',
@@ -351,24 +378,11 @@ export function isLiveContentTab(
   if (id === 'cekim-raporu' && role === 'broker') return true;
   if (id === 'studio-yeni-portfoy') return true;
   if (id === 'studio-satildi-kiralandi') return true;
-  if (
-    id === 'studio-toplu' &&
-    (role === 'broker' ||
-      isPilotRole(role) ||
-      isPersonelRole(role))
-  ) {
-    return true;
+  if (id === 'studio-toplu' || id === 'studio-siralama' || id === 'studio-giris') {
+    return canSeeNimaOnlyTools(fullName);
   }
-  if (
-    id === 'studio-yaka-karti' &&
-    (role === 'broker' ||
-      isPilotRole(role) ||
-      isPersonelRole(role))
-  ) {
-    return true;
-  }
-  if (id === 'studio-siralama' || id === 'studio-dogum-gunu' || id === 'studio-giris') {
-    return isNimaTabrizi(fullName);
+  if (id === 'studio-yaka-karti' || id === 'studio-dogum-gunu') {
+    return canSeePersonelStudios(role, fullName);
   }
   if (id === 'users-overview' || id === 'users-add') {
     return isUserAdmin(fullName, role);

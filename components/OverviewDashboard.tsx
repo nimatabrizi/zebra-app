@@ -23,6 +23,7 @@ import {
 } from '../lib/appointmentUtils';
 import { isPilotRole, isPersonelRole, isUserAdmin, usesManagerShell } from '../lib/authIdentity';
 import { toTitleCaseName } from '../lib/formatName';
+import { canSeePersonelStudios } from '../lib/sidebarNav';
 import {
   fetchLocationForecast,
   getDayFromForecast,
@@ -193,7 +194,7 @@ export default function OverviewDashboard({
   const studioLinks = [
     { id: 'studio-yeni-portfoy', label: 'Yeni Portföy', icon: Camera },
     { id: 'studio-satildi-kiralandi', label: 'Satıldı/Kiralandı', icon: Briefcase },
-    ...(isManager
+    ...(canSeePersonelStudios(role, fullName)
       ? [{ id: 'studio-yaka-karti', label: 'Yaka Kartı', icon: IdCard }]
       : []),
     { id: 'studio-qr', label: 'QR Kod', icon: QrCode },

@@ -9,8 +9,57 @@
   font-display: swap;
 }
 
-/* ─── Design tokens: Dark (default) ─── */
+:root {
+  --zebra-ease: cubic-bezier(0.625, 0.05, 0, 1);
+  --font-zalando-expanded: "Zalando Sans Expanded App", sans-serif;
+}
+
+/* ─── Design tokens: Light (default) ─── */
 :root,
+[data-theme="light"] {
+  --background: #f3f3f5;
+  --foreground: #141416;
+  --z-bg: #f3f3f5;
+  --z-bg-elevated: #ececf0;
+  --z-surface: #ffffff;
+  --z-surface-glass: rgba(255, 255, 255, 0.84);
+  --z-elevated: #ebebef;
+  --z-elevated-2: #e2e2e8;
+  --z-fg: #141416;
+  --z-fg-soft: #2a2a2e;
+  --z-muted: #5c5c63;
+  --z-muted-2: #6b6b72;
+  --z-border: rgba(20, 20, 22, 0.08);
+  --z-border-strong: rgba(20, 20, 22, 0.14);
+  --z-hover: rgba(20, 20, 22, 0.04);
+  --z-hover-strong: rgba(20, 20, 22, 0.07);
+  --z-nav-active: rgba(20, 20, 22, 0.07);
+  --z-inverse: #141416;
+  --z-inverse-fg: #fafafa;
+  --z-accent: #8a7358;
+  --z-accent-soft: rgba(138, 115, 88, 0.12);
+  --z-danger: #e0352d;
+  --z-shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 8px 24px rgba(20, 20, 30, 0.06);
+  --z-shadow-float: 0 14px 40px rgba(20, 20, 30, 0.1),
+    0 0 0 1px rgba(20, 20, 22, 0.05);
+  --z-login-glow: radial-gradient(
+    ellipse 70% 50% at 50% 38%,
+    rgba(210, 210, 220, 0.7),
+    transparent 70%
+  );
+  --z-scrim: rgba(20, 20, 24, 0.38);
+  /* Light-only tokens for legacy hardcoded utilities */
+  --z-gold-text: #8a6410;
+  --z-green-text: #1e7f38;
+  --z-red-text: #c81e14;
+  --z-orange-text: #a65800;
+  --z-blue-text: #0060c0;
+  --z-danger-surface: #fdecea;
+  color-scheme: light;
+}
+
+/* ─── Design tokens: Dark ─── */
 [data-theme="dark"] {
   --background: #070708;
   --foreground: #f4f4f5;
@@ -44,46 +93,7 @@
     transparent 70%
   );
   --z-scrim: rgba(7, 7, 8, 0.62);
-  --zebra-ease: cubic-bezier(0.625, 0.05, 0, 1);
-  --font-zalando-expanded: "Zalando Sans Expanded App", sans-serif;
   color-scheme: dark;
-}
-
-/* ─── Design tokens: Light ─── */
-[data-theme="light"] {
-  --background: #f3f3f5;
-  --foreground: #141416;
-  --z-bg: #f3f3f5;
-  --z-bg-elevated: #ececf0;
-  --z-surface: #ffffff;
-  --z-surface-glass: rgba(255, 255, 255, 0.84);
-  --z-elevated: #ebebef;
-  --z-elevated-2: #e2e2e8;
-  --z-fg: #141416;
-  --z-fg-soft: #2a2a2e;
-  --z-muted: #6e6e76;
-  --z-muted-2: #8e8e96;
-  --z-border: rgba(20, 20, 22, 0.07);
-  --z-border-strong: rgba(20, 20, 22, 0.12);
-  --z-hover: rgba(20, 20, 22, 0.04);
-  --z-hover-strong: rgba(20, 20, 22, 0.07);
-  --z-nav-active: rgba(20, 20, 22, 0.07);
-  --z-inverse: #141416;
-  --z-inverse-fg: #fafafa;
-  --z-accent: #8a7358;
-  --z-accent-soft: rgba(138, 115, 88, 0.12);
-  --z-danger: #e0352d;
-  --z-shadow-soft: 0 1px 0 rgba(255, 255, 255, 0.8) inset,
-    0 8px 24px rgba(20, 20, 30, 0.06);
-  --z-shadow-float: 0 14px 40px rgba(20, 20, 30, 0.1),
-    0 0 0 1px rgba(20, 20, 22, 0.05);
-  --z-login-glow: radial-gradient(
-    ellipse 70% 50% at 50% 38%,
-    rgba(210, 210, 220, 0.7),
-    transparent 70%
-  );
-  --z-scrim: rgba(20, 20, 24, 0.38);
-  color-scheme: light;
 }
 
 @theme inline {
@@ -660,73 +670,400 @@ body {
   animation: z-glow-breathe 10s var(--zebra-ease) infinite;
 }
 
-/* Light-mode readability bridges for legacy hardcoded dark utilities.
-   Studio / export canvases: add data-theme-locked="dark" to keep contrast. */
-[data-theme="light"] .bg-\[\#0A0A0A\],
-[data-theme="light"] .bg-\[\#0a0a0a\] {
+/* ─── Light-mode bridges for legacy hardcoded dark utilities ───
+   Dark theme is untouched: every rule below is scoped to [data-theme="light"].
+   Areas marked data-theme-locked (badge card, html-to-image export nodes)
+   are excluded so their colors stay identical in both themes. */
+
+/* Page-level dark backgrounds → page background */
+[data-theme="light"] :is(
+    .bg-\[\#0A0A0A\],
+    .bg-\[\#0a0a0a\]
+  ):not([data-theme-locked], [data-theme-locked] *) {
   background-color: var(--z-bg) !important;
 }
-[data-theme="light"] .bg-\[\#111111\],
-[data-theme="light"] .bg-\[\#121212\],
-[data-theme="light"] .bg-\[\#141414\] {
+
+/* Cards, panels, modals, popovers → white surface */
+[data-theme="light"] :is(
+    .bg-\[\#101010\],
+    .bg-\[\#111111\],
+    .bg-\[\#111111\]\/95,
+    .bg-\[\#121212\],
+    .bg-\[\#121212\]\/90,
+    .bg-\[\#141414\],
+    .bg-\[\#141414\]\/92,
+    .bg-\[\#141414\]\/95,
+    .bg-\[\#161616\]\/70,
+    .bg-\[\#161616\]\/80,
+    .bg-\[\#161616\]\/90
+  ):not([data-theme-locked], [data-theme-locked] *) {
   background-color: var(--z-surface) !important;
 }
-[data-theme="light"] .bg-\[\#1C1C1E\],
-[data-theme="light"] .bg-\[\#1c1c1e\],
-[data-theme="light"] .bg-\[\#161616\] {
+
+/* Selected segment / pill on a tinted track → white pill */
+[data-theme="light"] .bg-\[\#2C2C2E\]:not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-surface) !important;
+  box-shadow: 0 1px 2px rgba(20, 20, 22, 0.12), 0 0 0 1px rgba(20, 20, 22, 0.06);
+}
+
+/* Nested blocks, inactive buttons, table headers → elevated light gray */
+[data-theme="light"] :is(
+    .bg-\[\#161616\],
+    .bg-\[\#191919\],
+    .bg-\[\#1C1C1E\],
+    .bg-\[\#1c1c1e\],
+    .bg-\[\#1C1C1E\]\/55,
+    .bg-\[\#1C1C1E\]\/60,
+    .bg-\[\#1C1C1E\]\/80,
+    .bg-zinc-950,
+    .from-zinc-900
+  ):not([data-theme-locked], [data-theme-locked] *) {
   background-color: var(--z-elevated) !important;
 }
-[data-theme="light"] .text-\[\#EDEDED\],
-[data-theme="light"] .text-\[\#ededed\] {
-  color: var(--z-fg) !important;
+[data-theme="light"] .from-zinc-900:not([data-theme-locked], [data-theme-locked] *) {
+  background-image: none !important;
 }
-[data-theme="light"] .text-\[\#86868B\],
-[data-theme="light"] .text-\[\#AEAEB2\],
-[data-theme="light"] .text-\[\#636366\],
-[data-theme="light"] .text-\[\#666666\],
-[data-theme="light"] .text-\[\#4A4A4C\] {
-  color: var(--z-muted) !important;
+[data-theme="light"] :is(
+    .bg-neutral-800\/30,
+    .bg-neutral-800\/50
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-hover-strong) !important;
 }
-[data-theme="light"] .border-white\/5,
-[data-theme="light"] .border-white\/\[0\.05\],
-[data-theme="light"] .border-white\/\[0\.06\],
-[data-theme="light"] .border-white\/\[0\.07\],
-[data-theme="light"] .border-white\/\[0\.08\],
-[data-theme="light"] .border-white\/\[0\.1\],
-[data-theme="light"] .border-white\/10,
-[data-theme="light"] .border-white\/14,
-[data-theme="light"] .border-white\/15 {
-  border-color: var(--z-border-strong) !important;
-}
-[data-theme="light"] .bg-white\/\[0\.03\],
-[data-theme="light"] .bg-white\/\[0\.04\],
-[data-theme="light"] .bg-white\/\[0\.05\],
-[data-theme="light"] .bg-white\/\[0\.06\],
-[data-theme="light"] .bg-white\/\[0\.07\],
-[data-theme="light"] .bg-white\/10 {
+
+/* Translucent white tints → subtle dark tints */
+[data-theme="light"] :is(
+    .bg-white\/5,
+    .bg-white\/\[0\.02\],
+    .bg-white\/\[0\.03\],
+    .bg-white\/\[0\.04\],
+    .bg-white\/\[0\.05\],
+    .bg-white\/\[0\.06\],
+    .bg-white\/\[0\.07\]
+  ):not([data-theme-locked], [data-theme-locked] *) {
   background-color: var(--z-hover) !important;
 }
-[data-theme="light"] .text-white {
+[data-theme="light"] :is(
+    .bg-white\/10,
+    .bg-white\/15,
+    .bg-white\/20,
+    .bg-white\/25
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-hover-strong) !important;
+}
+
+/* Small dots / indicators that were white on dark */
+[data-theme="light"] :is(
+    .bg-white\/40,
+    .bg-white\/45,
+    .bg-white\/50
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-muted-2) !important;
+}
+[data-theme="light"] .bg-\[\#0A0A0A\]\/40:not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-muted) !important;
+}
+
+/* Modal / sheet backdrops */
+[data-theme="light"] :is(
+    .bg-\[\#0A0A0A\]\/60,
+    .bg-\[\#0A0A0A\]\/65,
+    .bg-\[\#0A0A0A\]\/70
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-scrim) !important;
+}
+
+/* Error / warning boxes */
+[data-theme="light"] :is(
+    .bg-\[\#1A1212\],
+    .bg-\[\#2A1515\]
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-danger-surface) !important;
+}
+
+/* Hover states */
+[data-theme="light"] :is(
+    .hover\:bg-white\/5,
+    .hover\:bg-white\/10,
+    .hover\:bg-white\/15,
+    .hover\:bg-white\/20,
+    .hover\:bg-white\/25,
+    .hover\:bg-white\/\[0\.02\],
+    .hover\:bg-white\/\[0\.04\],
+    .hover\:bg-white\/\[0\.05\],
+    .hover\:bg-white\/\[0\.1\],
+    .hover\:bg-white\/\[0\.12\]
+  ):hover:not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-hover-strong) !important;
+}
+[data-theme="light"] :is(
+    .hover\:bg-\[\#1C1C1E\],
+    .hover\:bg-\[\#2C2C2E\]
+  ):hover:not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-elevated-2) !important;
+}
+[data-theme="light"] .hover\:bg-\[\#171717\]:hover:not([data-theme-locked], [data-theme-locked] *),
+[data-theme="light"] .group:hover .group-hover\:bg-\[\#171717\]:not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-bg) !important;
+}
+
+/* Primary text that was white / near-white */
+[data-theme="light"] :is(
+    .text-white,
+    .text-\[\#EDEDED\],
+    .text-\[\#ededed\]
+  ):not([data-theme-locked], [data-theme-locked] *) {
   color: var(--z-fg) !important;
 }
-[data-theme="light"] .text-white\/70,
-[data-theme="light"] .text-white\/80,
-[data-theme="light"] .text-white\/85,
-[data-theme="light"] .text-white\/90 {
-  color: color-mix(in srgb, var(--z-fg) 85%, transparent) !important;
+[data-theme="light"] :is(
+    .text-white\/65,
+    .text-white\/70,
+    .text-white\/75,
+    .text-white\/80,
+    .text-white\/85,
+    .text-white\/90,
+    .text-\[\#D1D1D6\],
+    .text-zinc-200,
+    .text-zinc-300
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-fg-soft) !important;
 }
-[data-theme="light"] button.bg-white.text-black,
-[data-theme="light"] .bg-white.text-black {
+
+/* Secondary text */
+[data-theme="light"] :is(
+    .text-white\/50,
+    .text-white\/60,
+    .text-\[\#86868B\],
+    .text-\[\#8E8E93\],
+    .text-\[\#A1A1A6\],
+    .text-\[\#AEAEB2\],
+    .text-zinc-400,
+    .text-neutral-400
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-muted) !important;
+}
+
+/* Tertiary text (still WCAG AA on light surfaces) */
+[data-theme="light"] :is(
+    .text-white\/30,
+    .text-white\/40,
+    .text-\[\#3A3A3C\],
+    .text-\[\#48484A\],
+    .text-\[\#4A4A4C\],
+    .text-\[\#636366\],
+    .text-\[\#666666\],
+    .text-zinc-500
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-muted-2) !important;
+}
+
+/* Hover text */
+[data-theme="light"] .hover\:text-white:hover:not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-fg) !important;
+}
+[data-theme="light"] :is(
+    .hover\:text-\[\#AEAEB2\],
+    .hover\:text-\[\#A1A1A6\]
+  ):hover:not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-fg-soft) !important;
+}
+
+/* Placeholders */
+[data-theme="light"] :is(
+    .placeholder\:text-\[\#86868B\],
+    .placeholder\:text-\[\#636366\],
+    .placeholder\:text-\[\#666\]
+  ):not([data-theme-locked], [data-theme-locked] *)::placeholder {
+  color: var(--z-muted-2) !important;
+}
+
+/* Accent text: bright tones for dark backgrounds → darker tones readable on light */
+[data-theme="light"] .text-\[\#E5B540\]:not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-gold-text) !important;
+}
+[data-theme="light"] :is(
+    .text-\[\#34C759\],
+    .text-\[\#72D98B\]
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-green-text) !important;
+}
+[data-theme="light"] :is(
+    .text-\[\#FF3B30\],
+    .text-\[\#FF3B30\]\/80,
+    .text-\[\#FF3B30\]\/90,
+    .text-\[\#FF453A\],
+    .text-\[\#FF8A82\],
+    .text-\[\#FF9F9A\],
+    .text-\[\#FFABA5\]
+  ):not([data-theme-locked], [data-theme-locked] *),
+[data-theme="light"] .hover\:text-\[\#FF3B30\]:hover:not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-red-text) !important;
+}
+[data-theme="light"] :is(
+    .text-\[\#FF3B30\]\/50,
+    .text-\[\#FF3B30\]\/55
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  color: color-mix(in srgb, var(--z-red-text) 75%, transparent) !important;
+}
+[data-theme="light"] .text-\[\#FF9F0A\]:not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-orange-text) !important;
+}
+[data-theme="light"] :is(
+    .text-\[\#0A84FF\],
+    .text-\[\#64AFFF\]
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  color: var(--z-blue-text) !important;
+}
+
+/* Borders, dividers, rings */
+[data-theme="light"] :is(
+    .border-white\/5,
+    .border-white\/10,
+    .border-white\/12,
+    .border-white\/14,
+    .border-white\/15,
+    .border-white\/20,
+    .border-white\/25,
+    .border-white\/30,
+    .border-white\/35,
+    .border-white\/\[0\.05\],
+    .border-white\/\[0\.06\],
+    .border-white\/\[0\.07\],
+    .border-white\/\[0\.08\],
+    .border-white\/\[0\.1\]
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  border-color: var(--z-border-strong) !important;
+}
+[data-theme="light"] :is(
+    .hover\:border-white\/10,
+    .hover\:border-white\/15,
+    .hover\:border-white\/20,
+    .hover\:border-white\/25
+  ):hover:not([data-theme-locked], [data-theme-locked] *) {
+  border-color: rgba(20, 20, 22, 0.24) !important;
+}
+[data-theme="light"] :is(
+    .focus\:border-white\/20,
+    .focus\:border-white\/25,
+    .focus\:border-white\/30
+  ):focus:not([data-theme-locked], [data-theme-locked] *) {
+  border-color: rgba(20, 20, 22, 0.34) !important;
+}
+[data-theme="light"] .divide-white\/5:not([data-theme-locked], [data-theme-locked] *) > * {
+  border-color: var(--z-border-strong) !important;
+}
+[data-theme="light"] :is(
+    .ring-white\/10,
+    .ring-white\/15
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  --tw-ring-color: var(--z-border-strong) !important;
+}
+
+/* Inverse buttons / selected chips (white on dark → near-black on light) */
+[data-theme="light"] button.bg-white.text-black:not([data-theme-locked], [data-theme-locked] *),
+[data-theme="light"] .bg-white.text-black:not([data-theme-locked], [data-theme-locked] *) {
   background-color: #141416 !important;
   color: #fafafa !important;
 }
-[data-theme="light"] button.bg-white.text-black *,
-[data-theme="light"] .bg-white.text-black * {
+[data-theme="light"] .bg-white.text-black:not([data-theme-locked], [data-theme-locked] *):hover:not(:disabled) {
+  background-color: #2a2a2e !important;
+}
+[data-theme="light"] .bg-white.text-black.border-white:not([data-theme-locked], [data-theme-locked] *) {
+  border-color: #141416 !important;
+}
+[data-theme="light"] .bg-white.text-black:not([data-theme-locked], [data-theme-locked] *) * {
   color: inherit !important;
 }
-[data-theme="light"] .placeholder\:text-\[\#86868B\]::placeholder,
-[data-theme="light"] .placeholder\:text-\[\#636366\]::placeholder {
-  color: var(--z-muted) !important;
+[data-theme="light"] .bg-white.text-black:not([data-theme-locked], [data-theme-locked] *) .bg-black\/35 {
+  background-color: rgba(255, 255, 255, 0.55) !important;
+}
+/* Spinners inside inverse buttons (top side stays transparent) */
+[data-theme="light"] .bg-white.text-black:not([data-theme-locked], [data-theme-locked] *) .border-black {
+  border-right-color: #fafafa !important;
+  border-bottom-color: #fafafa !important;
+  border-left-color: #fafafa !important;
+}
+
+/* Translucent black insets / segment tracks → light gray insets */
+[data-theme="light"] :is(
+    .bg-black\/20,
+    .bg-black\/25,
+    .bg-black\/30,
+    .bg-black\/40
+  ):not([data-theme-locked], [data-theme-locked] *) {
+  background-color: var(--z-hover-strong) !important;
+}
+
+/* Switches: white track / black knob → dark track / white knob */
+[data-theme="light"] [role="switch"].bg-white:not([data-theme-locked], [data-theme-locked] *) {
+  background-color: #141416 !important;
+}
+[data-theme="light"] [role="switch"]:not([data-theme-locked], [data-theme-locked] *) > .bg-black {
+  background-color: #ffffff !important;
+}
+
+/* White text stays white on saturated / dark backgrounds
+   (red badges, blue/green buttons, black photo overlays). */
+[data-theme="light"] :is(
+    .bg-\[\#FF3B30\],
+    .bg-\[\#FF453A\],
+    .bg-\[\#FF453A\]\/90,
+    .bg-\[\#34C759\],
+    .bg-\[\#34C759\]\/90,
+    .bg-\[\#0A84FF\],
+    .bg-\[\#0071E3\],
+    .bg-\[\#FF9F0A\],
+    .bg-\[\#FF9F0A\]\/90,
+    .bg-black,
+    .bg-black\/50,
+    .bg-black\/55,
+    .bg-black\/60,
+    .bg-black\/65,
+    .bg-black\/70,
+    .bg-black\/75,
+    .bg-black\/80,
+    .bg-black\/92,
+    .bg-black\/95,
+    .from-black\/80
+  ).text-white:not([data-theme-locked], [data-theme-locked] *),
+[data-theme="light"] :is(
+    .bg-\[\#FF3B30\],
+    .bg-\[\#FF453A\],
+    .bg-\[\#34C759\],
+    .bg-\[\#0A84FF\],
+    .bg-\[\#0071E3\],
+    .bg-\[\#FF9F0A\],
+    .bg-black,
+    .bg-black\/50,
+    .bg-black\/55,
+    .bg-black\/60,
+    .bg-black\/65,
+    .bg-black\/70,
+    .bg-black\/75,
+    .bg-black\/80,
+    .bg-black\/92,
+    .bg-black\/95,
+    .from-black\/80
+  ) .text-white:not([data-theme-locked], [data-theme-locked] *) {
+  color: #ffffff !important;
+}
+[data-theme="light"] :is(
+    .bg-black,
+    .bg-black\/50,
+    .bg-black\/55,
+    .bg-black\/60,
+    .bg-black\/65,
+    .bg-black\/70,
+    .bg-black\/75,
+    .bg-black\/80,
+    .bg-black\/92,
+    .bg-black\/95
+  ):is(.border-white\/10, .border-white\/15):not([data-theme-locked], [data-theme-locked] *) {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Batch production: empty canvas placeholder (no template yet) */
+[data-theme="light"] [data-theme-locked] .z-canvas-empty {
+  background-color: var(--z-elevated);
 }
 
 /* Locked dark canvases (studio / badge export / photo previews) */

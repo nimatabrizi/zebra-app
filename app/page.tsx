@@ -32,7 +32,6 @@ import {
   canCreateManualAppointment,
   manualEntryDisplayName,
   isUserAdmin,
-  isNimaTabrizi,
   isPilotRole,
   isPilotAccount,
   isUuid,
@@ -94,6 +93,8 @@ import UserManagement from '../components/UserManagement';
 import {
   buildConsultantNav,
   buildManagerNav,
+  canSeeNimaOnlyTools,
+  canSeePersonelStudios,
   collectNavTabIds,
   isLiveContentTab,
 } from '../lib/sidebarNav';
@@ -1612,6 +1613,7 @@ const [username, setUsername] = useState('');
     if (!options.preserveTab) {
       const adminOpts = {
         includeUserAdmin: isUserAdmin(profile.tam_isim, appRole),
+        fullName: profile.tam_isim,
       };
       const navItems = usesManagerShell(appRole)
         ? buildManagerNav(appRole, adminOpts)
@@ -4034,7 +4036,7 @@ const [username, setUsername] = useState('');
               />
             </div>
 
-            {usesManagerShell(role) && (
+            {canSeeNimaOnlyTools(fullName) && (
               <div
                 aria-hidden={activeTab !== 'studio-toplu'}
                 className={
@@ -4047,7 +4049,7 @@ const [username, setUsername] = useState('');
               </div>
             )}
 
-            {usesManagerShell(role) && (
+            {canSeePersonelStudios(role, fullName) && (
               <div
                 aria-hidden={activeTab !== 'studio-yaka-karti'}
                 className={
@@ -4060,7 +4062,7 @@ const [username, setUsername] = useState('');
               </div>
             )}
 
-            {isNimaTabrizi(fullName) && (
+            {canSeeNimaOnlyTools(fullName) && (
               <div
                 aria-hidden={activeTab !== 'studio-siralama'}
                 className={
@@ -4073,7 +4075,7 @@ const [username, setUsername] = useState('');
               </div>
             )}
 
-            {isNimaTabrizi(fullName) && (
+            {canSeePersonelStudios(role, fullName) && (
               <div
                 aria-hidden={activeTab !== 'studio-dogum-gunu'}
                 className={
@@ -4086,7 +4088,7 @@ const [username, setUsername] = useState('');
               </div>
             )}
 
-            {isNimaTabrizi(fullName) && (
+            {canSeeNimaOnlyTools(fullName) && (
               <div
                 aria-hidden={activeTab !== 'studio-giris'}
                 className={
