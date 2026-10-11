@@ -111,6 +111,11 @@ export default function BirthdayPicker({
     );
     const inMonth = (month: number) => people.filter((p) => p.month === month).map((p) => p.key);
     return [
+      {
+        id: 'today',
+        label: `Bugün (${today.getDate()} ${TR_MONTHS[thisMonth - 1]})`,
+        keys: people.filter((p) => p.month === thisMonth && p.day === today.getDate()).map((p) => p.key),
+      },
       { id: 'this-month', label: `Bu ay (${TR_MONTHS[thisMonth - 1]})`, keys: inMonth(thisMonth) },
       { id: 'next-month', label: `Gelecek ay (${TR_MONTHS[nextMonth - 1]})`, keys: inMonth(nextMonth) },
       {
