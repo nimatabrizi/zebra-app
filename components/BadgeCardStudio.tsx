@@ -1610,7 +1610,7 @@ export default function BadgeCardStudio() {
 
       <div
         aria-hidden
-        className="pointer-events-none fixed left-[-100000px] top-0"
+        className="z-offscreen pointer-events-none fixed left-[-100000px] top-0"
       >
         <div ref={exportCanvasRef}>
           <BadgeFace

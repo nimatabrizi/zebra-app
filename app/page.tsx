@@ -4009,7 +4009,7 @@ const [username, setUsername] = useState('');
               className={
                 activeTab === 'studio-yeni-portfoy'
                   ? ''
-                  : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                  : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
               }
             >
               <ZebraStudio
@@ -4025,7 +4025,7 @@ const [username, setUsername] = useState('');
               className={
                 activeTab === 'studio-satildi-kiralandi'
                   ? ''
-                  : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                  : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
               }
             >
               <SoldRentedStudio
@@ -4042,7 +4042,7 @@ const [username, setUsername] = useState('');
                 className={
                   activeTab === 'studio-toplu'
                     ? ''
-                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                    : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
                 <BatchProductionStudio />
@@ -4055,7 +4055,7 @@ const [username, setUsername] = useState('');
                 className={
                   activeTab === 'studio-yaka-karti'
                     ? ''
-                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                    : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
                 <BadgeCardStudio />
@@ -4068,7 +4068,7 @@ const [username, setUsername] = useState('');
                 className={
                   activeTab === 'studio-siralama'
                     ? ''
-                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                    : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
                 <RankingVisualsStudio isActive={activeTab === 'studio-siralama'} />
@@ -4081,7 +4081,7 @@ const [username, setUsername] = useState('');
                 className={
                   activeTab === 'studio-dogum-gunu'
                     ? ''
-                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                    : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
                 <BirthdayStudio isActive={activeTab === 'studio-dogum-gunu'} />
@@ -4094,7 +4094,7 @@ const [username, setUsername] = useState('');
                 className={
                   activeTab === 'studio-giris'
                     ? ''
-                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                    : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
                 <EntryVisualsStudio isActive={activeTab === 'studio-giris'} />

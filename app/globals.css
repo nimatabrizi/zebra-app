@@ -428,8 +428,9 @@ body {
   border: 1px solid var(--z-border);
   border-radius: 1.75rem;
   box-shadow: var(--z-shadow-soft);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  /* Cards sit on flat backgrounds; a blur layer per card exhausts GPU tiles and leaves unpainted areas. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .z-card-interactive {
@@ -451,8 +452,6 @@ body {
   border: 1px solid var(--z-border);
   color: var(--z-fg);
   border-radius: 1rem;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   transition:
     border-color 0.3s var(--zebra-ease),
     background-color 0.3s var(--zebra-ease),
@@ -512,8 +511,6 @@ body {
   color: var(--z-fg);
   border: 1px solid var(--z-border);
   border-radius: 9999px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   font-weight: 500;
   transition:
     transform 0.3s var(--zebra-ease),
@@ -539,7 +536,6 @@ body {
   background: color-mix(in srgb, var(--z-elevated) 75%, transparent);
   border: 1px solid var(--z-border);
   color: var(--z-muted);
-  backdrop-filter: blur(12px);
   transition: all 0.3s var(--zebra-ease);
 }
 .z-btn-icon:hover {
@@ -611,8 +607,6 @@ body {
   border: 1px solid var(--z-border);
   background: var(--z-surface-glass);
   box-shadow: var(--z-shadow-soft);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   transition:
     border-color 0.35s var(--zebra-ease),
     box-shadow 0.35s var(--zebra-ease),
@@ -630,7 +624,6 @@ body {
   background: var(--z-surface-glass);
   padding: 1.25rem 1.35rem;
   box-shadow: var(--z-shadow-soft);
-  backdrop-filter: blur(16px);
 }
 
 .z-chip {
@@ -644,7 +637,12 @@ body {
   font-size: 11px;
   font-weight: 500;
   color: var(--z-muted);
-  backdrop-filter: blur(10px);
+}
+
+.z-offscreen,
+.z-offscreen * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 @keyframes z-glow-breathe {
