@@ -10,9 +10,23 @@ import { resolveConsultantPhotoUrl, toStudioDisplayName } from '../lib/studioAss
 import { toConsultantPhotoSlug } from '../lib/formatName';
 import { DEFAULT_PHOTO_ADJUST, canvasToBlob, rankFileSlug, type PhotoAdjust } from '../lib/rankingVisuals';
 import { BIRTHDAY_CANVAS, renderBirthdayVisual, type BirthdayPerson } from '../lib/birthdayVisuals';
-import PeoplePicker from './PeoplePicker';
+import BirthdayPicker from './BirthdayPicker';
 
-type Consultant = BirthdayPerson & { key: string; name: string };
+type Consultant = BirthdayPerson & {
+  key: string;
+  name: string;
+  birthMonth: number | null;
+  birthDay: number | null;
+};
+
+/** `dogum_gunu` is a DATE ("YYYY-MM-DD"); placeholder years (e.g. 0001) are treated as unknown. */
+function parseBirthday(value: unknown): { month: number; day: number } | null {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match || Number(match[1]) < 1900) return null;
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? { month, day } : null;
+}
 
 const ADJUST_STORAGE_KEY = 'zebra-dogum-gunu-photo-adjust-v1';
 const OFFSET_LIMIT = 700;
@@ -53,7 +67,6 @@ function fileNameFor(person: Consultant) {
 export default function BirthdayStudio({ isActive = true }: { isActive?: boolean }) {
   const [consultants, setConsultants] = useState<Consultant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState('');
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
   const [adjustments, setAdjustments] = useState<Record<string, PhotoAdjust>>({});
@@ -94,7 +107,7 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
         supabase.storage
           .from('consultant-photos')
           .list('', { limit: 1000, sortBy: { column: 'name', order: 'asc' } }),
-        supabase.from('profiles').select('tam_isim, unvan'),
+        supabase.from('profiles').select('tam_isim, unvan, dogum_gunu'),
       ]);
       if (cancelled) return;
       const slugs = (files || [])
@@ -108,12 +121,15 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
         const key = toConsultantPhotoSlug(name);
         if (!name || !key || seen.has(key)) continue;
         seen.add(key);
+        const birthday = parseBirthday(record.dogum_gunu);
         list.push({
           key,
           name,
           displayName: toStudioDisplayName(name),
           title: resolveConsultantTitle(name, String(record.unvan || '')),
           photoUrl: resolveConsultantPhotoUrl(name, slugs),
+          birthMonth: birthday?.month ?? null,
+          birthDay: birthday?.day ?? null,
         });
       }
       list.sort((a, b) => a.displayName.localeCompare(b.displayName, 'tr'));
@@ -132,11 +148,18 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
     []
   );
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase('tr-TR');
-    if (!needle) return consultants;
-    return consultants.filter((c) => c.displayName.toLocaleLowerCase('tr-TR').includes(needle));
-  }, [consultants, query]);
+  const pickerPeople = useMemo(
+    () =>
+      consultants.map((person) => ({
+        key: person.key,
+        label: person.displayName,
+        title: person.title,
+        month: person.birthMonth,
+        day: person.birthDay,
+        missingPhoto: !person.photoUrl,
+      })),
+    [consultants]
+  );
 
   const selected = useMemo(
     () =>
@@ -308,10 +331,10 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
     }
   };
 
-  const toggle = (key: string) =>
-    setSelectedKeys((current) =>
-      current.includes(key) ? current.filter((k) => k !== key) : [...current, key]
-    );
+  const addKeys = (keys: string[]) =>
+    setSelectedKeys((current) => Array.from(new Set([...current, ...keys])));
+
+  const removeKey = (key: string) => setSelectedKeys((current) => current.filter((k) => k !== key));
 
   return (
     <div className="panel-enter space-y-10">
@@ -325,29 +348,12 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
       </header>
 
       <section className="z-card p-6 sm:p-8">
-        <PeoplePicker
-          label="Danışmanlar"
-          noun="danışman"
-          items={visible.map((person) => ({
-            key: person.key,
-            label: person.displayName,
-            meta: person.title,
-            missingPhoto: !person.photoUrl,
-          }))}
-          selectedItems={selected.map((person) => ({
-            key: person.key,
-            label: person.displayName,
-            missingPhoto: !person.photoUrl,
-          }))}
-          query={query}
-          onQueryChange={setQuery}
-          onToggle={toggle}
+        <BirthdayPicker
+          people={pickerPeople}
+          selectedKeys={selectedKeys}
+          onAdd={addKeys}
+          onRemove={removeKey}
           onClear={() => setSelectedKeys([])}
-          onSelectVisible={() =>
-            setSelectedKeys((current) => Array.from(new Set([...current, ...visible.map((p) => p.key)])))
-          }
-          searchPlaceholder="Danışman ara"
-          emptyResultsText="Eşleşen danışman yok."
           loading={loading}
         />
       </section>
