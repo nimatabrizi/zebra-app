@@ -499,7 +499,7 @@ function UnifiedUpload({
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl">
+    <div className="z-card p-4 backdrop-blur-xl">
       <input
         ref={inputRef}
         type="file"
@@ -818,7 +818,7 @@ export default function SoldRentedStudio({
       <audio ref={audioRef} src={STATUS_AUDIO_URL} preload="auto" loop={false} />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_318px] lg:items-start xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-6">
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl sm:p-5 lg:col-start-1">
+      <section className="z-card p-4 backdrop-blur-xl sm:p-5 lg:col-start-1">
         <p className="mb-3 text-sm font-medium text-zinc-200">Durum seçimi</p>
         <div className="grid gap-2 sm:grid-cols-3">
           {STATUS_VIDEO_OPTIONS.map((option) => {
@@ -870,7 +870,7 @@ export default function SoldRentedStudio({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl sm:p-5 lg:col-start-1">
+      <section className="z-card p-4 backdrop-blur-xl sm:p-5 lg:col-start-1">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-medium text-zinc-200">Video görseli</p>
@@ -953,7 +953,7 @@ export default function SoldRentedStudio({
         )}
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl sm:p-5 lg:sticky lg:top-6 lg:col-start-2 lg:row-start-1 lg:row-span-3">
+      <section className="z-card p-4 backdrop-blur-xl sm:p-5 lg:sticky lg:top-6 lg:col-start-2 lg:row-start-1 lg:row-span-3">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:flex-col lg:items-stretch">
           <div>
             <h2 className="text-base font-semibold text-white">Canlı Tuval</h2>
@@ -1016,7 +1016,7 @@ export default function SoldRentedStudio({
         ) : null}
       </section>
 
-      <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl sm:p-5 lg:col-start-1">
+      <section className="z-card p-4 backdrop-blur-xl sm:p-5 lg:col-start-1">
         <div className="mb-4">
           <p className="text-sm font-medium text-zinc-200">MP4 video indir</p>
           <p className="mt-1 text-xs text-zinc-500">

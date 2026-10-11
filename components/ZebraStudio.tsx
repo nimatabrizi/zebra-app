@@ -941,11 +941,11 @@ export default function ZebraStudio({
   return (
     <div className="panel-enter w-full">
       {!canvasPortalTarget ? (
-        <div className={embedded ? 'mb-5' : 'mb-8 lg:mb-10'}>
-          <p className="text-[12px] font-medium tracking-[0.16em] uppercase text-[#86868B] mb-2">
+        <div className={embedded ? 'mb-5' : 'mb-10 lg:mb-14'}>
+          <p className="z-page-kicker mb-3">
             Zebra Studio
           </p>
-          <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-white">
+          <h1 className="z-page-title">
             {embedded ? 'Post / Story Görseli Üret' : 'Yeni Portföy'}
           </h1>
         </div>

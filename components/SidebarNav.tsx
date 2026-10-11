@@ -134,21 +134,21 @@ export default function SidebarNav({
                 className={`w-full flex items-center px-3.5 py-2.5 rounded-xl text-[13.5px] font-medium transition-all duration-300 ease-zebra
                   ${
                     childActive
-                      ? 'bg-white/[0.07] text-white'
+                      ? 'bg-[var(--z-nav-active)] text-[var(--z-fg)]'
                       : groupInteractable
-                        ? 'text-[#86868B] hover:bg-white/[0.04] hover:text-white cursor-pointer'
-                        : 'text-[#86868B] opacity-40 cursor-not-allowed'
+                        ? 'text-[var(--z-muted)] hover:bg-[var(--z-hover)] hover:text-[var(--z-fg)] cursor-pointer'
+                        : 'text-[var(--z-muted)] opacity-40 cursor-not-allowed'
                   }`}
               >
                 <Icon
                   className={`w-[16px] h-[16px] mr-3 shrink-0 transition-colors duration-300 ease-zebra ${
-                    childActive ? 'text-white' : 'text-[#86868B]'
+                    childActive ? 'text-[var(--z-fg)]' : 'text-[var(--z-muted)]'
                   }`}
                   strokeWidth={2}
                 />
                 <span className="truncate text-left flex-1">{item.label}</span>
                 <ChevronDown
-                  className={`w-3.5 h-3.5 shrink-0 text-[#636366] transition-transform duration-300 ease-zebra ${
+                  className={`w-3.5 h-3.5 shrink-0 text-[var(--z-muted-2)] transition-transform duration-300 ease-zebra ${
                     isOpen ? 'rotate-180' : 'rotate-0'
                   }`}
                   strokeWidth={2}
@@ -163,7 +163,7 @@ export default function SidebarNav({
                 }`}
               >
                 <div className="overflow-hidden min-h-0">
-                  <div className="ml-3 pl-3 border-l border-white/[0.06] space-y-0.5 py-1">
+                  <div className="ml-3 pl-3 border-l border-[var(--z-border)] space-y-0.5 py-1">
                     {item.children!.map((child) => {
                       if (childHasNested(child)) {
                         const nestedOpen = openNestedId === child.id;
@@ -180,17 +180,17 @@ export default function SidebarNav({
                               className={`w-full flex items-center px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-300 ease-zebra
                                 ${
                                   nestedActive
-                                    ? 'bg-white/[0.06] text-white'
+                                    ? 'bg-[var(--z-hover-strong)] text-[var(--z-fg)]'
                                     : child.isEnabled
-                                      ? 'text-[#86868B] hover:bg-white/[0.04] hover:text-white cursor-pointer'
-                                      : 'text-[#636366] opacity-45 cursor-not-allowed'
+                                      ? 'text-[var(--z-muted)] hover:bg-[var(--z-hover)] hover:text-[var(--z-fg)] cursor-pointer'
+                                      : 'text-[var(--z-muted-2)] opacity-45 cursor-not-allowed'
                                 }`}
                             >
                               <span className="truncate text-left flex-1">
                                 {child.label}
                               </span>
                               <ChevronDown
-                                className={`w-3 h-3 shrink-0 text-[#636366] transition-transform duration-300 ease-zebra ${
+                                className={`w-3 h-3 shrink-0 text-[var(--z-muted-2)] transition-transform duration-300 ease-zebra ${
                                   nestedOpen ? 'rotate-180' : 'rotate-0'
                                 }`}
                                 strokeWidth={2}
@@ -204,7 +204,7 @@ export default function SidebarNav({
                               }`}
                             >
                               <div className="overflow-hidden min-h-0">
-                                <div className="ml-2 pl-2 border-l border-white/[0.05] space-y-0.5 py-0.5">
+                                <div className="ml-2 pl-2 border-l border-[var(--z-border)] space-y-0.5 py-0.5">
                                   {child.children.map((leaf) => {
                                     const leafActive = activeTab === leaf.id;
                                     const badge = badgeCounts[leaf.id] || 0;
@@ -220,17 +220,17 @@ export default function SidebarNav({
                                         className={`w-full flex items-center px-3 py-1.5 rounded-lg text-[12.5px] font-medium transition-all duration-300 ease-zebra
                                           ${
                                             leafActive
-                                              ? 'bg-white/10 text-white shadow-inner cursor-pointer'
+                                              ? 'bg-[var(--z-nav-active)] text-[var(--z-fg)] shadow-inner cursor-pointer'
                                               : leaf.isEnabled
-                                                ? 'text-[#86868B] hover:bg-white/[0.04] hover:text-white cursor-pointer'
-                                                : 'text-[#636366] opacity-45 cursor-not-allowed'
+                                                ? 'text-[var(--z-muted)] hover:bg-[var(--z-hover)] hover:text-[var(--z-fg)] cursor-pointer'
+                                                : 'text-[var(--z-muted-2)] opacity-45 cursor-not-allowed'
                                           }`}
                                       >
                                         <span className="truncate text-left flex-1">
                                           {leaf.label}
                                         </span>
                                         {badge > 0 && (
-                                          <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#E5B540]/15 text-[#E5B540] text-[11px] font-medium tabular-nums flex items-center justify-center">
+                                          <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[var(--z-accent-soft)] text-[var(--z-accent)] text-[11px] font-medium tabular-nums flex items-center justify-center">
                                             {badge > 99 ? '99+' : badge}
                                           </span>
                                         )}
@@ -258,17 +258,17 @@ export default function SidebarNav({
                           className={`w-full flex items-center px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-300 ease-zebra
                             ${
                               childIsActive
-                                ? 'bg-white/10 text-white shadow-inner cursor-pointer'
+                                ? 'bg-[var(--z-nav-active)] text-[var(--z-fg)] shadow-inner cursor-pointer'
                                 : child.isEnabled
-                                  ? 'text-[#86868B] hover:bg-white/[0.04] hover:text-white cursor-pointer'
-                                  : 'text-[#636366] opacity-45 cursor-not-allowed'
+                                  ? 'text-[var(--z-muted)] hover:bg-[var(--z-hover)] hover:text-[var(--z-fg)] cursor-pointer'
+                                  : 'text-[var(--z-muted-2)] opacity-45 cursor-not-allowed'
                             }`}
                         >
                           <span className="truncate text-left flex-1">
                             {child.label}
                           </span>
                           {badge > 0 && (
-                            <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#E5B540]/15 text-[#E5B540] text-[11px] font-medium tabular-nums flex items-center justify-center">
+                            <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[var(--z-accent-soft)] text-[var(--z-accent)] text-[11px] font-medium tabular-nums flex items-center justify-center">
                               {badge > 99 ? '99+' : badge}
                             </span>
                           )}
@@ -294,21 +294,21 @@ export default function SidebarNav({
             className={`w-full flex items-center px-3.5 py-2.5 rounded-xl text-[13.5px] font-medium transition-all duration-300 ease-zebra
               ${
                 isActiveLeaf
-                  ? 'bg-white/10 text-white shadow-inner cursor-pointer'
+                  ? 'bg-[var(--z-nav-active)] text-[var(--z-fg)] shadow-inner cursor-pointer'
                   : item.isEnabled
-                    ? 'text-[#86868B] hover:bg-white/[0.04] hover:text-white cursor-pointer'
-                    : 'text-[#86868B] opacity-40 cursor-not-allowed'
+                    ? 'text-[var(--z-muted)] hover:bg-[var(--z-hover)] hover:text-[var(--z-fg)] cursor-pointer'
+                    : 'text-[var(--z-muted)] opacity-40 cursor-not-allowed'
               }`}
           >
             <Icon
               className={`w-[16px] h-[16px] mr-3 shrink-0 transition-colors duration-300 ease-zebra ${
-                isActiveLeaf ? 'text-white' : 'text-[#86868B]'
+                isActiveLeaf ? 'text-[var(--z-fg)]' : 'text-[var(--z-muted)]'
               }`}
               strokeWidth={2}
             />
             <span className="truncate text-left flex-1">{item.label}</span>
             {(badgeCounts[item.id] || 0) > 0 && (
-              <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#E5B540]/15 text-[#E5B540] text-[11px] font-medium tabular-nums flex items-center justify-center">
+              <span className="ml-2 shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[var(--z-accent-soft)] text-[var(--z-accent)] text-[11px] font-medium tabular-nums flex items-center justify-center">
                 {(badgeCounts[item.id] || 0) > 99 ? '99+' : badgeCounts[item.id]}
               </span>
             )}

@@ -180,7 +180,7 @@ export default function CekimRaporuPanel({ appointments }: Props) {
     <>
       <div className="panel-enter space-y-8 w-full">
         <div className="mb-2">
-          <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-white flex items-center">
+          <h1 className="z-page-title flex items-center">
             <LineChart className="w-6 h-6 mr-3 text-white/70" />
             Çekim Raporu
           </h1>

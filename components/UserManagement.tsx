@@ -445,10 +445,10 @@ function ModeHeader({
 }) {
   return (
     <div className="mb-8">
-      <p className="text-[11px] font-medium tracking-[0.18em] uppercase text-[#636366]">
+      <p className="z-page-kicker">
         {eyebrow}
       </p>
-      <h1 className="mt-1 text-[28px] sm:text-[32px] font-medium tracking-tight text-white leading-none">
+      <h1 className="mt-1 z-page-title">
         {title}
       </h1>
       <p className="mt-3 text-[14px] text-[#86868B] leading-relaxed max-w-2xl">
@@ -505,7 +505,7 @@ function ModalShell({
       <div
         role="dialog"
         aria-modal="true"
-        className={`relative w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} max-h-[min(92dvh,920px)] flex flex-col rounded-2xl border border-white/10 bg-[#141414] shadow-2xl`}
+        className={`relative w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} max-h-[min(92dvh,920px)] flex flex-col z-modal`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 flex items-center justify-between px-5 sm:px-6 py-4 border-b border-white/5">
@@ -783,21 +783,21 @@ function UserFilterPanel({
           <button
             type="button"
             onClick={onReset}
-            className="flex-1 h-11 rounded-full border border-white/10 text-[13px] text-[#AEAEB2] hover:text-white cursor-pointer"
+            className="z-btn-ghost flex-1 h-11 text-[13px] cursor-pointer"
           >
             Temizle
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 h-11 rounded-full border border-white/10 text-[13px] text-[#AEAEB2] hover:text-white cursor-pointer"
+            className="z-btn-ghost flex-1 h-11 text-[13px] cursor-pointer"
           >
             Vazgeç
           </button>
           <button
             type="button"
             onClick={onApply}
-            className="flex-1 h-11 rounded-full bg-white text-black text-[13px] font-medium cursor-pointer"
+            className="z-btn-primary flex-1 h-11 text-[13px] cursor-pointer"
           >
             Uygula ({matchCount})
           </button>
@@ -897,7 +897,7 @@ function DetailedUsersTable({
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-white/5 bg-[#141414]/95 py-16 flex items-center justify-center gap-2 text-[#86868B] text-[14px]">
+      <div className="z-empty gap-2 text-[14px] text-[var(--z-muted)]">
         <Loader2 className="w-4 h-4 animate-spin" />
         Yükleniyor…
       </div>
@@ -906,7 +906,7 @@ function DetailedUsersTable({
 
   if (users.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/5 bg-[#141414]/95 py-16 text-center text-[14px] text-[#86868B]">
+      <div className="z-empty text-[14px] text-[var(--z-muted)]">
         Kullanıcı bulunamadı
       </div>
     );
@@ -948,7 +948,7 @@ function DetailedUsersTable({
 
   return (
     <>
-      <div className="rounded-2xl border border-white/5 bg-[#141414]/95 overflow-hidden">
+      <div className="z-card overflow-hidden">
         <div className="overflow-x-auto custom-scrollbar">
           <table className="border-separate border-spacing-0 min-w-max text-left">
             <thead>
@@ -1194,7 +1194,7 @@ function DetailedUsersTable({
                 type="button"
                 onClick={() => setPendingUser(null)}
                 disabled={saving}
-                className="flex-1 h-11 rounded-full border border-white/10 text-[13px] text-[#AEAEB2] hover:text-white cursor-pointer disabled:opacity-50"
+                className="z-btn-ghost flex-1 h-11 text-[13px] cursor-pointer disabled:opacity-50"
               >
                 Vazgeç
               </button>
@@ -1202,7 +1202,7 @@ function DetailedUsersTable({
                 type="button"
                 onClick={() => void confirmSave()}
                 disabled={saving}
-                className="flex-1 h-11 rounded-full bg-white text-black text-[13px] font-medium inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="z-btn-primary flex-1 h-11 text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 Değişiklikleri uygula
@@ -1393,22 +1393,20 @@ export default function UserManagement({
         detailedView ? 'max-w-none' : 'max-w-6xl'
       }`}
     >
-      <div className="mb-7 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-10 flex flex-col gap-6 sm:mb-12 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[11px] font-medium tracking-[0.18em] uppercase text-[#636366]">
-            Kullanıcı Yönetimi
-          </p>
-          <h1 className="mt-1 text-[28px] sm:text-[32px] font-medium tracking-tight text-white leading-none">
+          <p className="z-page-kicker">Kullanıcı Yönetimi</p>
+          <h1 className="z-page-title mt-3">
             Tüm Kullanıcılar
           </h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
             disabled={exporting || loading || users.length === 0}
             onClick={() => void exportExcel()}
-            className="h-10 px-3.5 rounded-xl border border-white/10 bg-white/[0.025] text-[12px] text-[#AEAEB2] inline-flex items-center justify-center gap-2 transition-colors hover:text-white hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed"
+            className="z-btn-ghost h-11 px-4 text-[12px] inline-flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {exporting ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1418,10 +1416,10 @@ export default function UserManagement({
             Dışa aktar
           </button>
           <label
-            className={`h-10 px-3.5 rounded-xl border border-white/10 bg-white/[0.025] text-[12px] text-[#AEAEB2] inline-flex items-center justify-center gap-2 transition-colors ${
+            className={`z-btn-ghost h-11 px-4 text-[12px] inline-flex items-center justify-center gap-2 ${
               importing
                 ? 'opacity-40 cursor-not-allowed'
-                : 'hover:text-white hover:bg-white/[0.06] cursor-pointer'
+                : 'cursor-pointer'
             }`}
           >
             {importing ? (
@@ -1445,7 +1443,7 @@ export default function UserManagement({
           <button
             type="button"
             onClick={() => onNavigate?.('users-add')}
-            className="h-10 px-4 rounded-xl bg-white text-black text-[12px] font-semibold inline-flex items-center justify-center gap-2 cursor-pointer hover:bg-[#E8E8ED] active:scale-[0.98] transition"
+            className="z-btn-primary h-11 px-5 text-[12px] inline-flex items-center justify-center gap-2 cursor-pointer"
           >
             <UserPlus className="w-3.5 h-3.5" />
             Kullanıcı ekle
@@ -1454,7 +1452,7 @@ export default function UserManagement({
       </div>
 
       {counts ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 mb-8">
           {[
             { label: 'Toplam', value: counts.total },
             { label: 'Danışman', value: counts.byRole.danisman || 0 },
@@ -1464,12 +1462,12 @@ export default function UserManagement({
           ].map((s) => (
             <div
               key={s.label}
-              className="rounded-2xl border border-white/[0.06] bg-[#141414]/90 px-4 py-3.5"
+              className="z-stat"
             >
-              <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-[#636366]">
+              <p className="z-page-kicker">
                 {s.label}
               </p>
-              <p className="mt-1.5 text-[23px] font-medium text-white tabular-nums tracking-tight">
+              <p className="mt-2.5 text-[26px] font-medium text-[var(--z-fg)] tabular-nums tracking-tight">
                 {s.value}
               </p>
             </div>
@@ -1477,7 +1475,7 @@ export default function UserManagement({
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-white/[0.07] bg-[#121212]/80 p-2.5 sm:p-3 mb-3">
+      <div className="z-card p-3 sm:p-3.5 mb-4">
         <div className="flex flex-col lg:flex-row gap-2.5">
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#636366]" />
@@ -1485,7 +1483,7 @@ export default function UserManagement({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="İsim, unvan, ekip veya telefon ara"
-              className="w-full h-11 rounded-xl bg-[#0A0A0A] border border-white/[0.07] text-white placeholder:text-[#48484A] pl-10 pr-4 outline-none focus:border-white/20 text-[13px]"
+              className="z-field h-11 pl-10 pr-4 text-[13px]"
             />
           </div>
           <button
@@ -1676,7 +1674,7 @@ export default function UserManagement({
           onSaved={loadUsers}
         />
       ) : (
-      <div className="rounded-2xl border border-white/5 bg-[#141414]/95 overflow-hidden">
+      <div className="z-card overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-[#86868B] text-[14px]">
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -1853,7 +1851,7 @@ function ViewUserModal({
       <button
         type="button"
         onClick={onClose}
-        className="mt-6 w-full h-11 rounded-full border border-white/10 text-[13px] text-[#AEAEB2] hover:text-white cursor-pointer"
+        className="z-btn-ghost mt-6 w-full h-11 text-[13px] cursor-pointer"
       >
         Kapat
       </button>
@@ -2082,14 +2080,14 @@ function EditUserModal({
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="flex-1 h-11 rounded-full border border-white/10 text-[13px] text-[#AEAEB2] hover:text-white cursor-pointer disabled:opacity-50"
+              className="z-btn-ghost flex-1 h-11 text-[13px] cursor-pointer disabled:opacity-50"
             >
               Vazgeç
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 h-11 rounded-full bg-white text-black text-[13px] font-medium inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="z-btn-primary flex-1 h-11 text-[13px] inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Kaydet
@@ -2183,7 +2181,7 @@ function DeleteUserModal({
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="flex-1 h-11 rounded-full border border-white/10 text-[13px] text-[#AEAEB2] hover:text-white cursor-pointer disabled:opacity-50"
+            className="z-btn-ghost flex-1 h-11 text-[13px] cursor-pointer disabled:opacity-50"
           >
             Vazgeç
           </button>
@@ -2332,7 +2330,7 @@ function UserAddForm({ onCreated }: { onCreated: () => void }) {
 
       <form
         onSubmit={onSubmit}
-        className="rounded-2xl border border-white/5 bg-[#141414]/95 p-5 sm:p-6 space-y-5"
+        className="z-card p-6 sm:p-8 space-y-6"
       >
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-[#1C1C1E] border border-white/10 overflow-hidden flex items-center justify-center shrink-0">

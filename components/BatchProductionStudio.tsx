@@ -1793,10 +1793,10 @@ export default function BatchProductionStudio() {
       <div className="mb-6 space-y-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className="text-[11px] font-medium tracking-[0.18em] uppercase text-[#636366]">
+            <p className="z-page-kicker">
               Zebra Studio
             </p>
-            <h1 className="mt-1 text-[28px] sm:text-[32px] font-medium tracking-tight text-white leading-none">
+            <h1 className="mt-1 z-page-title">
               Toplu Üretim
             </h1>
           </div>

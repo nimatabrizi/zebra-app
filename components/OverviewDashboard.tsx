@@ -319,47 +319,50 @@ export default function OverviewDashboard({
   }, [isManager, pendingCount, confirmCount, role, isPilot, fullName]);
 
   return (
-    <div className="overview-root w-full">
-      {/* Selamlama + altında sadece boşluk */}
+    <div className="overview-root relative w-full">
+      <div className="z-hero-glow" aria-hidden />
+
       <header
-        className="bento-enter relative mb-10 sm:mb-14 lg:mb-16"
+        className="bento-enter relative mb-14 sm:mb-20 lg:mb-24"
         style={{ animationDelay: '40ms' }}
       >
-        <h1 className="text-[34px] sm:text-[42px] lg:text-[46px] font-medium tracking-tight text-white leading-[1.05]">
+        <p className="z-page-kicker mb-5">Zebra 360</p>
+        <h1 className="max-w-[14ch] text-[clamp(2.6rem,7vw,4.75rem)] font-medium tracking-[-0.045em] leading-[0.95] text-[var(--z-fg)]">
           {greeting}
           {firstName ? (
             <>
-              {' '}
-              <span className="text-white/90">{firstName}</span>
+              <br />
+              <span className="text-[var(--z-fg)]/55">{firstName}</span>
             </>
           ) : null}
         </h1>
       </header>
 
-      {/* Zebra Studio — full width */}
       <article
-        style={{ animationDelay: '100ms' }}
-        className="bento-enter group relative w-full min-h-[220px] sm:min-h-[240px] overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#121212]/75 backdrop-blur-2xl transition-colors duration-500 ease-zebra hover:border-white/14 mb-8 sm:mb-10"
+        style={{ animationDelay: '90ms' }}
+        className="bento-enter group relative mb-10 overflow-hidden rounded-[2rem] border border-[var(--z-border)] bg-[var(--z-surface-glass)] shadow-[var(--z-shadow-float)] backdrop-blur-2xl sm:mb-14 lg:min-h-[280px]"
       >
         <AmbientLayer tone="mesh-studio" />
-        <div className="relative flex h-full flex-col justify-between gap-8 p-6 sm:p-8 lg:flex-row lg:items-end lg:p-9">
-          <div className="max-w-xl">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06]">
-                <Aperture className="h-5 w-5 text-white/85" strokeWidth={1.75} />
+        <div className="relative grid gap-10 p-8 sm:p-10 lg:grid-cols-[1.35fr_1fr] lg:items-end lg:gap-16 lg:p-12">
+          <div>
+            <div className="mb-8 flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] border border-[var(--z-border)] bg-[var(--z-hover-strong)] shadow-[var(--z-shadow-soft)]">
+                <Aperture className="h-5 w-5 text-[var(--z-fg)]" strokeWidth={1.6} />
               </div>
-              <span className="rounded-full border border-[#34C759]/25 bg-[#34C759]/10 px-2.5 py-1 text-[10px] font-medium tracking-[0.1em] text-[#34C759]">
-                Canlı
+              <span className="inline-flex items-center gap-2 rounded-full border border-[#34C759]/30 bg-[#34C759]/12 px-3 py-1.5 text-[10px] font-medium tracking-[0.14em] text-[#34C759]">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#34C759]" />
+                Canlı stüdyo
               </span>
             </div>
-            <h2 className="mt-6 text-[28px] sm:text-[32px] font-medium tracking-tight text-white leading-tight">
+            <h2 className="text-[clamp(1.85rem,3.5vw,2.75rem)] font-medium tracking-[-0.035em] leading-[1.05] text-[var(--z-fg)]">
               Zebra Studio
             </h2>
-            <p className="mt-2 text-[14px] leading-relaxed text-[#86868B]">
-              Portföy görsellerinden QR’a — stüdyo araçlarınız tek yüzeyde.
+            <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[var(--z-muted)]">
+              Portföy görsellerinden durum videosuna — yaratım araçlarınız tek,
+              sakin bir yüzeyde.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 lg:justify-end">
+          <div className="flex flex-wrap content-end gap-2.5 lg:justify-end">
             {studioLinks.map((link) => {
               const Icon = link.icon;
               return (
@@ -367,7 +370,7 @@ export default function OverviewDashboard({
                   key={link.id}
                   type="button"
                   onClick={() => onNavigate(link.id)}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-[12px] font-medium text-[#AEAEB2] transition-all duration-500 ease-zebra hover:border-white/20 hover:text-white cursor-pointer"
+                  className="z-btn-ghost inline-flex h-11 items-center gap-2.5 px-4 text-[13px] cursor-pointer"
                 >
                   <Icon className="h-3.5 w-3.5 opacity-70" strokeWidth={2} />
                   {link.label}
@@ -378,40 +381,37 @@ export default function OverviewDashboard({
         </div>
       </article>
 
-      {/* Yaklaşan Çekim + Günün Portföyü */}
       <section
-        className="bento-enter grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 mb-8 sm:mb-10"
-        style={{ animationDelay: '160ms' }}
+        className="bento-enter mb-10 grid grid-cols-1 gap-5 sm:mb-14 lg:grid-cols-12 lg:gap-6"
+        style={{ animationDelay: '150ms' }}
       >
         {upcoming ? (
           <button
             type="button"
             onClick={() => onNavigate('takvim')}
-            className="group relative min-h-[160px] overflow-hidden rounded-[24px] border border-white/[0.08] bg-[#141414]/75 backdrop-blur-2xl p-6 sm:p-7 text-left transition-colors duration-500 ease-zebra hover:border-white/14 cursor-pointer"
+            className="group relative min-h-[220px] overflow-hidden rounded-[2rem] border border-[var(--z-border)] bg-[var(--z-surface-glass)] p-8 text-left shadow-[var(--z-shadow-soft)] backdrop-blur-2xl transition-all duration-500 ease-zebra hover:-translate-y-1 hover:shadow-[var(--z-shadow-float)] cursor-pointer lg:col-span-7"
           >
             <AmbientLayer tone="mesh-c" />
-            <div className="relative flex h-full flex-col justify-between">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.05]">
-                  <CalendarCheck className="h-[18px] w-[18px] text-white/80" strokeWidth={1.75} />
+            <div className="relative flex h-full min-h-[180px] flex-col justify-between">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] border border-[var(--z-border)] bg-[var(--z-hover)]">
+                  <CalendarCheck className="h-5 w-5 text-[var(--z-fg)]/85" strokeWidth={1.6} />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#34C759]/25 bg-[#34C759]/10 px-2.5 py-1 text-[10px] font-medium text-[#34C759]">
-                    <span className="h-1 w-1 rounded-full bg-[#34C759]" />
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#34C759]/28 bg-[#34C759]/12 px-3 py-1.5 text-[11px] font-medium text-[#34C759]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#34C759]" />
                     {until === 0 ? 'Bugün' : until === 1 ? 'Yarın' : `${until} gün`}
                   </span>
-                  <ArrowUpRight className="h-4 w-4 text-[#4A4A4C] transition-colors duration-500 ease-zebra group-hover:text-white/70" />
+                  <ArrowUpRight className="h-4 w-4 text-[var(--z-muted-2)] transition-transform duration-500 ease-zebra group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[var(--z-fg)]" />
                 </div>
               </div>
-              <div className="mt-8">
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868B]">
-                  Yaklaşan Çekim
-                </p>
-                <p className="mt-2 text-[18px] sm:text-[20px] font-medium tracking-tight text-white leading-snug">
+              <div className="mt-12">
+                <p className="z-page-kicker">Yaklaşan çekim</p>
+                <p className="mt-3 text-[clamp(1.4rem,2.5vw,1.85rem)] font-medium tracking-tight text-[var(--z-fg)] leading-snug">
                   {upcoming.ilce}
                   {upcoming.semt ? ` · ${upcoming.semt}` : ''}
                 </p>
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[#86868B]">
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[14px] text-[var(--z-muted)]">
                   <span>
                     {formatFriendlyDate(upcoming.tarih)}
                     {upcoming.saatBlok ? ` · ${upcoming.saatBlok}` : ''}
@@ -426,17 +426,15 @@ export default function OverviewDashboard({
             </div>
           </button>
         ) : (
-          <div className="relative min-h-[160px] overflow-hidden rounded-[24px] border border-dashed border-white/[0.08] bg-[#121212]/45 backdrop-blur-xl p-6 sm:p-7">
+          <div className="relative min-h-[220px] overflow-hidden rounded-[2rem] border border-dashed border-[var(--z-border-strong)] bg-[var(--z-surface-glass)] p-8 backdrop-blur-xl lg:col-span-7">
             <AmbientLayer tone="mesh-c" />
-            <div className="relative flex h-full flex-col justify-between">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03]">
-                <CalendarCheck className="h-[18px] w-[18px] text-[#636366]" strokeWidth={1.75} />
+            <div className="relative flex h-full min-h-[180px] flex-col justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] border border-[var(--z-border)] bg-[var(--z-hover)]">
+                <CalendarCheck className="h-5 w-5 text-[var(--z-muted-2)]" strokeWidth={1.6} />
               </div>
-              <div className="mt-8">
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#86868B]">
-                  Yaklaşan Çekim
-                </p>
-                <p className="mt-2 text-[18px] sm:text-[20px] font-medium tracking-tight text-white/70 leading-snug">
+              <div className="mt-12">
+                <p className="z-page-kicker">Yaklaşan çekim</p>
+                <p className="mt-3 text-[clamp(1.4rem,2.5vw,1.85rem)] font-medium tracking-tight text-[var(--z-fg)]/55 leading-snug">
                   Planlanmış çekim yok
                 </p>
               </div>
@@ -444,19 +442,18 @@ export default function OverviewDashboard({
           </div>
         )}
 
-        <div className="relative min-h-[160px] overflow-hidden rounded-[24px] border border-white/[0.08] bg-[#141414]/75 backdrop-blur-2xl p-6 sm:p-7 transition-colors duration-500 ease-zebra hover:border-white/14">
+        <div className="relative min-h-[220px] overflow-hidden rounded-[2rem] border border-[var(--z-border)] bg-[var(--z-surface-glass)] p-8 shadow-[var(--z-shadow-soft)] backdrop-blur-2xl lg:col-span-5">
           <AmbientLayer tone="mesh-b" />
-          <div className="relative flex h-full flex-col justify-between">
+          <div className="relative flex h-full min-h-[180px] flex-col justify-between">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.05]">
-                <Sparkles className="h-[18px] w-[18px] text-white/80" strokeWidth={1.75} />
+              <div className="flex h-12 w-12 items-center justify-center rounded-[1.1rem] border border-[var(--z-border)] bg-[var(--z-hover)]">
+                <Sparkles className="h-5 w-5 text-[var(--z-accent)]" strokeWidth={1.6} />
               </div>
-              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-medium tracking-[0.1em] text-[#86868B]">
-                Öne çıkan
-              </span>
+              <span className="z-chip">Öne çıkan</span>
             </div>
-            <div className="mt-8">
-              <p className="text-[18px] sm:text-[20px] font-medium tracking-tight text-white/90 leading-snug">
+            <div className="mt-12">
+              <p className="z-page-kicker">Günün seçkisi</p>
+              <p className="mt-3 text-[clamp(1.4rem,2.5vw,1.85rem)] font-medium tracking-tight text-[var(--z-fg)] leading-snug">
                 Günün Portföyü
               </p>
             </div>
@@ -464,8 +461,16 @@ export default function OverviewDashboard({
         </div>
       </section>
 
-      {/* Diğer modül kartları */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
+      <div className="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <p className="z-page-kicker">Modüller</p>
+          <h2 className="mt-2 text-[1.35rem] font-medium tracking-tight text-[var(--z-fg)] sm:text-[1.5rem]">
+            Hızlı geçiş
+          </h2>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 sm:gap-5">
         {pathways.map((item) => {
           const Icon = item.icon;
           return (
@@ -474,28 +479,30 @@ export default function OverviewDashboard({
               type="button"
               onClick={() => onNavigate(item.tab)}
               style={{ animationDelay: `${item.delay}ms` }}
-              className="bento-enter group relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-[#141414]/70 backdrop-blur-2xl text-left p-5 sm:p-6 transition-colors duration-500 ease-zebra hover:border-white/14 cursor-pointer"
+              className="bento-enter group relative min-h-[168px] overflow-hidden rounded-[1.75rem] border border-[var(--z-border)] bg-[var(--z-surface-glass)] p-6 text-left shadow-[var(--z-shadow-soft)] backdrop-blur-2xl transition-all duration-500 ease-zebra hover:-translate-y-1.5 hover:border-[var(--z-border-strong)] hover:shadow-[var(--z-shadow-float)] cursor-pointer"
             >
               <AmbientLayer tone={item.tone} />
-              <div className="relative flex h-full min-h-[120px] flex-col justify-between">
+              <div className="relative flex h-full flex-col justify-between">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.05]">
-                    <Icon className="h-[18px] w-[18px] text-white/80" strokeWidth={1.75} />
+                  <div className="flex h-11 w-11 items-center justify-center rounded-[1rem] border border-[var(--z-border)] bg-[var(--z-hover)] transition-transform duration-500 ease-zebra group-hover:scale-105">
+                    <Icon className="h-[18px] w-[18px] text-[var(--z-fg)]/85" strokeWidth={1.7} />
                   </div>
                   <div className="flex items-center gap-2">
                     {typeof item.badge === 'number' && item.badge > 0 && (
-                      <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#E5B540]/15 text-[#E5B540] text-[11px] font-medium tabular-nums flex items-center justify-center">
+                      <span className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-[var(--z-accent-soft)] text-[var(--z-accent)] text-[11px] font-medium tabular-nums flex items-center justify-center">
                         {item.badge > 99 ? '99+' : item.badge}
                       </span>
                     )}
-                    <ArrowUpRight className="h-4 w-4 text-[#4A4A4C] transition-colors duration-500 ease-zebra group-hover:text-white/70" />
+                    <ArrowUpRight className="h-4 w-4 text-[var(--z-muted-2)] transition-all duration-500 ease-zebra group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[var(--z-fg)]" />
                   </div>
                 </div>
-                <div className="mt-5">
-                  <h3 className="text-[15px] sm:text-[16px] font-medium tracking-tight text-white">
+                <div className="mt-8">
+                  <h3 className="text-[16px] font-medium tracking-tight text-[var(--z-fg)]">
                     {item.title}
                   </h3>
-                  <p className="mt-1 text-[12px] text-[#86868B]">{item.hint}</p>
+                  <p className="mt-1.5 text-[12.5px] leading-relaxed text-[var(--z-muted)]">
+                    {item.hint}
+                  </p>
                 </div>
               </div>
             </button>

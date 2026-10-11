@@ -4,7 +4,7 @@
  * Pasif ürün sayfaları menüde aktif; içerik "Yakında" placeholder gösterir.
  */
 
-import { isUserAdmin, isPilotRole, isPersonelRole } from './authIdentity';
+import { isNimaTabrizi, isUserAdmin, isPilotRole, isPersonelRole } from './authIdentity';
 
 export type SidebarLeaf = {
   id: string;
@@ -55,6 +55,9 @@ export const CORE_LIVE_TABS = [
   'studio-satildi-kiralandi',
   'studio-toplu',
   'studio-yaka-karti',
+  'studio-siralama',
+  'studio-dogum-gunu',
+  'studio-giris',
   'users-overview',
   'users-add',
 ] as const;
@@ -69,10 +72,14 @@ function sharedProductModules(options?: {
   includeMusteri?: boolean;
   includeTopluUretim?: boolean;
   includeYakaKarti?: boolean;
+  includeSiralama?: boolean;
+  includeDogumGunu?: boolean;
 }): SidebarItem[] {
   const includeMusteri = options?.includeMusteri !== false;
   const includeTopluUretim = options?.includeTopluUretim === true;
   const includeYakaKarti = options?.includeYakaKarti === true;
+  const includeSiralama = options?.includeSiralama === true;
+  const includeDogumGunu = options?.includeDogumGunu === true;
   return [
     ...(includeMusteri
       ? [
@@ -122,6 +129,15 @@ function sharedProductModules(options?: {
           : []),
         ...(includeYakaKarti
           ? [{ id: 'studio-yaka-karti', label: 'Yaka Kartı', isEnabled: true }]
+          : []),
+        ...(includeSiralama
+          ? [{ id: 'studio-siralama', label: 'Sıralama Görselleri', isEnabled: true }]
+          : []),
+        ...(includeDogumGunu
+          ? [
+              { id: 'studio-dogum-gunu', label: 'Doğum Günü', isEnabled: true },
+              { id: 'studio-giris', label: 'Giriş Görselleri', isEnabled: true },
+            ]
           : []),
         { id: 'studio-branda', label: 'Branda', isEnabled: true },
         { id: 'studio-brosur', label: 'Broşür', isEnabled: true },
@@ -210,7 +226,10 @@ export function buildConsultantNav(options?: {
       icon: 'CalendarDays',
       isEnabled: true,
     },
-    ...sharedProductModules(),
+    ...sharedProductModules({
+      includeSiralama: includeUserAdmin,
+      includeDogumGunu: includeUserAdmin,
+    }),
     {
       id: 'randevu-sistemi',
       label: 'Randevu Sistemi',
@@ -245,6 +264,8 @@ export function buildManagerNav(
       includeMusteri: false,
       includeTopluUretim: true,
       includeYakaKarti: true,
+      includeSiralama: includeUserAdmin,
+      includeDogumGunu: includeUserAdmin,
     }),
     {
       id: 'randevu-sistemi',
@@ -345,6 +366,9 @@ export function isLiveContentTab(
       isPersonelRole(role))
   ) {
     return true;
+  }
+  if (id === 'studio-siralama' || id === 'studio-dogum-gunu' || id === 'studio-giris') {
+    return isNimaTabrizi(fullName);
   }
   if (id === 'users-overview' || id === 'users-add') {
     return isUserAdmin(fullName, role);

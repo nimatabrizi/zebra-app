@@ -1,16 +1,22 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { getFontEmbedCSS, toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import {
   Check,
   Download,
   IdCard,
+  ImageOff,
+  ListChecks,
   Loader2,
+  RefreshCw,
+  RotateCcw,
   Search,
+  SlidersHorizontal,
   User,
+  X,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import {
@@ -34,6 +40,10 @@ import {
   toStudioDisplayName,
   waitForStudioFonts,
 } from '../lib/studioAssets';
+import { applyColorAdjust, DEFAULT_GIRIS_COLOR } from '../lib/girisVisuals';
+import PasteListModal from './PasteListModal';
+
+const PASTE_LIST_STORAGE_KEY = 'zebra-yaka-karti-paste-list-v1';
 
 type BadgePerson = {
   id: string;
@@ -44,6 +54,67 @@ type BadgePerson = {
   role: string;
   photoUrl: string | null;
 };
+
+/** Otomatik yerleşimin üzerine: ölçek çarpanı + kart pikseli cinsinden kaydırma */
+type BadgeAdjust = {
+  scale: number;
+  dx: number;
+  dy: number;
+  /** Kırmızılık azaltma, 0–100 */
+  red?: number;
+};
+
+const DEFAULT_BADGE_ADJUST: BadgeAdjust = { scale: 1, dx: 0, dy: 0 };
+const ADJUST_STORAGE_KEY = 'zebra-yaka-karti-photo-adjust-v1';
+const OFFSET_LIMIT = 1200;
+
+function isManualPlacement(adjust: BadgeAdjust) {
+  return adjust.scale !== 1 || adjust.dx !== 0 || adjust.dy !== 0;
+}
+
+function isDefaultBadgeAdjust(adjust: BadgeAdjust) {
+  return !isManualPlacement(adjust) && !(adjust.red && adjust.red > 0);
+}
+
+const colorPhotoCache = new Map<string, Promise<string | null>>();
+const COLOR_PHOTO_CACHE_LIMIT = 16;
+
+/** Kırmızılığı azaltılmış fotoğrafın object URL'si (alfa korunur). */
+function colorAdjustedPhotoUrl(src: string, red: number): Promise<string | null> {
+  const key = `${src}|${red}`;
+  const cached = colorPhotoCache.get(key);
+  if (cached) return cached;
+  const pending = (async () => {
+    try {
+      const img = await loadCrossOriginImage(src);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      applyColorAdjust(imageData.data, { ...DEFAULT_GIRIS_COLOR, red });
+      ctx.putImageData(imageData, 0, 0);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+      return blob ? URL.createObjectURL(blob) : null;
+    } catch (error) {
+      console.error('Yaka kartı renk düzeltmesi uygulanamadı:', error);
+      return null;
+    }
+  })();
+  colorPhotoCache.set(key, pending);
+  while (colorPhotoCache.size > COLOR_PHOTO_CACHE_LIMIT) {
+    const oldest = colorPhotoCache.keys().next().value!;
+    void colorPhotoCache.get(oldest)?.then((url) => url && setTimeout(() => URL.revokeObjectURL(url), 30000));
+    colorPhotoCache.delete(oldest);
+  }
+  return pending;
+}
+
+function clampOffset(value: number) {
+  return Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, Math.round(value)));
+}
 
 type RoleFilter = 'all' | 'danisman' | 'personel';
 
@@ -298,10 +369,20 @@ async function detectFaceWithBrowser(
   }
 }
 
+/** Ölçümler ana thread'i kilitlemesin diye birer birer yapılır. */
+let measureQueue: Promise<unknown> = Promise.resolve();
+
 function measureOpaqueBounds(src: string): Promise<OpaqueBounds | null> {
   const cached = opaqueBoundsCache.get(src);
   if (cached) return cached;
-  const pending = (async () => {
+  const pending = measureQueue.then(() => measureOpaqueBoundsNow(src));
+  measureQueue = pending.catch(() => undefined);
+  opaqueBoundsCache.set(src, pending);
+  return pending;
+}
+
+function measureOpaqueBoundsNow(src: string): Promise<OpaqueBounds | null> {
+  return (async () => {
     try {
       const img = await loadCrossOriginImage(src);
       const canvas = document.createElement('canvas');
@@ -359,18 +440,18 @@ function measureOpaqueBounds(src: string): Promise<OpaqueBounds | null> {
       return null;
     }
   })();
-  opaqueBoundsCache.set(src, pending);
-  return pending;
 }
 
 function BadgeFace({
   person,
   photoFailed,
   onPhotoError,
+  adjust = DEFAULT_BADGE_ADJUST,
 }: {
   person: BadgePerson | null;
   photoFailed?: boolean;
   onPhotoError?: () => void;
+  adjust?: BadgeAdjust;
 }) {
   const { given, family } = badgeNameParts(person?.displayName || '');
   const title = toTurkishUpper(
@@ -413,27 +494,55 @@ function BadgeFace({
     };
   }, [photoSrc]);
 
+  const red = adjust.red ?? 0;
+  const colorKey = photoSrc && red > 0 ? `${photoSrc}|${red}` : '';
+  const [colorPhoto, setColorPhoto] = useState<{ key: string; url: string | null }>({ key: '', url: null });
+
+  useEffect(() => {
+    if (!photoSrc || red <= 0) return;
+    const key = `${photoSrc}|${red}`;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void colorAdjustedPhotoUrl(photoSrc, red).then((url) => {
+        if (!cancelled) setColorPhoto({ key, url });
+      });
+    }, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [photoSrc, red]);
+
+  const colorReady = !colorKey || colorPhoto.key === colorKey;
+  // Slider sürüklenirken yeni sürüm hazırlanana kadar son düzeltilmiş hal gösterilir.
+  const displaySrc =
+    colorKey && colorPhoto.url && colorPhoto.key.startsWith(`${photoSrc}|`) ? colorPhoto.url : photoSrc;
+
+  const manualAdjust = isManualPlacement(adjust);
   const photoScale = photoBounds
-    ? layout.photo.targetWidth / Math.max(8, photoBounds.w)
+    ? (layout.photo.targetWidth / Math.max(8, photoBounds.w)) * adjust.scale
     : 1;
   const photoBoxHeight = layout.photo.clipBottom;
   const photoDrawW = photoBounds ? photoBounds.srcW * photoScale : undefined;
   const photoDrawH = photoBounds ? photoBounds.srcH * photoScale : undefined;
   const photoDrawX = photoBounds
-    ? BADGE_CARD.widthPx / 2 - photoBounds.faceX * photoScale
+    ? BADGE_CARD.widthPx / 2 - photoBounds.faceX * photoScale + adjust.dx
     : 0;
   const basePhotoDrawY = photoBounds
-    ? layout.photo.faceCenterY - photoBounds.faceY * photoScale
+    ? layout.photo.faceCenterY - photoBounds.faceY * photoScale + adjust.dy
     : 0;
   const minPhotoTop =
     layout.logoBlue.top + layout.logoBlue.height + layout.photo.logoGap;
   const photoDrawY = photoBounds
-    ? Math.max(basePhotoDrawY, minPhotoTop - photoBounds.y * photoScale)
+    ? manualAdjust
+      ? basePhotoDrawY
+      : Math.max(basePhotoDrawY, minPhotoTop - photoBounds.y * photoScale)
     : 0;
 
   return (
     <div
       className="relative overflow-hidden bg-[#E8E8E8] text-white"
+      data-theme-locked="dark"
       style={{
         width: BADGE_CARD.widthPx,
         height: BADGE_CARD.heightPx,
@@ -482,7 +591,7 @@ function BadgeFace({
       {photoSrc ? (
         <div
           className="absolute z-[4] overflow-hidden"
-          data-photo-fit={photoFitReady ? 'ready' : 'pending'}
+          data-photo-fit={photoFitReady && colorReady ? 'ready' : 'pending'}
           style={{
             top: 0,
             left: 0,
@@ -494,7 +603,7 @@ function BadgeFace({
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={photoSrc}
+                src={displaySrc!}
                 alt=""
                 crossOrigin="anonymous"
                 className="absolute max-w-none"
@@ -517,8 +626,8 @@ function BadgeFace({
                 style={{
                   background:
                     'linear-gradient(to top, #000 0%, rgba(0,0,0,.78) 12%, rgba(0,0,0,.28) 20%, rgba(0,0,0,0) 30%)',
-                  WebkitMaskImage: `url("${photoSrc}")`,
-                  maskImage: `url("${photoSrc}")`,
+                  WebkitMaskImage: `url("${displaySrc}")`,
+                  maskImage: `url("${displaySrc}")`,
                   maskMode: 'alpha',
                   WebkitMaskSize: photoBounds
                     ? `${photoDrawW}px ${photoDrawH}px`
@@ -657,6 +766,175 @@ function BadgeFace({
   );
 }
 
+/** BadgeFace'i kapsayıcı genişliğine ölçekler; lazy ise ekrana girene kadar çizmez. */
+function ScaledBadge({
+  person,
+  adjust,
+  lazy = false,
+  onPhotoFailed,
+}: {
+  person: BadgePerson;
+  adjust: BadgeAdjust;
+  lazy?: boolean;
+  onPhotoFailed?: () => void;
+}) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0);
+  const [seen, setSeen] = useState(!lazy);
+  const [failedSrc, setFailedSrc] = useState('');
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const observer = new ResizeObserver(() => {
+      const width = frame.clientWidth;
+      if (width > 0) setScale(width / BADGE_CARD.widthPx);
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (seen) return;
+    const frame = frameRef.current;
+    if (!frame) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) {
+        setSeen(true);
+        observer.disconnect();
+      }
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [seen]);
+
+  const failed = Boolean(person.photoUrl) && failedSrc === person.photoUrl;
+
+  return (
+    <div
+      ref={frameRef}
+      className="relative w-full overflow-hidden bg-black"
+      style={{ aspectRatio: `${BADGE_CARD.widthMm} / ${BADGE_CARD.heightMm}` }}
+    >
+      {scale > 0 && seen ? (
+        <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+          <BadgeFace
+            person={person}
+            adjust={adjust}
+            photoFailed={failed}
+            onPhotoError={() => {
+              setFailedSrc(person.photoUrl || '');
+              onPhotoFailed?.();
+            }}
+          />
+        </div>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-white/40" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BadgeThumb({
+  person,
+  adjust,
+  busy,
+  disabled,
+  onAdjust,
+  onPdf,
+}: {
+  person: BadgePerson;
+  adjust: BadgeAdjust;
+  busy: boolean;
+  disabled: boolean;
+  onAdjust: () => void;
+  onPdf: () => void;
+}) {
+  const [photoFailed, setPhotoFailed] = useState(false);
+  return (
+    <article className="z-list-card overflow-hidden p-2.5">
+      <div className="relative overflow-hidden rounded-[1rem]">
+        <ScaledBadge person={person} adjust={adjust} lazy onPhotoFailed={() => setPhotoFailed(true)} />
+        {!person.photoUrl || photoFailed ? (
+          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/75 px-2 py-1 text-[10px] font-medium text-amber-300">
+            <ImageOff className="h-3 w-3" /> Fotoğraf yok
+          </span>
+        ) : null}
+      </div>
+      <div className="px-1.5 pb-1 pt-3">
+        <p className="truncate text-[13px] font-medium text-white">{person.displayName}</p>
+        <p className="mt-0.5 truncate text-[11px] text-[#86868B]">{person.title}</p>
+        <div className="mt-3 flex gap-2">
+          <button
+            type="button"
+            onClick={onPdf}
+            disabled={disabled}
+            className="z-btn-ghost inline-flex flex-1 items-center justify-center gap-1.5 px-2 py-2 text-[12px] disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            PDF
+          </button>
+          <button
+            type="button"
+            onClick={onAdjust}
+            className="z-btn-ghost inline-flex flex-1 items-center justify-center gap-1.5 px-2 py-2 text-[12px]"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" /> Ayarla
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function AdjustSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (v: number) => string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="mt-5 block">
+      <span className="flex justify-between text-[12px] text-[#86868B]">
+        <span>{label}</span>
+        <span className="tabular-nums text-white">{format(value)}</span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-2 w-full accent-white"
+      />
+    </label>
+  );
+}
+
+function readStoredAdjustments(): Record<string, BadgeAdjust> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(ADJUST_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, BadgeAdjust>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function BadgeCardStudio() {
   const [people, setPeople] = useState<BadgePerson[]>([]);
   const [photoSlugs, setPhotoSlugs] = useState<string[]>([]);
@@ -676,6 +954,23 @@ export default function BadgeCardStudio() {
   const [isBadgeCardVisible, setIsBadgeCardVisible] = useState(false);
   const [exportPerson, setExportPerson] = useState<BadgePerson | null>(null);
   const [exportPhotoBroken, setExportPhotoBroken] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [adjustments, setAdjustments] = useState<Record<string, BadgeAdjust>>(readStoredAdjustments);
+  const [editing, setEditing] = useState<BadgePerson | null>(null);
+  const [draftAdjust, setDraftAdjust] = useState<BadgeAdjust>(DEFAULT_BADGE_ADJUST);
+  const [busyId, setBusyId] = useState('');
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; origin: BadgeAdjust } | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADJUST_STORAGE_KEY, JSON.stringify(adjustments));
+    } catch {
+      /* kota dolu olabilir */
+    }
+  }, [adjustments]);
+
+  const adjustFor = (id: string) => adjustments[id] || DEFAULT_BADGE_ADJUST;
 
   const previewFrameRef = useRef<HTMLDivElement>(null);
   const exportCanvasRef = useRef<HTMLDivElement>(null);
@@ -700,7 +995,7 @@ export default function BadgeCardStudio() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -827,6 +1122,63 @@ export default function BadgeCardStudio() {
     setShowSelectedOnly(false);
   };
 
+  const reloadPeople = () => {
+    opaqueBoundsCache.clear();
+    setBrokenPhoto('');
+    setReloadToken((value) => value + 1);
+  };
+
+  const commitAdjust = (id: string, adjust: BadgeAdjust) =>
+    setAdjustments((current) => {
+      const next = { ...current };
+      if (isDefaultBadgeAdjust(adjust)) delete next[id];
+      else next[id] = adjust;
+      return next;
+    });
+
+  const openEditor = (person: BadgePerson) => {
+    setDraftAdjust(adjustFor(person.id));
+    setEditing(person);
+  };
+
+  const closeEditor = () => {
+    if (editing) commitAdjust(editing.id, draftAdjust);
+    setEditing(null);
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: draftAdjust,
+    };
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const ratio = BADGE_CARD.widthPx / Math.max(1, event.currentTarget.getBoundingClientRect().width);
+    setDraftAdjust({
+      ...drag.origin,
+      dx: clampOffset(drag.origin.dx + (event.clientX - drag.startX) * ratio),
+      dy: clampOffset(drag.origin.dy + (event.clientY - drag.startY) * ratio),
+    });
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+  };
+
+  const pastePeople = useMemo(
+    () => people.map((person) => ({ key: person.id, name: person.rawName, displayName: person.displayName })),
+    [people]
+  );
+
+  const applyPastedList = (ids: string[], mode: 'add' | 'replace') =>
+    setSelectedIds((current) => (mode === 'replace' ? ids : Array.from(new Set([...current, ...ids]))));
+
   const capturePerson = async (person: BadgePerson): Promise<Blob> => {
     flushSync(() => {
       setExportPerson(person);
@@ -836,8 +1188,7 @@ export default function BadgeCardStudio() {
     await waitForPaint();
     const node = exportCanvasRef.current;
     if (!node) throw new Error('Yaka kartı tuvali bulunamadı');
-    const fitDeadline = Date.now() + 8000;
-    while (Date.now() < fitDeadline) {
+    for (let waited = 0; waited < 8000; waited += 40) {
       const fit = node
         .querySelector('[data-photo-fit]')
         ?.getAttribute('data-photo-fit');
@@ -878,9 +1229,15 @@ export default function BadgeCardStudio() {
     }
   };
 
-  const downloadPdf = async () => {
+  const downloadPdf = async (only?: BadgePerson) => {
     if (exporting) return;
-    const targets = selectedPeople.length ? selectedPeople : previewPerson ? [previewPerson] : [];
+    const targets = only
+      ? [only]
+      : selectedPeople.length
+        ? selectedPeople
+        : previewPerson
+          ? [previewPerson]
+          : [];
     if (!targets.length) {
       window.alert('Önce en az bir kullanıcı seçin.');
       return;
@@ -928,7 +1285,13 @@ export default function BadgeCardStudio() {
       flushSync(() => setExportPerson(null));
       setExporting(false);
       setProgress(null);
+      setBusyId('');
     }
+  };
+
+  const downloadOne = (person: BadgePerson) => {
+    setBusyId(person.id);
+    void downloadPdf(person);
   };
 
   const filteredAllSelected =
@@ -937,8 +1300,8 @@ export default function BadgeCardStudio() {
 
   return (
     <div className="panel-enter w-full">
-      <div className="mb-8 lg:mb-10">
-        <p className="mb-2 text-[12px] font-medium uppercase tracking-[0.16em] text-[#86868B]">
+      <div className="mb-10 lg:mb-14">
+        <p className="mb-2 z-page-kicker">
           Zebra Studio
         </p>
         <h1 className="text-2xl font-medium tracking-tight text-white sm:text-3xl">
@@ -951,7 +1314,7 @@ export default function BadgeCardStudio() {
       </div>
 
       <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start xl:grid-cols-[minmax(0,1fr)_400px]">
-        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl sm:p-5">
+        <section className="z-card p-4 backdrop-blur-xl sm:p-5">
           <div className="mb-4 flex flex-wrap items-center gap-2">
             {ROLE_FILTERS.map((filter) => (
               <button
@@ -975,7 +1338,7 @@ export default function BadgeCardStudio() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="İsim veya unvan ara"
-              className="h-11 w-full rounded-xl border border-white/10 bg-black/30 pl-10 pr-3 text-[14px] text-white outline-none placeholder:text-[#636366]"
+              className="z-field h-11 pl-10 pr-3 text-[14px]"
             />
           </div>
 
@@ -987,6 +1350,14 @@ export default function BadgeCardStudio() {
                 className="font-medium text-[#AEAEB2] hover:text-white"
               >
                 {filteredAllSelected ? 'Görünenleri kaldır' : 'Görünenlerin tümünü seç'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPasteOpen(true)}
+                disabled={loading}
+                className="inline-flex items-center gap-1 font-medium text-[#AEAEB2] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ListChecks className="h-3.5 w-3.5" /> Listeden seç
               </button>
               <button
                 type="button"
@@ -1009,7 +1380,15 @@ export default function BadgeCardStudio() {
                 {showSelectedOnly ? 'Tümünü göster' : 'Seçilenleri göster'}
               </button>
             </div>
-            <span className="shrink-0">
+            <span className="inline-flex shrink-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={reloadPeople}
+                disabled={loading}
+                className="inline-flex items-center gap-1 font-medium text-[#AEAEB2] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Listeyi yenile
+              </button>
               {selectedIds.length} seçili · {displayedPeople.length} kayıt
             </span>
           </div>
@@ -1075,7 +1454,7 @@ export default function BadgeCardStudio() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 backdrop-blur-xl sm:p-5 lg:sticky lg:top-6">
+        <section className="z-card p-4 backdrop-blur-xl sm:p-5 lg:sticky lg:top-6">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-[12px] font-medium uppercase tracking-wide text-[#AEAEB2]">
@@ -1104,6 +1483,7 @@ export default function BadgeCardStudio() {
               >
                 <BadgeFace
                   person={isBadgeCardVisible ? previewPerson : null}
+                  adjust={previewPerson ? adjustFor(previewPerson.id) : DEFAULT_BADGE_ADJUST}
                   photoFailed={
                     Boolean(previewPerson?.photoUrl) &&
                     brokenPhoto === previewPerson?.photoUrl
@@ -1120,7 +1500,7 @@ export default function BadgeCardStudio() {
             type="button"
             disabled={exporting || (!selectedPeople.length && !previewPerson)}
             onClick={() => void downloadPdf()}
-            className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full bg-white text-[14px] font-medium text-black hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="z-btn-primary mt-4 inline-flex h-12 w-full items-center justify-center gap-2 text-[14px] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {exporting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1136,6 +1516,98 @@ export default function BadgeCardStudio() {
         </section>
       </div>
 
+      {selectedPeople.length ? (
+        <section className="mt-10">
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div>
+              <p className="z-page-kicker">Seçilen yaka kartları</p>
+              <p className="mt-2 text-[15px] text-white">{selectedPeople.length} kart</p>
+            </div>
+            <p className="text-[12px] text-[#86868B]">
+              Fotoğrafın yerini ve boyutunu kişi bazında &quot;Ayarla&quot; ile değiştirin.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+            {selectedPeople.map((person) => (
+              <BadgeThumb
+                key={`${person.id}-${person.photoUrl}`}
+                person={person}
+                adjust={adjustFor(person.id)}
+                busy={busyId === person.id}
+                disabled={exporting}
+                onAdjust={() => openEditor(person)}
+                onPdf={() => downloadOne(person)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {editing && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--z-scrim)] p-4 backdrop-blur-md"
+              onClick={closeEditor}
+            >
+              <div
+                className="z-modal zebra-sheet-enter flex max-h-[94vh] w-full max-w-3xl flex-col gap-6 overflow-y-auto p-5 sm:p-7 md:grid md:h-[94vh] md:grid-cols-[minmax(0,1fr)_280px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div
+                  className="relative mx-auto w-full max-w-[calc(84vh*0.64)] shrink-0 cursor-grab touch-none select-none overflow-hidden rounded-2xl active:cursor-grabbing md:self-center"
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
+                >
+                  <ScaledBadge person={editing} adjust={draftAdjust} />
+                </div>
+                <div className="flex flex-col md:-mr-3 md:min-h-0 md:overflow-y-auto md:overscroll-contain md:pr-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="z-page-kicker">Yaka kartı</p>
+                      <p className="mt-2 text-[17px] font-medium text-white">{editing.displayName}</p>
+                      <p className="mt-1 text-[12px] text-[#86868B]">{editing.title}</p>
+                    </div>
+                    <button type="button" onClick={closeEditor} className="z-btn-icon h-9 w-9" aria-label="Kapat">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="mt-4 text-[12px] leading-relaxed text-[#86868B]">
+                    Fotoğrafı önizlemede sürükleyerek kaydırın. Ayar yalnızca bu kişi için geçerlidir.
+                  </p>
+                  <AdjustSlider label="Boyut" value={draftAdjust.scale} min={0.6} max={1.6} step={0.01} format={(v) => `%${Math.round(v * 100)}`} onChange={(v) => setDraftAdjust((c) => ({ ...c, scale: v }))} />
+                  <AdjustSlider label="Yatay" value={draftAdjust.dx} min={-OFFSET_LIMIT} max={OFFSET_LIMIT} step={1} format={(v) => `${v}px`} onChange={(v) => setDraftAdjust((c) => ({ ...c, dx: v }))} />
+                  <AdjustSlider label="Dikey" value={draftAdjust.dy} min={-OFFSET_LIMIT} max={OFFSET_LIMIT} step={1} format={(v) => `${v}px`} onChange={(v) => setDraftAdjust((c) => ({ ...c, dy: v }))} />
+                  <p className="mt-7 text-[13px] font-medium text-white">Renk</p>
+                  <AdjustSlider label="Kırmızılık azalt" value={draftAdjust.red ?? 0} min={0} max={100} step={1} format={(v) => `${v}`} onChange={(v) => setDraftAdjust((c) => ({ ...c, red: v }))} />
+                  <div className="mt-auto flex flex-col gap-2 pt-8">
+                    <button
+                      type="button"
+                      onClick={() => setDraftAdjust(DEFAULT_BADGE_ADJUST)}
+                      className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Varsayılana dön
+                    </button>
+                    <button
+                      type="button"
+                      disabled={exporting}
+                      onClick={() => {
+                        commitAdjust(editing.id, draftAdjust);
+                        downloadOne(editing);
+                      }}
+                      className="z-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-50"
+                    >
+                      {busyId === editing.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
       <div
         aria-hidden
         className="pointer-events-none fixed left-[-100000px] top-0"
@@ -1143,11 +1615,22 @@ export default function BadgeCardStudio() {
         <div ref={exportCanvasRef}>
           <BadgeFace
             person={exportPerson}
+            adjust={exportPerson ? adjustFor(exportPerson.id) : DEFAULT_BADGE_ADJUST}
             photoFailed={exportPhotoBroken}
             onPhotoError={() => setExportPhotoBroken(true)}
           />
         </div>
       </div>
+
+      {pasteOpen ? (
+        <PasteListModal
+          people={pastePeople}
+          storageKey={PASTE_LIST_STORAGE_KEY}
+          kicker="Yaka kartı"
+          onApply={applyPastedList}
+          onClose={() => setPasteOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

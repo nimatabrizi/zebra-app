@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { studioFontVariables } from "./fonts";
+import { ThemeProvider } from "../components/ThemeProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,9 +22,25 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#070708" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f3f5" },
+  ],
+  colorScheme: "dark light",
 };
+
+const themeBootScript = `
+(function(){
+  try {
+    var t = localStorage.getItem('zebra-theme');
+    if (t !== 'light' && t !== 'dark') t = 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    document.documentElement.style.colorScheme = t;
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+`;
 
 export default function RootLayout({
   children,
@@ -33,9 +50,16 @@ export default function RootLayout({
   return (
     <html
       lang="tr"
+      data-theme="dark"
+      suppressHydrationWarning
       className={`${studioFontVariables} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+      </head>
+      <body className="min-h-full flex flex-col bg-[var(--z-bg)] text-[var(--z-fg)]">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

@@ -32,6 +32,7 @@ import {
   canCreateManualAppointment,
   manualEntryDisplayName,
   isUserAdmin,
+  isNimaTabrizi,
   isPilotRole,
   isPilotAccount,
   isUuid,
@@ -78,12 +79,17 @@ import GlobalCalendar from '../components/global-calendar/GlobalCalendar';
 import DayEventsModal from '../components/global-calendar/DayEventsModal';
 import OverviewDashboard from '../components/OverviewDashboard';
 import SidebarNav from '../components/SidebarNav';
+import MobileBottomNav from '../components/MobileBottomNav';
+import ThemeToggle from '../components/ThemeToggle';
 import SmartSchedulingAssistant from '../components/SmartSchedulingAssistant';
 import WeatherBadge from '../components/WeatherBadge';
 import ZebraStudio from '../components/ZebraStudio';
 import SoldRentedStudio from '../components/SoldRentedStudio';
 import BatchProductionStudio from '../components/BatchProductionStudio';
 import BadgeCardStudio from '../components/BadgeCardStudio';
+import RankingVisualsStudio from '../components/RankingVisualsStudio';
+import BirthdayStudio from '../components/BirthdayStudio';
+import EntryVisualsStudio from '../components/EntryVisualsStudio';
 import UserManagement from '../components/UserManagement';
 import {
   buildConsultantNav,
@@ -2609,20 +2615,20 @@ const [username, setUsername] = useState('');
   // --- APPLE HIG UI RENDERERS ---
   const getStatusBadge = (status) => {
     const baseClass =
-      'px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-medium border inline-flex items-center max-w-full whitespace-nowrap shadow-sm';
+      'px-3 py-1.5 rounded-full text-[10px] sm:text-[11px] font-medium border inline-flex items-center max-w-full whitespace-nowrap backdrop-blur-md shadow-[var(--z-shadow-soft)]';
     const n = normalizeAppointmentStatus(status);
     if (n === 'pilot_bekleniyor' || n === 'danisman_onayi_bekliyor') {
       const label = APPOINTMENT_STATUS_LABELS[n];
       return (
-        <span className={`${baseClass} bg-[#1C1C1E] text-[#E5B540] border-[#E5B540]/20`}>
-          <span className="w-1.5 h-1.5 rounded-full bg-[#E5B540] mr-1.5 shrink-0" />
+        <span className={`${baseClass} bg-[var(--z-accent-soft)] text-[var(--z-accent)] border-[var(--z-accent)]/25`}>
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--z-accent)] mr-1.5 shrink-0" />
           {label}
         </span>
       );
     }
     if (n === 'kesinlesti') {
       return (
-        <span className={`${baseClass} bg-[#1C1C1E] text-[#34C759] border-[#34C759]/20`}>
+        <span className={`${baseClass} bg-[#34C759]/12 text-[#34C759] border-[#34C759]/25`}>
           <span className="w-1.5 h-1.5 rounded-full bg-[#34C759] mr-1.5 shrink-0" />
           Kesinleşti
         </span>
@@ -2630,7 +2636,7 @@ const [username, setUsername] = useState('');
     }
     if (n === 'iptal') {
       return (
-        <span className={`${baseClass} bg-[#1C1C1E] text-[#FF3B30] border-[#FF3B30]/20`}>
+        <span className={`${baseClass} bg-[#FF3B30]/12 text-[#FF3B30] border-[#FF3B30]/25`}>
           <span className="w-1.5 h-1.5 rounded-full bg-[#FF3B30] mr-1.5 shrink-0" />
           İptal
         </span>
@@ -2647,16 +2653,16 @@ const [username, setUsername] = useState('');
     return (
       <div
         key={app.id}
-        className={`w-full rounded-2xl transition-all duration-300 flex flex-col overflow-hidden shadow-sm relative
+        className={`z-list-card w-full flex flex-col overflow-hidden relative
           ${isRejected
-            ? 'bg-[#1A1212]/90 border border-[#FF3B30]/25 hover:border-[#FF3B30]/40 opacity-80'
+            ? 'border-[#FF3B30]/35 opacity-90'
             : isConfirmed
-              ? 'bg-[#161616] border border-white/5 hover:border-white/10 hover:bg-[#1A1A1A]'
-              : 'bg-[#161616] border border-[#E5B540]/15 hover:border-[#E5B540]/25 hover:bg-[#1A1A1A]'
+              ? ''
+              : 'border-[var(--z-accent)]/30'
           }`}
       >
         <div 
-          className={`flex flex-col gap-4 p-4 sm:p-6 sm:flex-row sm:justify-between sm:items-center transition-colors ${isRejected ? 'cursor-pointer active:scale-[0.99]' : ''}`}
+          className={`flex flex-col gap-5 p-5 sm:p-7 sm:flex-row sm:justify-between sm:items-center transition-colors ${isRejected ? 'cursor-pointer active:scale-[0.99]' : ''}`}
           onClick={() => isRejected && toggleRow(app.id)}
         >
           <div className="flex items-start sm:items-center gap-3 sm:gap-6 min-w-0 flex-1">
@@ -2731,7 +2737,7 @@ const [username, setUsername] = useState('');
                   e.stopPropagation();
                   openEditModal(app);
                 }}
-                className="size-8 shrink-0 aspect-square flex items-center justify-center rounded-full bg-[#1C1C1E] border border-white/5 text-[#86868B] hover:text-white hover:bg-white/10 hover:border-white/10 transition-all duration-300 cursor-pointer active:scale-95 self-center"
+                className="z-btn-icon size-8 shrink-0 cursor-pointer self-center"
               >
                 <Pencil className="w-3.5 h-3.5" strokeWidth={2} />
               </button>
@@ -2800,8 +2806,8 @@ const [username, setUsername] = useState('');
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[#1C1C1E] border-t-white rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-[var(--z-bg)] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[var(--z-elevated)] border-t-[var(--z-fg)] rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -2809,21 +2815,27 @@ const [username, setUsername] = useState('');
   // --- LOGIN SCREEN (Apple Premium Authentication) ---
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 font-sans antialiased bg-[#0A0A0A]">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#1C1C1E]/30 via-[#0A0A0A] to-[#0A0A0A] pointer-events-none"></div>
-        
-        <div className="w-full max-w-[420px] bg-[#111111]/80 backdrop-blur-3xl border border-white/5 rounded-2xl p-10 shadow-[0_0_80px_-20px_rgba(0,0,0,0.8)] relative z-10">
+      <div className="min-h-screen flex items-center justify-center p-6 font-sans antialiased bg-[var(--z-bg)] relative overflow-hidden">
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: 'var(--z-login-glow)' }}
+        />
+        <div className="absolute top-5 right-5 z-20">
+          <ThemeToggle />
+        </div>
+
+        <div className="w-full max-w-[420px] bg-[var(--z-surface-glass)] backdrop-blur-3xl border border-[var(--z-border)] rounded-[28px] p-10 shadow-[var(--z-shadow-float)] relative z-10 zebra-sheet-enter">
           <div className="flex flex-col items-center justify-center mb-12">
             <Image
               src="/icon-512x512.png"
               alt="Zebra 360"
               width={64}
               height={64}
-              className="w-16 h-16 mb-6 rounded-xl object-contain"
+              className="w-16 h-16 mb-6 rounded-2xl object-contain shadow-[var(--z-shadow-soft)]"
               priority
             />
-            <h1 className="text-2xl font-medium tracking-tight text-white mb-2">Zebra 360</h1>
-            <p className="text-[14px] text-[#86868B]">Kurumsal hesaba giriş yapın</p>
+            <h1 className="text-2xl font-medium tracking-tight text-[var(--z-fg)] mb-2">Zebra 360</h1>
+            <p className="text-[14px] text-[var(--z-muted)]">Kurumsal hesaba giriş yapın</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -2834,7 +2846,7 @@ const [username, setUsername] = useState('');
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Tam İsim"
                 autoComplete="username"
-                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-[14px]"
+                className="z-input w-full rounded-xl px-5 h-[56px] text-[14px]"
                 required
               />
             </div>
@@ -2846,7 +2858,7 @@ const [username, setUsername] = useState('');
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Telefon Numarası"
                 autoComplete="current-password"
-                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#86868B] rounded-xl px-5 h-[56px] focus:outline-none focus:border-white/20 transition-all duration-300 ease-zebra text-[14px]"
+                className="z-input w-full rounded-xl px-5 h-[56px] text-[14px]"
                 required
               />
             </div>
@@ -2855,18 +2867,18 @@ const [username, setUsername] = useState('');
               <label className="flex items-center space-x-3 cursor-pointer group active:scale-[0.98] transition-transform">
                 <div className="relative flex items-center">
                   <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="peer sr-only cursor-pointer" />
-                  <div className="w-5 h-5 bg-[#1C1C1E] border border-white/10 rounded-md peer-checked:bg-white peer-checked:border-white transition-all duration-300 ease-zebra flex items-center justify-center">
-                    {rememberMe && <CheckCircle2 className="w-3.5 h-3.5 text-black" strokeWidth={3} />}
+                  <div className="w-5 h-5 bg-[var(--z-elevated)] border border-[var(--z-border-strong)] rounded-md peer-checked:bg-[var(--z-inverse)] peer-checked:border-[var(--z-inverse)] transition-all duration-300 ease-zebra flex items-center justify-center">
+                    {rememberMe && <CheckCircle2 className="w-3.5 h-3.5 text-[var(--z-inverse-fg)]" strokeWidth={3} />}
                   </div>
                 </div>
-                <span className="text-[13px] text-[#86868B] group-hover:text-white transition-colors duration-300 ease-zebra">Beni hatırla</span>
+                <span className="text-[13px] text-[var(--z-muted)] group-hover:text-[var(--z-fg)] transition-colors duration-300 ease-zebra">Beni hatırla</span>
               </label>
             </div>
 
             <div className="pt-6">
               <button 
                 type="submit" 
-                className="w-full h-[56px] bg-white text-black text-[15px] font-medium rounded-xl hover:bg-gray-200 active:scale-[0.98] transition-all duration-300 ease-zebra flex items-center justify-center cursor-pointer"
+                className="z-btn-primary w-full h-[56px] text-[15px] font-medium rounded-xl flex items-center justify-center cursor-pointer"
               >
                 Giriş Yap
               </button>
@@ -3020,14 +3032,14 @@ const [username, setUsername] = useState('');
   };
 
   return (
-    <div className="min-h-screen flex font-sans antialiased text-[#EDEDED] overflow-hidden selection:bg-white/20 selection:text-white bg-[#0A0A0A]">
+    <div className="min-h-screen flex font-sans antialiased text-[var(--z-fg)] overflow-hidden selection:bg-white/20 selection:text-white bg-[var(--z-bg)]">
       
       {/* Toast Notification */}
-      <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[110] transition-all duration-500 ease-zebra pointer-events-none
+      <div className={`fixed bottom-24 lg:bottom-10 left-1/2 -translate-x-1/2 z-[110] transition-all duration-500 ease-zebra pointer-events-none
         ${toastMessage ? 'opacity-100 transform translate-y-0 scale-100' : 'opacity-0 transform translate-y-8 scale-95'}
       `}>
-        <div className="bg-[#1C1C1E]/90 backdrop-blur-xl border border-white/10 text-white px-6 py-4 rounded-full shadow-2xl flex items-center space-x-3">
-          <CheckCircle2 className="w-5 h-5 text-white" />
+        <div className="bg-[var(--z-surface-glass)] backdrop-blur-xl border border-[var(--z-border-strong)] text-[var(--z-fg)] px-6 py-4 rounded-full shadow-[var(--z-shadow-float)] flex items-center space-x-3">
+          <CheckCircle2 className="w-5 h-5 text-[var(--z-fg)]" />
           <span className="text-[14px] font-medium">{toastMessage}</span>
         </div>
       </div>
@@ -3035,7 +3047,7 @@ const [username, setUsername] = useState('');
       {/* Success Modal */}
       {showSuccessModal && (
         <div className="fixed inset-0 bg-[#0A0A0A]/60 backdrop-blur-lg z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-[#111111]/90 backdrop-blur-2xl border border-white/10 rounded-2xl p-10 max-w-sm w-full text-center shadow-2xl animate-in zoom-in-95 duration-500 ease-zebra">
+          <div className="z-modal rounded-[1.75rem] p-10 max-w-sm w-full text-center animate-in zoom-in-95 duration-500 ease-zebra">
             <div className="w-20 h-20 bg-[#1C1C1E] border border-white/5 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner relative">
               <CheckCircle2 className="w-10 h-10 text-white relative z-10" strokeWidth={2.5} />
             </div>
@@ -3048,7 +3060,7 @@ const [username, setUsername] = useState('');
       {/* Danışman kesinleştirme başarı modalı → Genel Bakış */}
       {confirmSuccessInfo && (
         <div className="fixed inset-0 bg-[#0A0A0A]/70 backdrop-blur-xl z-[100] flex items-center justify-center p-4">
-          <div className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-2xl p-8 sm:p-10 max-w-md w-full text-center shadow-2xl">
+          <div className="z-modal rounded-[1.75rem] p-8 sm:p-10 max-w-md w-full text-center">
             <div className="w-16 h-16 bg-[#34C759]/10 border border-[#34C759]/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <CheckCircle2 className="w-8 h-8 text-[#34C759]" strokeWidth={2.5} />
             </div>
@@ -3105,7 +3117,7 @@ const [username, setUsername] = useState('');
           onClick={closeEditModal}
         >
           <div
-            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
+            className="z-modal rounded-t-[1.75rem] sm:rounded-[1.75rem] w-full max-w-lg animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-white/5 shrink-0">
@@ -3117,7 +3129,7 @@ const [username, setUsername] = useState('');
                 type="button"
                 onClick={closeEditModal}
                 disabled={isEditSaving}
-                className="w-8 h-8 flex items-center justify-center text-[#86868B] hover:text-white bg-[#1C1C1E] rounded-full transition-colors active:scale-95 cursor-pointer disabled:opacity-40"
+                className="z-btn-icon cursor-pointer disabled:opacity-40"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -3129,13 +3141,13 @@ const [username, setUsername] = useState('');
                   <>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İl</label>
+                        <label className="block z-label ml-0.5">İl</label>
                         <div className="relative">
                           <select
                             required
                             value={editForm.il}
                             onChange={(e) => { handleEditFormChange('il', e.target.value); handleEditFormChange('ilce', ''); }}
-                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                            className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                           >
                             {TURKEY_ILLER.map((il) => (
                               <option key={il} value={il}>{il}</option>
@@ -3145,13 +3157,13 @@ const [username, setUsername] = useState('');
                         </div>
                       </div>
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İlçe</label>
+                        <label className="block z-label ml-0.5">İlçe</label>
                         <div className="relative">
                           <select
                             required
                             value={editForm.ilce}
                             onChange={(e) => handleEditFormChange('ilce', e.target.value)}
-                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                            className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                           >
                             <option value="">İlçe seçin</option>
                             {editIlceler.map((ilce) => (
@@ -3162,28 +3174,28 @@ const [username, setUsername] = useState('');
                         </div>
                       </div>
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Semt</label>
+                        <label className="block z-label ml-0.5">Semt</label>
                         <input
                           type="text"
                           value={editForm.semt}
                           onChange={(e) => handleEditFormChange('semt', e.target.value)}
-                          className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px]"
+                          className="z-field px-4 h-12 text-[14px]"
                           placeholder="Opsiyonel"
                         />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Danışman Notu</label>
+                      <label className="block z-label ml-0.5">Danışman Notu</label>
                       <textarea
                         value={editForm.danismanNotu}
                         onChange={(e) => handleEditFormChange('danismanNotu', e.target.value)}
                         rows={3}
-                        className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                        className="z-field p-4 resize-none text-[14px]"
                         placeholder="Notlar"
                       />
                     </div>
                     <div>
-                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Pilot</label>
+                      <label className="block z-label ml-0.5">Pilot</label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {PILOT_OPTIONS.map((pilot) => (
                           <button
@@ -3229,11 +3241,11 @@ const [username, setUsername] = useState('');
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="relative sm:col-span-2">
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Tarih</label>
+                        <label className="block z-label ml-0.5">Tarih</label>
                         <button
                           type="button"
                           onClick={openEditCalendar}
-                          className="w-full bg-[#1C1C1E] border border-white/5 text-left text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 hover:border-white/15 transition-all text-[14px] cursor-pointer flex items-center justify-between active:scale-[0.99]"
+                          className="z-field px-4 h-12 text-[14px] cursor-pointer flex items-center justify-between text-left active:scale-[0.99]"
                         >
                           <span className={editForm.tarih ? 'text-white' : 'text-[#666666]'}>
                             {editForm.tarih ? toDisplayDate(editForm.tarih) : 'Tarih seçin'}
@@ -3242,7 +3254,7 @@ const [username, setUsername] = useState('');
                         </button>
                       </div>
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Başlangıç</label>
+                        <label className="block z-label ml-0.5">Başlangıç</label>
                         <div className="relative">
                           <select
                             value={editStartHour}
@@ -3252,7 +3264,7 @@ const [username, setUsername] = useState('');
                               setEditEndHour('');
                               handleEditFormChange('saatBlok', '');
                             }}
-                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                            className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                           >
                             <option value="">Başlangıç seçin</option>
                             {OFFER_HOUR_OPTIONS.map((h) => (
@@ -3263,7 +3275,7 @@ const [username, setUsername] = useState('');
                         </div>
                       </div>
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Bitiş</label>
+                        <label className="block z-label ml-0.5">Bitiş</label>
                         <div className="relative">
                           <select
                             value={editEndHour}
@@ -3295,7 +3307,7 @@ const [username, setUsername] = useState('');
                               }
                             }}
                             disabled={!editStartHour}
-                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <option value="">
                               {editStartHour ? 'Bitiş seçin' : 'Önce başlangıç seçin'}
@@ -3355,12 +3367,12 @@ const [username, setUsername] = useState('');
 
                     {(canApproveAppointments(role)) && (
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Durum</label>
+                        <label className="block z-label ml-0.5">Durum</label>
                         <div className="relative">
                           <select
                             value={editForm.status}
                             onChange={(e) => handleEditFormChange('status', e.target.value)}
-                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
+                            className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                           >
                             <option value="pilot_bekleniyor">Pilot Bekleniyor</option>
                             <option value="danisman_onayi_bekliyor">Danışman Kesinleştirmesi Bekleniyor (Teklif)</option>
@@ -3378,25 +3390,25 @@ const [username, setUsername] = useState('');
 
                     {editForm.status === 'iptal' && (
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İptal Sebebi</label>
-                        <textarea value={editForm.reddedilmeSebebi} onChange={(e) => handleEditFormChange('reddedilmeSebebi', e.target.value)} rows={2} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]" />
+                        <label className="block z-label ml-0.5">İptal Sebebi</label>
+                        <textarea value={editForm.reddedilmeSebebi} onChange={(e) => handleEditFormChange('reddedilmeSebebi', e.target.value)} rows={2} className="z-field p-4 resize-none text-[14px]" />
                       </div>
                     )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İl</label>
+                        <label className="block z-label ml-0.5">İl</label>
                         <div className="relative">
-                          <select value={editForm.il} onChange={(e) => { handleEditFormChange('il', e.target.value); handleEditFormChange('ilce', ''); }} className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer">
+                          <select value={editForm.il} onChange={(e) => { handleEditFormChange('il', e.target.value); handleEditFormChange('ilce', ''); }} className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer">
                             {TURKEY_ILLER.map((il) => (<option key={il} value={il}>{il}</option>))}
                           </select>
                           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868B] pointer-events-none" />
                         </div>
                       </div>
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İlçe</label>
+                        <label className="block z-label ml-0.5">İlçe</label>
                         <div className="relative">
-                          <select value={editForm.ilce} onChange={(e) => handleEditFormChange('ilce', e.target.value)} className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer">
+                          <select value={editForm.ilce} onChange={(e) => handleEditFormChange('ilce', e.target.value)} className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer">
                             <option value="">İlçe seçin</option>
                             {editIlceler.map((ilce) => (<option key={ilce} value={ilce}>{ilce}</option>))}
                           </select>
@@ -3404,22 +3416,22 @@ const [username, setUsername] = useState('');
                         </div>
                       </div>
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Semt</label>
-                        <input type="text" value={editForm.semt} onChange={(e) => handleEditFormChange('semt', e.target.value)} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px]" placeholder="Opsiyonel" />
+                        <label className="block z-label ml-0.5">Semt</label>
+                        <input type="text" value={editForm.semt} onChange={(e) => handleEditFormChange('semt', e.target.value)} className="z-field px-4 h-12 text-[14px]" placeholder="Opsiyonel" />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Portföy Türü</label>
-                      <input type="text" value={editForm.portfoyTuru} onChange={(e) => handleEditFormChange('portfoyTuru', e.target.value)} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px]" />
+                      <label className="block z-label ml-0.5">Portföy Türü</label>
+                      <input type="text" value={editForm.portfoyTuru} onChange={(e) => handleEditFormChange('portfoyTuru', e.target.value)} className="z-field px-4 h-12 text-[14px]" />
                     </div>
                     <div>
-                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Açıklama</label>
-                      <textarea value={editForm.aciklama} onChange={(e) => handleEditFormChange('aciklama', e.target.value)} rows={3} className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]" />
+                      <label className="block z-label ml-0.5">Açıklama</label>
+                      <textarea value={editForm.aciklama} onChange={(e) => handleEditFormChange('aciklama', e.target.value)} rows={3} className="z-field p-4 resize-none text-[14px]" />
                     </div>
 
                     <div>
-                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                      <label className="block z-label ml-0.5">
                         Randevu Notu
                       </label>
                       <textarea
@@ -3428,14 +3440,14 @@ const [username, setUsername] = useState('');
                           handleEditFormChange('danismanNotu', e.target.value)
                         }
                         rows={3}
-                        className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]"
+                        className="z-field p-4 resize-none text-[14px]"
                         placeholder="Pilot ve danışmanın görebileceği not"
                       />
                     </div>
 
                     {(role === 'broker' || role === 'danisman') && (
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Pilot</label>
+                        <label className="block z-label ml-0.5">Pilot</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {PILOT_OPTIONS.map((pilot) => (
                             <button key={pilot} type="button" onClick={() => handleEditFormChange('pilot', pilot)} className={`w-full flex items-center p-3.5 rounded-xl text-left cursor-pointer ${editForm.pilot === pilot ? 'bg-white text-black' : 'bg-[#1C1C1E] text-white'}`}>
@@ -3454,14 +3466,14 @@ const [username, setUsername] = useState('');
                   type="button"
                   onClick={closeEditModal}
                   disabled={isEditSaving}
-                  className="flex-1 h-12 rounded-xl bg-[#1C1C1E] text-white text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40"
+                  className="z-btn-ghost flex-1 h-12 text-[14px] cursor-pointer disabled:opacity-40"
                 >
                   İptal
                 </button>
                 <button
                   type="submit"
                   disabled={isEditSaving || editRangeConflicts.confirmed.length > 0}
-                  className="flex-1 h-12 rounded-xl bg-white text-black text-[14px] font-medium hover:bg-gray-200 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 flex items-center justify-center"
+                  className="z-btn-primary flex-1 h-12 text-[14px] cursor-pointer disabled:opacity-50 flex items-center justify-center"
                 >
                   {isEditSaving ? (
                     <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
@@ -3505,7 +3517,7 @@ const [username, setUsername] = useState('');
           onClick={closeManualModal}
         >
           <div
-            className="bg-[#111111]/95 backdrop-blur-2xl border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-2xl shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
+            className="z-modal rounded-t-[1.75rem] sm:rounded-[1.75rem] w-full max-w-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-300 ease-zebra max-h-[min(96dvh,90vh)] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-white/5 shrink-0">
@@ -3519,7 +3531,7 @@ const [username, setUsername] = useState('');
                 type="button"
                 onClick={closeManualModal}
                 disabled={isManualSaving}
-                className="w-8 h-8 flex items-center justify-center text-[#86868B] hover:text-white bg-[#1C1C1E] rounded-full transition-colors active:scale-95 cursor-pointer disabled:opacity-40"
+                className="z-btn-icon cursor-pointer disabled:opacity-40"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -3530,7 +3542,7 @@ const [username, setUsername] = useState('');
                 {/* 1) Konum — takvim hava/aynı bölge için önce */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İl</label>
+                    <label className="block z-label ml-0.5">İl</label>
                     <div className="relative">
                       <select
                         required
@@ -3540,7 +3552,7 @@ const [username, setUsername] = useState('');
                           handleManualFormChange('ilce', '');
                           handleManualFormChange('tarih', '');
                         }}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
+                        className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                       >
                         {TURKEY_ILLER.map((il) => (
                           <option key={il} value={il}>{il}</option>
@@ -3550,7 +3562,7 @@ const [username, setUsername] = useState('');
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">İlçe</label>
+                    <label className="block z-label ml-0.5">İlçe</label>
                     <div className="relative">
                       <select
                         required
@@ -3559,7 +3571,7 @@ const [username, setUsername] = useState('');
                           handleManualFormChange('ilce', e.target.value);
                           handleManualFormChange('tarih', '');
                         }}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
+                        className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                       >
                         <option value="">İlçe seçin</option>
                         {manualIlceler.map((ilce) => (
@@ -3570,12 +3582,12 @@ const [username, setUsername] = useState('');
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Semt</label>
+                    <label className="block z-label ml-0.5">Semt</label>
                     <input
                       type="text"
                       value={manualForm.semt}
                       onChange={(e) => handleManualFormChange('semt', e.target.value)}
-                      className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px]"
+                      className="z-field px-4 h-12 text-[14px]"
                       placeholder="Opsiyonel"
                     />
                   </div>
@@ -3584,13 +3596,13 @@ const [username, setUsername] = useState('');
                 {/* 2) Akıllı tarih + başlangıç/bitiş aralığı */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                    <label className="block z-label ml-0.5">
                       Tarih (Akıllı Planlama)
                     </label>
                     <button
                       type="button"
                       onClick={openManualSmartCalendar}
-                      className="w-full bg-[#1C1C1E] border border-white/5 text-left text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 hover:border-white/15 transition-all text-[14px] cursor-pointer flex items-center justify-between active:scale-[0.99]"
+                      className="z-field px-4 h-12 text-[14px] cursor-pointer flex items-center justify-between text-left active:scale-[0.99]"
                     >
                       <span className={manualForm.tarih ? 'text-white' : 'text-[#666666]'}>
                         {manualForm.tarih ? toDisplayDate(manualForm.tarih) : 'Akıllı takvimi aç'}
@@ -3604,7 +3616,7 @@ const [username, setUsername] = useState('');
                     )}
                   </div>
                   <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                    <label className="block z-label ml-0.5">
                       Başlangıç
                     </label>
                     <div className="relative">
@@ -3615,7 +3627,7 @@ const [username, setUsername] = useState('');
                           setManualStartHour(e.target.value);
                           setManualEndHour('');
                         }}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
+                        className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                       >
                         <option value="">Başlangıç seçin</option>
                         {OFFER_HOUR_OPTIONS.map((hour) => (
@@ -3628,7 +3640,7 @@ const [username, setUsername] = useState('');
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                    <label className="block z-label ml-0.5">
                       Bitiş
                     </label>
                     <div className="relative">
@@ -3637,7 +3649,7 @@ const [username, setUsername] = useState('');
                         disabled={!manualStartHour}
                         value={manualEndHour}
                         onChange={(e) => setManualEndHour(e.target.value)}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                        className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <option value="">
                           {manualStartHour
@@ -3687,38 +3699,38 @@ const [username, setUsername] = useState('');
                 )}
 
                 <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">
+                  <label className="block z-label ml-0.5">
                     Portföy bilgileri
                   </label>
                   <textarea
                     value={manualForm.portfoyTuru}
                     onChange={(e) => handleManualFormChange('portfoyTuru', e.target.value)}
                     rows={3}
-                    className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]"
+                    className="z-field p-4 resize-none text-[14px]"
                     placeholder="Örn. 3+1 satılık daire, site girişi..."
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Açıklama / Not</label>
+                  <label className="block z-label ml-0.5">Açıklama / Not</label>
                   <textarea
                     value={manualForm.aciklama}
                     onChange={(e) => handleManualFormChange('aciklama', e.target.value)}
                     rows={2}
-                    className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl p-4 resize-none text-[14px]"
+                    className="z-field p-4 resize-none text-[14px]"
                     placeholder="Opsiyonel"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Hedef Danışman</label>
+                  <label className="block z-label ml-0.5">Hedef Danışman</label>
                   {consultants.length > 0 ? (
                     <div className="relative">
                       <select
                         required
                         value={manualForm.danismanIsmi}
                         onChange={(e) => handleManualFormChange('danismanIsmi', e.target.value)}
-                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px] cursor-pointer"
+                        className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                       >
                         <option value="" disabled>Danışman seçin</option>
                         {consultants.map((name) => (
@@ -3733,14 +3745,14 @@ const [username, setUsername] = useState('');
                       required
                       value={manualForm.danismanIsmi}
                       onChange={(e) => handleManualFormChange('danismanIsmi', e.target.value)}
-                      className="w-full bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 text-[14px]"
+                      className="z-field px-4 h-12 text-[14px]"
                       placeholder="Danışman tam adı"
                     />
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-0.5">Pilot</label>
+                  <label className="block z-label ml-0.5">Pilot</label>
                   {role === 'broker' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {PILOT_OPTIONS.map((pilot) => (
@@ -3755,7 +3767,7 @@ const [username, setUsername] = useState('');
                       ))}
                     </div>
                   ) : (
-                    <div className="w-full bg-[#1C1C1E] border border-white/5 rounded-xl px-4 h-12 flex items-center text-[14px] text-[#86868B]">
+                    <div className="z-field px-4 h-12 flex items-center text-[14px] text-[var(--z-muted)]">
                       {manualForm.pilot || lockedPilotForRole()
                         ? toTitleCaseName(manualForm.pilot || lockedPilotForRole())
                         : ''}
@@ -3770,14 +3782,14 @@ const [username, setUsername] = useState('');
                   type="button"
                   onClick={closeManualModal}
                   disabled={isManualSaving}
-                  className="flex-1 h-12 rounded-xl bg-[#1C1C1E] text-white text-[14px] font-medium hover:bg-[#2C2C2E] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-40"
+                  className="z-btn-ghost flex-1 h-12 text-[14px] cursor-pointer disabled:opacity-40"
                 >
                   Vazgeç
                 </button>
                 <button
                   type="submit"
                   disabled={isManualSaving}
-                  className="flex-1 h-12 rounded-xl bg-white text-black text-[14px] font-medium hover:bg-gray-200 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 flex items-center justify-center"
+                  className="z-btn-primary flex-1 h-12 text-[14px] cursor-pointer disabled:opacity-50 flex items-center justify-center"
                 >
                   {isManualSaving ? (
                     <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
@@ -3792,22 +3804,22 @@ const [username, setUsername] = useState('');
       )}
 
       {/* Mobile Overlays */}
-      <div className={`fixed inset-0 bg-[#0A0A0A]/60 backdrop-blur-md z-40 lg:hidden transition-opacity duration-300 ease-zebra cursor-pointer ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsMobileMenuOpen(false)} />
-      <div className={`fixed inset-0 bg-[#0A0A0A]/60 backdrop-blur-md z-[60] transition-opacity duration-300 ease-zebra cursor-pointer ${isNotificationOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsNotificationOpen(false)} />
+      <div className={`fixed inset-0 bg-[var(--z-scrim)] backdrop-blur-md z-40 lg:hidden transition-opacity duration-300 ease-zebra cursor-pointer ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsMobileMenuOpen(false)} />
+      <div className={`fixed inset-0 bg-[var(--z-scrim)] backdrop-blur-md z-[60] transition-opacity duration-300 ease-zebra cursor-pointer ${isNotificationOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsNotificationOpen(false)} />
 
       {/* NOTIFICATION CENTER */}
-      <aside className={`fixed inset-y-0 right-0 w-full sm:w-[420px] bg-[#111111]/95 backdrop-blur-3xl shadow-2xl border-l border-white/5 z-[70] flex flex-col transition-transform duration-500 ease-zebra ${isNotificationOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-        <div className="h-20 flex items-center justify-between px-8 border-b border-white/5 shrink-0">
-          <h2 className="text-lg font-medium tracking-tight text-white">Bildirimler</h2>
-          <button onClick={() => setIsNotificationOpen(false)} className="w-8 h-8 flex items-center justify-center text-[#86868B] hover:text-white bg-[#1C1C1E] rounded-full transition-colors active:scale-95 cursor-pointer">
+      <aside className={`fixed inset-y-0 right-0 w-full sm:w-[420px] bg-[var(--z-surface-glass)] backdrop-blur-3xl shadow-[var(--z-shadow-float)] border-l border-[var(--z-border)] z-[70] flex flex-col transition-transform duration-500 ease-zebra ${isNotificationOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="h-20 flex items-center justify-between px-8 border-b border-[var(--z-border)] shrink-0">
+          <h2 className="text-lg font-medium tracking-tight text-[var(--z-fg)]">Bildirimler</h2>
+          <button onClick={() => setIsNotificationOpen(false)} className="w-8 h-8 flex items-center justify-center text-[var(--z-muted)] hover:text-[var(--z-fg)] bg-[var(--z-elevated)] rounded-full transition-colors active:scale-95 cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
           {userNotifications.length === 0 ? (
             <div className="text-center py-20 px-4">
-              <Bell className="w-10 h-10 text-[#333333] mx-auto mb-4" />
-              <p className="text-[15px] font-medium text-[#86868B]">Bildirim Yok</p>
+              <Bell className="w-10 h-10 text-[var(--z-muted-2)] mx-auto mb-4" />
+              <p className="text-[15px] font-medium text-[var(--z-muted)]">Bildirim Yok</p>
             </div>
           ) : (
             userNotifications.map((notif) => {
@@ -3820,16 +3832,16 @@ const [username, setUsername] = useState('');
                 onClick={() => handleNotificationClick(notif)}
                 className={`w-full text-left border rounded-2xl p-5 transition-all duration-300 cursor-pointer active:scale-[0.99]
                   ${isFirstShown
-                    ? 'bg-white text-black border-transparent shadow-lg hover:bg-neutral-100'
-                    : 'bg-[#1C1C1E] border-transparent opacity-70 hover:border-white/15 text-white'}`}
+                    ? 'bg-[var(--z-inverse)] text-[var(--z-inverse-fg)] border-transparent shadow-lg hover:opacity-95'
+                    : 'bg-[var(--z-elevated)] border-transparent opacity-70 hover:border-[var(--z-border-strong)] text-[var(--z-fg)]'}`}
               >
                 <div className="flex justify-between items-start mb-2 gap-3">
-                  <h4 className={`text-[14px] font-medium ${isFirstShown ? 'text-black' : 'text-white'}`}>
+                  <h4 className={`text-[14px] font-medium ${isFirstShown ? 'text-[var(--z-inverse-fg)]' : 'text-[var(--z-fg)]'}`}>
                     {notif.title}
                   </h4>
                   <span
                     className={`text-[11px] font-medium shrink-0 ${
-                      isFirstShown ? 'text-black/45' : 'text-[#86868B]'
+                      isFirstShown ? 'opacity-45' : 'text-[var(--z-muted)]'
                     }`}
                   >
                     {notif.created_at}
@@ -3837,7 +3849,7 @@ const [username, setUsername] = useState('');
                 </div>
                 <p
                   className={`text-[13px] leading-relaxed ${
-                    isFirstShown ? 'text-black/65' : 'text-[#86868B]'
+                    isFirstShown ? 'opacity-65' : 'text-[var(--z-muted)]'
                   }`}
                 >
                   {notif.message}
@@ -3850,7 +3862,7 @@ const [username, setUsername] = useState('');
       </aside>
 
       {/* SIDEBAR NAVIGATION */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[272px] bg-[#111111]/55 backdrop-blur-2xl border-r border-white/5 flex flex-col transition-transform duration-500 ease-zebra shrink-0 ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[280px] bg-[var(--z-surface-glass)] backdrop-blur-2xl border-r border-[var(--z-border)] flex flex-col transition-transform duration-500 ease-zebra shrink-0 ${isMobileMenuOpen ? 'translate-x-0 shadow-[var(--z-shadow-float)]' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="h-20 flex items-center px-6 shrink-0">
           <Image
             src="/icon-512x512.png"
@@ -3860,7 +3872,7 @@ const [username, setUsername] = useState('');
             className="w-8 h-8 mr-3 rounded-full object-cover shrink-0"
             priority
           />
-          <span className="text-[17px] font-medium tracking-tight text-white">Zebra 360</span>
+          <span className="text-[17px] font-medium tracking-tight text-[var(--z-fg)]">Zebra 360</span>
         </div>
 
         <SidebarNav
@@ -3871,18 +3883,22 @@ const [username, setUsername] = useState('');
           onNavigate={navigateToTab}
         />
 
-        <div className="p-4 shrink-0">
-          <div className="flex items-center justify-between bg-[#1C1C1E]/50 rounded-xl p-3 border border-white/5 transition-colors duration-300 ease-zebra hover:bg-[#1C1C1E] cursor-pointer group">
-            <div className="flex items-center">
-              <div className="w-8 h-8 bg-white/10 text-white rounded-full flex items-center justify-center text-xs font-medium">
+        <div className="p-4 shrink-0 space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--z-muted-2)]">Tema</span>
+            <ThemeToggle compact />
+          </div>
+          <div className="flex items-center justify-between bg-[var(--z-elevated)]/60 rounded-2xl p-3 border border-[var(--z-border)] transition-colors duration-300 ease-zebra hover:bg-[var(--z-elevated)] cursor-pointer group">
+            <div className="flex items-center min-w-0">
+              <div className="w-8 h-8 bg-[var(--z-nav-active)] text-[var(--z-fg)] rounded-full flex items-center justify-center text-xs font-medium shrink-0">
                 {usesManagerShell(role) ? 'YP' : 'NT'}
               </div>
-              <div className="ml-3">
-                <p className="text-[13px] font-medium text-white leading-none">{toTitleCaseName(fullName)}</p>
-                <p className="text-[11px] text-[#86868B] mt-1">{roleLabel(role)}</p>
+              <div className="ml-3 min-w-0">
+                <p className="text-[13px] font-medium text-[var(--z-fg)] leading-none truncate">{toTitleCaseName(fullName)}</p>
+                <p className="text-[11px] text-[var(--z-muted)] mt-1">{roleLabel(role)}</p>
               </div>
             </div>
-            <button onClick={handleLogout} className="text-[#86868B] group-hover:text-white transition-colors duration-300 ease-zebra p-2 cursor-pointer active:scale-95" title="Çıkış Yap">
+            <button onClick={handleLogout} className="text-[var(--z-muted)] group-hover:text-[var(--z-fg)] transition-colors duration-300 ease-zebra p-2 cursor-pointer active:scale-95 shrink-0" title="Çıkış Yap">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -3893,49 +3909,51 @@ const [username, setUsername] = useState('');
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         
         {/* TOPBAR */}
-        <header className="h-20 flex items-center justify-between px-6 md:px-12 lg:px-16 z-10 shrink-0 border-b border-white/5 bg-[#0A0A0A]/80 backdrop-blur-xl w-full">
-          <div className="flex items-center flex-1 space-x-6">
-            <button className="lg:hidden flex flex-col justify-center items-center w-8 h-8 space-y-[4px] group cursor-pointer active:scale-[0.98] -ml-2" onClick={() => setIsMobileMenuOpen(true)}>
-              <span className="w-5 h-[1.5px] bg-[#86868B] group-hover:bg-white transition-colors"></span>
-              <span className="w-5 h-[1.5px] bg-[#86868B] group-hover:bg-white transition-colors"></span>
-            </button>
+        <header className="h-[72px] sm:h-[84px] flex items-center justify-between px-4 sm:px-6 md:px-10 lg:px-14 z-10 shrink-0 border-b border-[var(--z-border)] bg-[var(--z-surface-glass)] backdrop-blur-2xl w-full">
+          <div className="flex items-center flex-1 space-x-4 sm:space-x-6 min-w-0">
             <div className="hidden sm:flex items-center relative w-full max-w-md group">
-              <Search className="w-4 h-4 text-[#86868B] absolute left-4 group-focus-within:text-white transition-colors duration-300" />
-              <input type="text" placeholder="Arama yapın..." className="w-full bg-[#161616] border border-white/5 focus:border-white/20 text-white placeholder:text-[#86868B] text-[14px] rounded-full pl-11 pr-4 h-10 transition-all duration-300 outline-none" />
+              <Search className="w-4 h-4 text-[var(--z-muted)] absolute left-4 group-focus-within:text-[var(--z-fg)] transition-colors duration-300" />
+              <input type="text" placeholder="Arama yapın..." className="z-input w-full text-[14px] rounded-full pl-11 pr-4 h-10" />
             </div>
+            <p className="sm:hidden text-[15px] font-medium tracking-tight text-[var(--z-fg)] truncate">
+              Zebra 360
+            </p>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+            <div className="hidden lg:block">
+              <ThemeToggle compact />
+            </div>
             {canShowNewCekimBtn && (
               <button
                 type="button"
                 onClick={openManualModal}
-                className="inline-flex items-center gap-2 h-10 px-4 shrink-0 text-[#86868B] hover:text-white bg-[#161616] border border-white/5 rounded-full transition-all duration-300 shadow-sm active:scale-95 cursor-pointer text-[13px] font-medium"
+                className="inline-flex items-center gap-2 h-10 px-3 sm:px-4 shrink-0 text-[var(--z-muted)] hover:text-[var(--z-fg)] bg-[var(--z-elevated)] border border-[var(--z-border)] rounded-full transition-all duration-300 shadow-sm active:scale-95 cursor-pointer text-[13px] font-medium"
               >
                 <Plus className="w-4 h-4" strokeWidth={2.5} />
-                Yeni Çekim Ekle
+                <span className="hidden sm:inline">Yeni Çekim Ekle</span>
               </button>
             )}
 
-            <div className="hidden md:block text-right mr-2">
-              <p className="text-[13px] font-medium text-white">{todayStr}</p>
+            <div className="hidden md:block text-right mr-1">
+              <p className="text-[13px] font-medium text-[var(--z-fg)]">{todayStr}</p>
             </div>
             
             <button
               type="button"
               onClick={() => setIsNotificationOpen(true)}
-              className="relative w-10 h-10 flex items-center justify-center text-[#86868B] hover:text-white bg-[#161616] border border-white/5 rounded-full transition-all duration-300 shadow-sm active:scale-95 cursor-pointer"
+              className="relative w-10 h-10 flex items-center justify-center text-[var(--z-muted)] hover:text-[var(--z-fg)] bg-[var(--z-elevated)] border border-[var(--z-border)] rounded-full transition-all duration-300 shadow-sm active:scale-95 cursor-pointer"
               aria-label={unreadCount > 0 ? `${unreadCount} okunmamış bildirim` : 'Bildirimler'}
             >
               <Bell className="w-[18px] h-[18px]" />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#FF3B30] text-white text-[10px] font-semibold tabular-nums flex items-center justify-center border-2 border-[#161616] shadow-sm">
+                <span className="absolute -top-0.5 -right-0.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#FF3B30] text-white text-[10px] font-semibold tabular-nums flex items-center justify-center border-2 border-[var(--z-elevated)] shadow-sm">
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               )}
             </button>
 
             {role === 'danisman' && (
-              <button onClick={() => navigateToTab('randevu')} className="w-10 h-10 bg-white text-black rounded-full flex items-center justify-center hover:bg-gray-200 active:scale-[0.98] transition-all cursor-pointer shadow-[0_0_15px_rgba(255,255,255,0.15)]">
+              <button onClick={() => navigateToTab('randevu')} className="w-10 h-10 bg-[var(--z-inverse)] text-[var(--z-inverse-fg)] rounded-full flex items-center justify-center hover:opacity-90 active:scale-[0.98] transition-all cursor-pointer shadow-[var(--z-shadow-soft)]">
                 <Plus className="w-5 h-5" />
               </button>
             )}
@@ -3946,9 +3964,9 @@ const [username, setUsername] = useState('');
         <div
           ref={mainScrollRef}
           data-main-scroll
-          className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-4 sm:px-6 md:px-12 lg:px-16 py-6 sm:py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+          className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar px-4 sm:px-6 md:px-10 lg:px-14 py-8 sm:py-10 pb-[max(6.5rem,calc(env(safe-area-inset-bottom)+5.5rem))] lg:pb-[max(2.5rem,env(safe-area-inset-bottom))]"
         >
-          <div className="w-full mx-auto space-y-10 pb-20 max-w-7xl">
+          <div className="w-full mx-auto space-y-14 sm:space-y-16 pb-24 max-w-[1120px]">
             
             {/* --- GENEL BAKIŞ / OVERVIEW --- */}
             {activeTab === 'genel' && (
@@ -4042,6 +4060,45 @@ const [username, setUsername] = useState('');
               </div>
             )}
 
+            {isNimaTabrizi(fullName) && (
+              <div
+                aria-hidden={activeTab !== 'studio-siralama'}
+                className={
+                  activeTab === 'studio-siralama'
+                    ? ''
+                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                }
+              >
+                <RankingVisualsStudio isActive={activeTab === 'studio-siralama'} />
+              </div>
+            )}
+
+            {isNimaTabrizi(fullName) && (
+              <div
+                aria-hidden={activeTab !== 'studio-dogum-gunu'}
+                className={
+                  activeTab === 'studio-dogum-gunu'
+                    ? ''
+                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                }
+              >
+                <BirthdayStudio isActive={activeTab === 'studio-dogum-gunu'} />
+              </div>
+            )}
+
+            {isNimaTabrizi(fullName) && (
+              <div
+                aria-hidden={activeTab !== 'studio-giris'}
+                className={
+                  activeTab === 'studio-giris'
+                    ? ''
+                    : 'fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                }
+              >
+                <EntryVisualsStudio isActive={activeTab === 'studio-giris'} />
+              </div>
+            )}
+
             {/* --- TAKVİM: danışman genel takvim --- */}
             {activeTab === 'takvim' && role === 'danisman' && (
               <GlobalCalendar
@@ -4057,22 +4114,22 @@ const [username, setUsername] = useState('');
             {activeTab === 'takvim' && role !== 'danisman' && (
               <div className="panel-enter space-y-8">
                 <div className="mb-10">
-                  <h1 className="text-2xl font-medium tracking-tight text-white">
+                  <h1 className="z-page-title">
                     Çekim Takvimi
                   </h1>
-                  <p className="text-[#86868B] mt-2 text-[14px]">
+                  <p className="z-page-sub">
                     Operasyon takvimini görüntüleyin.
                   </p>
                 </div>
 
-                <div className="bg-[#161616] border border-white/5 rounded-2xl p-6 lg:p-8 shadow-sm">
+                <div className="z-card rounded-[1.75rem] p-7 lg:p-10">
                   <div className="flex items-center justify-between mb-6">
                     <h2 className="text-lg font-medium text-white">
                       {monthNames[viewMonth]} {viewYear}
                     </h2>
                     <div className="flex space-x-2">
-                      <button onClick={handlePrevMonth} className="w-9 h-9 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95"><ChevronLeft className="w-4 h-4" /></button>
-                      <button onClick={handleNextMonth} className="w-9 h-9 rounded-full flex items-center justify-center bg-[#1C1C1E] text-white hover:bg-[#2C2C2E] transition-colors cursor-pointer active:scale-95"><ChevronRight className="w-4 h-4" /></button>
+                      <button onClick={handlePrevMonth} className="z-btn-icon cursor-pointer"><ChevronLeft className="w-4 h-4" /></button>
+                      <button onClick={handleNextMonth} className="z-btn-icon cursor-pointer"><ChevronRight className="w-4 h-4" /></button>
                     </div>
                   </div>
 
@@ -4199,7 +4256,7 @@ const [username, setUsername] = useState('');
             {/* MANAGER: PENDING REQUESTS */}
             {canApproveAppointments(role) && activeTab === 'cekim' && (
               <div className="panel-enter w-full">
-                <div className="mb-10 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div className="mb-12 sm:mb-14 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
                   <div>
                     <h1 className="text-3xl font-medium tracking-tight text-white">Randevu Talepleri</h1>
                     <p className="text-[#86868B] mt-2 text-[15px]">İlçeye göre gruplanmış taleplere tarih/saat teklif edin.</p>
@@ -4219,7 +4276,7 @@ const [username, setUsername] = useState('');
                 <p className="text-[#86868B] text-[14px] mb-6">Talepler ilçeye göre gruplanır. Tarih/saat teklif ederek danışmana gönderin.</p>
 
                 {appointmentWorkflowRequests.length === 0 ? (
-                  <div className="bg-[#111111] border border-white/5 rounded-2xl p-20 flex flex-col items-center justify-center text-center w-full">
+                  <div className="z-empty w-full">
                     <div className="w-16 h-16 bg-[#1C1C1E] rounded-full flex items-center justify-center mb-6">
                       <Inbox className="w-6 h-6 text-[#86868B]" strokeWidth={1.5} />
                     </div>
@@ -4250,7 +4307,7 @@ const [username, setUsername] = useState('');
                           const canAct =
                             role === 'broker' || pilotOwnsAppointment(req);
                           return (
-                            <div key={req.id} className="bg-[#161616] border border-white/5 rounded-2xl p-6 sm:p-8 flex flex-col shadow-sm w-full">
+                            <div key={req.id} className="z-list-card p-7 sm:p-9 flex flex-col w-full">
                               <div className="flex justify-between items-start mb-4 gap-3">
                                 <div>
                                   <h3 className="text-[17px] font-medium text-white">{toTitleCaseName(req.danismanIsmi)}</h3>
@@ -4333,7 +4390,7 @@ const [username, setUsername] = useState('');
                                   </div>
                                 )}
                                 {req.portfoyTuru && (
-                                  <div className="flex items-start text-[13px] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
+                                  <div className="flex items-start text-[13px] bg-[var(--z-elevated)]/70 p-4 rounded-2xl border border-[var(--z-border)]">
                                     <Building2 className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" />
                                     <div className="min-w-0">
                                       <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide mb-1">Portföy bilgileri</p>
@@ -4342,7 +4399,7 @@ const [username, setUsername] = useState('');
                                   </div>
                                 )}
                                 {(req.danismanNotu || req.aciklama) && (
-                                  <div className="flex items-start text-[13px] bg-[#1C1C1E] p-4 rounded-xl border border-white/5">
+                                  <div className="flex items-start text-[13px] bg-[var(--z-elevated)]/70 p-4 rounded-2xl border border-[var(--z-border)]">
                                     <AlignLeft className="w-4 h-4 text-[#666666] mr-4 shrink-0 mt-0.5" />
                                     <div className="min-w-0">
                                       <p className="text-[11px] font-medium text-[#86868B] uppercase tracking-wide mb-1">Danışman notu</p>
@@ -4363,15 +4420,15 @@ const [username, setUsername] = useState('');
                               </div>
 
                               {waitingForConsultant ? (
-                                <div className="mt-auto flex items-center gap-2 rounded-xl border border-white/5 bg-[#1C1C1E]/70 px-4 py-3 text-[13px] text-[#AEAEB2]">
+                                <div className="mt-auto flex items-center gap-2 rounded-2xl border border-[var(--z-border)] bg-[var(--z-elevated)]/60 px-4 py-3.5 text-[13px] text-[var(--z-muted)]">
                                   <Clock className="h-4 w-4 shrink-0 text-[#E5B540]" />
                                   Teklif gönderildi; danışmanın onayı bekleniyor.
                                 </div>
                               ) : rejectingId === req.id ? (
                                 <div className="animate-in fade-in duration-300">
-                                  <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reddetme sebebi..." className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px] mb-4" />
+                                  <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Reddetme sebebi..." className="z-field p-4 h-24 resize-none text-[14px] mb-4" />
                                   <div className="flex space-x-3">
-                                    <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] text-white rounded-xl text-[14px] font-medium cursor-pointer">Vazgeç</button>
+                                    <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="z-btn-ghost flex-1 h-12 text-[14px] cursor-pointer">Vazgeç</button>
                                     <button type="button" disabled={processingId === req.id || !rejectReason.trim()} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] font-medium disabled:opacity-50 cursor-pointer flex items-center justify-center">
                                       {processingId === req.id ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : 'Reddet'}
                                     </button>
@@ -4386,7 +4443,7 @@ const [username, setUsername] = useState('');
                                       <button
                                         type="button"
                                         onClick={openOfferCalendar}
-                                        className="w-full bg-[#1C1C1E] border border-white/5 text-left text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 hover:border-white/15 transition-all text-[14px] cursor-pointer flex items-center justify-between active:scale-[0.99]"
+                                        className="z-field px-4 h-12 text-[14px] cursor-pointer flex items-center justify-between text-left active:scale-[0.99]"
                                       >
                                         <span className={offerTarih ? 'text-white' : 'text-[#666666]'}>
                                           {offerTarih ? toDisplayDate(offerTarih) : 'Tarih seçin'}
@@ -4419,7 +4476,7 @@ const [username, setUsername] = useState('');
                                                     setOfferStartHour(e.target.value);
                                                     setOfferEndHour('');
                                                   }}
-                                                  className="w-full min-w-0 appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-3 h-11 text-[13px] cursor-pointer"
+                                                  className="z-field appearance-none px-3 h-11 text-[13px] cursor-pointer min-w-0"
                                                 >
                                                   <option value="">Seçin</option>
                                                   {OFFER_HOUR_OPTIONS.filter(
@@ -4481,7 +4538,7 @@ const [username, setUsername] = useState('');
                                                     }
                                                     setOfferEndHour(nextEnd);
                                                   }}
-                                                  className="w-full min-w-0 appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-3 h-11 text-[13px] cursor-pointer disabled:opacity-40"
+                                                  className="z-field appearance-none px-3 h-11 text-[13px] cursor-pointer min-w-0 disabled:opacity-40"
                                                 >
                                                   <option value="">
                                                     {offerStartHour
@@ -4574,7 +4631,7 @@ const [username, setUsername] = useState('');
                                           setOfferStartHour(e.target.value);
                                           setOfferEndHour('');
                                         }}
-                                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                                        className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                                       >
                                         <option value="">Başlangıç seçin</option>
                                         {OFFER_HOUR_OPTIONS.map((h) => (
@@ -4608,7 +4665,7 @@ const [username, setUsername] = useState('');
                                           setOfferEndHour(nextEnd);
                                         }}
                                         disabled={!offerStartHour}
-                                        className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                        className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                       >
                                         <option value="">
                                           {offerStartHour ? 'Bitiş seçin' : 'Önce başlangıç seçin'}
@@ -4663,7 +4720,7 @@ const [username, setUsername] = useState('');
                                     </div>
                                   )}
                                   <div className="flex gap-3">
-                                    <button type="button" onClick={() => { setOfferingId(null); setOfferTarih(''); setOfferStartHour(''); setOfferEndHour(''); setIsOfferCalendarOpen(false); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer">Vazgeç</button>
+                                    <button type="button" onClick={() => { setOfferingId(null); setOfferTarih(''); setOfferStartHour(''); setOfferEndHour(''); setIsOfferCalendarOpen(false); }} className="z-btn-ghost flex-1 h-12 text-[14px] cursor-pointer">Vazgeç</button>
                                     <button type="button" disabled={processingId === req.id || !offerTarih || !offerStartHour || !offerEndHour || offerRangeConflicts.confirmed.length > 0} onClick={() => handlePilotOffer(req)} className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium disabled:opacity-50 cursor-pointer flex items-center justify-center">
                                       {processingId === req.id ? <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" /> : 'Teklifi Gönder'}
                                     </button>
@@ -4671,7 +4728,7 @@ const [username, setUsername] = useState('');
                                 </div>
                               ) : canAct ? (
                                 <div className="flex space-x-3 mt-auto">
-                                  <button type="button" onClick={() => setRejectingId(req.id)} className="flex-1 py-3 bg-[#1C1C1E] text-[#EDEDED] rounded-xl text-[14px] font-medium hover:bg-[#2C2C2E] cursor-pointer">Reddet</button>
+                                  <button type="button" onClick={() => setRejectingId(req.id)} className="z-btn-ghost flex-1 h-12 text-[14px] cursor-pointer">Reddet</button>
                                   <button type="button" onClick={() => handleApprove(req)} className="flex-1 py-3 bg-white text-black rounded-xl text-[14px] font-medium hover:bg-gray-200 cursor-pointer">
                                     Tarih Teklif Et
                                   </button>
@@ -4692,7 +4749,7 @@ const [username, setUsername] = useState('');
 
                 {/* ARCHIVE COMPONENT FOR MANAGER */}
                 <div className="pt-16 mt-8 border-t border-white/5">
-                  <h2 className="text-2xl font-medium tracking-tight text-white mb-8 flex items-center">
+                  <h2 className="z-page-title mb-8 flex items-center">
                     <History className="w-5 h-5 mr-3 text-white/70" /> Geçmiş Randevu Talepleri / Arşiv
                   </h2>
                   <div className="space-y-4 w-full">
@@ -4721,7 +4778,7 @@ const [username, setUsername] = useState('');
                     <select
                       value={randevularimFilter}
                       onChange={(e) => setRandevularimFilter(e.target.value)}
-                      className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                      className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                     >
                       {RANDEVULARIM_FILTERS.map((f) => (
                         <option key={f.value} value={f.value}>{f.label}</option>
@@ -4825,7 +4882,7 @@ const [username, setUsername] = useState('');
                                 value={rejectReason}
                                 onChange={(e) => setRejectReason(e.target.value)}
                                 placeholder="Reddetme sebebi..."
-                                className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                                className="z-field p-4 h-24 resize-none text-[14px]"
                               />
                               <div className="flex gap-3">
                                 <button
@@ -4834,7 +4891,7 @@ const [username, setUsername] = useState('');
                                     setRejectingId(null);
                                     setRejectReason('');
                                   }}
-                                  className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer transition-all duration-300 ease-zebra"
+                                  className="z-btn-ghost flex-1 h-12 text-[14px] cursor-pointer transition-all duration-300 ease-zebra"
                                 >
                                   Vazgeç
                                 </button>
@@ -4974,10 +5031,10 @@ const [username, setUsername] = useState('');
                               value={rejectReason}
                               onChange={(e) => setRejectReason(e.target.value)}
                               placeholder="Reddetme sebebi..."
-                              className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-24 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                              className="z-field p-4 h-24 resize-none text-[14px]"
                             />
                             <div className="flex gap-3">
-                              <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="flex-1 py-3 bg-[#1C1C1E] rounded-xl text-[14px] cursor-pointer transition-all duration-300 ease-zebra">Vazgeç</button>
+                              <button type="button" onClick={() => { setRejectingId(null); setRejectReason(''); }} className="z-btn-ghost flex-1 h-12 text-[14px] cursor-pointer transition-all duration-300 ease-zebra">Vazgeç</button>
                               <button type="button" disabled={!rejectReason.trim() || processingId === req.id} onClick={() => handleRejectSubmit(req)} className="flex-1 py-3 bg-[#1C1C1E] text-[#FF3B30] border border-[#FF3B30]/20 rounded-xl text-[14px] cursor-pointer disabled:opacity-50 transition-all duration-300 ease-zebra">İptal Et</button>
                             </div>
                           </div>
@@ -5014,7 +5071,7 @@ const [username, setUsername] = useState('');
                   <form onSubmit={handleSubmit} className="space-y-6 w-full">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">İl</label>
+                        <label className="block z-label ml-1">İl</label>
                         <div className="relative">
                           <select
                             value={requestIl}
@@ -5022,7 +5079,7 @@ const [username, setUsername] = useState('');
                               setRequestIl(e.target.value);
                               setRequestIlce('');
                             }}
-                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                            className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                           >
                             {TURKEY_ILLER.map((il) => (
                               <option key={il} value={il}>{il}</option>
@@ -5032,12 +5089,12 @@ const [username, setUsername] = useState('');
                         </div>
                       </div>
                       <div>
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">İlçe</label>
+                        <label className="block z-label ml-1">İlçe</label>
                         <div className="relative">
                           <select
                             value={requestIlce}
                             onChange={(e) => setRequestIlce(e.target.value)}
-                            className="w-full appearance-none bg-[#1C1C1E] border border-white/5 text-white rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px] cursor-pointer"
+                            className="z-field appearance-none px-4 h-12 text-[14px] cursor-pointer"
                           >
                             <option value="">İlçe seçin</option>
                             {requestIlceler.map((ilce) => (
@@ -5048,13 +5105,13 @@ const [username, setUsername] = useState('');
                         </div>
                       </div>
                       <div className="sm:col-span-2 lg:col-span-1">
-                        <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Semt (opsiyonel)</label>
+                        <label className="block z-label ml-1">Semt (opsiyonel)</label>
                         <input
                           type="text"
                           value={requestSemt}
                           onChange={(e) => setRequestSemt(e.target.value)}
                           placeholder="Örn. Alsancak"
-                          className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl px-4 h-12 focus:outline-none focus:border-white/20 text-[14px]"
+                          className="z-field px-4 h-12 text-[14px]"
                         />
                       </div>
                     </div>
@@ -5081,7 +5138,7 @@ const [username, setUsername] = useState('');
                             {regionActivity.map((app) => (
                               <div
                                 key={app.id}
-                                className="flex flex-col gap-3 bg-[#1C1C1E] border border-white/5 rounded-2xl p-4 sm:p-5"
+                                className="z-card flex flex-col gap-3 p-5 sm:p-6"
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0 space-y-1">
@@ -5122,7 +5179,7 @@ const [username, setUsername] = useState('');
                     )}
 
                     <div>
-                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">
+                      <label className="block z-label ml-1">
                         Portföy bilgileri <span className="text-[#E5B540]">*</span>
                       </label>
                       <textarea
@@ -5130,17 +5187,17 @@ const [username, setUsername] = useState('');
                         value={portfolioType}
                         onChange={(e) => setPortfolioType(e.target.value)}
                         placeholder="Örn. 3+1 satılık daire, deniz manzaralı, kapı kodu / site girişi..."
-                        className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-28 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                        className="z-field p-4 h-28 resize-none text-[14px]"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[12px] font-medium text-[#86868B] mb-2 ml-1">Danışman Notu</label>
+                      <label className="block z-label ml-1">Danışman Notu</label>
                       <textarea
                         value={danismanNotu}
                         onChange={(e) => setDanismanNotu(e.target.value)}
                         placeholder="Çekim notları, erişim bilgisi (opsiyonel)..."
-                        className="w-full bg-[#1C1C1E] border border-white/5 text-white placeholder:text-[#666666] rounded-xl p-4 h-28 resize-none focus:outline-none focus:border-white/20 text-[14px]"
+                        className="z-field p-4 h-28 resize-none text-[14px]"
                       />
                     </div>
 
@@ -5167,8 +5224,8 @@ const [username, setUsername] = useState('');
                     <button
                       type="submit"
                       disabled={!isFormValid || isSubmitting}
-                      className={`w-full py-4 rounded-xl font-medium text-[15px] transition-all flex justify-center
-                        ${isFormValid ? 'bg-white text-black hover:bg-gray-200 active:scale-[0.98] cursor-pointer' : 'bg-[#1C1C1E] text-[#666666] cursor-not-allowed'}`}
+                      className={`w-full h-14 rounded-full font-medium text-[15px] transition-all flex justify-center
+                        ${isFormValid ? 'z-btn-primary cursor-pointer' : 'z-btn-ghost opacity-45 cursor-not-allowed'}`}
                     >
                       {isSubmitting ? <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" /> : 'Randevu Talebi Gönder'}
                     </button>
@@ -5176,12 +5233,12 @@ const [username, setUsername] = useState('');
                 </div>
 
                 <div className="pt-16 mt-8 border-t border-white/5">
-                  <h2 className="text-2xl font-medium tracking-tight text-white mb-8 flex items-center">
+                  <h2 className="z-page-title mb-8 flex items-center">
                     <History className="w-5 h-5 mr-3 text-white/70" /> Geçmiş Randevularım / Hareketler
                   </h2>
                   <div className="space-y-4 w-full">
                     {archiveAppointments.length === 0 ? (
-                      <div className="text-center py-16 px-4 border border-dashed border-white/5 rounded-2xl bg-[#111111]">
+                      <div className="z-empty">
                         <div className="w-16 h-16 bg-[#1C1C1E] rounded-full flex items-center justify-center mx-auto mb-4">
                           <History className="w-8 h-8 text-[#666666]" />
                         </div>
@@ -5200,10 +5257,18 @@ const [username, setUsername] = useState('');
         </div>
       </main>
 
+      <MobileBottomNav
+        role={role}
+        activeTab={activeTab}
+        badgeCounts={menuBadgeCounts}
+        onNavigate={navigateToTab}
+        onOpenMore={() => setIsMobileMenuOpen(true)}
+      />
+
       <style dangerouslySetInnerHTML={{__html: `
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333333; border-radius: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--z-muted-2); border-radius: 8px; }
       `}} />
     </div>
   );

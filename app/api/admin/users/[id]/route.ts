@@ -40,21 +40,23 @@ async function moveConsultantPhoto(
   const newSlug = toConsultantPhotoSlug(newName);
   if (!oldSlug || !newSlug || oldSlug === newSlug) return;
 
-  const bucket = 'consultant-photos';
   const fromPath = `${oldSlug}.png`;
   const toPath = `${newSlug}.png`;
 
-  const { data: blob, error: dlErr } = await admin.storage
-    .from(bucket)
-    .download(fromPath);
-  if (dlErr || !blob) return;
+  for (const bucket of ['consultant-photos', 'consultant-photos-hires']) {
+    const { data: blob, error: dlErr } = await admin.storage
+      .from(bucket)
+      .download(fromPath);
+    if (dlErr || !blob) continue;
 
-  const buffer = Buffer.from(await blob.arrayBuffer());
-  await admin.storage.from(bucket).upload(toPath, buffer, {
-    contentType: 'image/png',
-    upsert: true,
-  });
-  await admin.storage.from(bucket).remove([fromPath]);
+    const buffer = Buffer.from(await blob.arrayBuffer());
+    const { error: upErr } = await admin.storage.from(bucket).upload(toPath, buffer, {
+      contentType: 'image/png',
+      upsert: true,
+    });
+    if (upErr) continue;
+    await admin.storage.from(bucket).remove([fromPath]);
+  }
 }
 
 export async function PATCH(request: Request, context: RouteContext) {

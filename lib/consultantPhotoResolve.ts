@@ -102,6 +102,12 @@ export function consultantPhotoPublicUrlFromSlug(slug: string | null): string | 
   return `${SUPABASE_URL}/storage/v1/object/public/consultant-photos/${slug}.png?v=${bust}`;
 }
 
+/** Fotoğraf adresindeki `v` parametresini verilen sürümle değiştirir. */
+export function withConsultantPhotoVersion(url: string, version: string): string {
+  const [base] = url.split('?');
+  return `${base}?v=${encodeURIComponent(version)}`;
+}
+
 /** İsim → public URL (alias + opsiyonel envanter ile) */
 export function resolveConsultantPhotoUrl(
   fullName: string,
