@@ -5,7 +5,6 @@ import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
 import {
   AlertTriangle,
-  Check,
   Download,
   FileText,
   ImageOff,
@@ -13,7 +12,6 @@ import {
   RefreshCw,
   RotateCcw,
   ScanFace,
-  Search,
   SlidersHorizontal,
   ListChecks,
   X,
@@ -24,6 +22,7 @@ import { resolveConsultantPhotoUrl, toStudioDisplayName } from '../lib/studioAss
 import { toConsultantPhotoSlug } from '../lib/formatName';
 import { canvasToBlob, rankFileSlug } from '../lib/rankingVisuals';
 import PasteListModal from './PasteListModal';
+import PeoplePicker from './PeoplePicker';
 import {
   DEFAULT_GIRIS_ADJUST,
   DEFAULT_GIRIS_COLOR,
@@ -621,97 +620,63 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
       </header>
 
       <section className="z-card p-6 sm:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="z-label mb-0">
-            Kullanıcılar {selectedKeys.length ? `· ${selectedKeys.length} seçili` : ''}
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="text-[12px] text-[var(--z-muted)] hover:text-[var(--z-fg)]"
-              onClick={selectVisible}
-            >
-              Tümünü seç{query || titleFilter.length ? ' (görünen)' : ''}
-            </button>
-            <button
-              type="button"
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 text-[12px] text-[var(--z-muted)] hover:text-[var(--z-fg)] disabled:opacity-40"
-              onClick={() => setPasteOpen(true)}
-            >
-              <ListChecks className="h-3.5 w-3.5" /> Listeden seç
-            </button>
-            {selectedKeys.length ? (
-              <button
-                type="button"
-                className="text-[12px] text-[var(--z-muted)] hover:text-[var(--z-fg)]"
-                onClick={() => setSelectedKeys([])}
-              >
-                Seçimi temizle
-              </button>
-            ) : null}
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--z-muted)]" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Kullanıcı ara"
-                className="z-field w-56 py-2 pl-9 pr-3 text-[13px]"
-              />
-            </div>
-          </div>
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 text-[12px] text-[var(--z-muted)] hover:text-[var(--z-fg)] disabled:opacity-40"
+            onClick={() => setPasteOpen(true)}
+          >
+            <ListChecks className="h-3.5 w-3.5" /> Listeden seç
+          </button>
         </div>
-
-        {titles.length > 1 ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {titles.map(([title, count]) => {
-              const active = titleFilter.includes(title);
-              return (
-                <button
-                  key={title}
-                  type="button"
-                  onClick={() =>
-                    setTitleFilter((current) =>
-                      current.includes(title) ? current.filter((t) => t !== title) : [...current, title]
-                    )
-                  }
-                  className={`z-chip ${active ? '!border-transparent !bg-[var(--z-inverse)] !text-[var(--z-inverse-fg)]' : ''}`}
-                >
-                  {title} <span className="opacity-60">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-
-        <div className="mt-4 flex max-h-72 flex-wrap gap-2 overflow-y-auto pr-1">
-          {loading ? (
-            <Loader2 className="h-5 w-5 animate-spin text-[var(--z-muted)]" />
-          ) : (
-            visible.map((person) => {
-              const active = selectedKeys.includes(person.key);
-              return (
-                <button
-                  key={person.key}
-                  type="button"
-                  onClick={() => toggle(person.key)}
-                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-medium transition-all duration-300 ${
-                    active
-                      ? 'border-transparent bg-[var(--z-inverse)] text-[var(--z-inverse-fg)] shadow-[var(--z-shadow-soft)]'
-                      : 'border-[var(--z-border)] bg-[color-mix(in_srgb,var(--z-elevated)_65%,transparent)] text-[var(--z-fg)] hover:border-[var(--z-border-strong)]'
-                  }`}
-                >
-                  {active ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : null}
-                  {person.displayName}
-                  {!person.photoUrl ? <ImageOff className="h-3 w-3 opacity-60" aria-label="Fotoğraf yok" /> : null}
-                </button>
-              );
-            })
-          )}
-          {!loading && !visible.length ? (
-            <p className="text-[13px] text-[var(--z-muted)]">Eşleşen kullanıcı yok.</p>
-          ) : null}
-        </div>
+        <PeoplePicker
+          label="Kullanıcılar"
+          noun="kullanıcı"
+          items={visible.map((person) => ({
+            key: person.key,
+            label: person.displayName,
+            meta: person.title,
+            missingPhoto: !person.photoUrl,
+          }))}
+          selectedItems={selected.map((person) => ({
+            key: person.key,
+            label: person.displayName,
+            missingPhoto: !person.photoUrl,
+          }))}
+          query={query}
+          onQueryChange={setQuery}
+          onToggle={toggle}
+          onClear={() => setSelectedKeys([])}
+          onSelectVisible={selectVisible}
+          searchPlaceholder="Kullanıcı ara"
+          emptyResultsText="Eşleşen kullanıcı yok."
+          loading={loading}
+          filtered={titleFilter.length > 0}
+          toolbar={
+            titles.length > 1 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {titles.map(([title, count]) => {
+                  const active = titleFilter.includes(title);
+                  return (
+                    <button
+                      key={title}
+                      type="button"
+                      onClick={() =>
+                        setTitleFilter((current) =>
+                          current.includes(title) ? current.filter((t) => t !== title) : [...current, title]
+                        )
+                      }
+                      className={`z-chip ${active ? '!border-transparent !bg-[var(--z-inverse)] !text-[var(--z-inverse-fg)]' : ''}`}
+                    >
+                      {title} <span className="opacity-60">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null
+          }
+        />
       </section>
 
       <section className="z-card p-6 sm:p-8">

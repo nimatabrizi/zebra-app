@@ -11,7 +11,6 @@ import {
   ImageOff,
   Loader2,
   RotateCcw,
-  Search,
   SlidersHorizontal,
   Trophy,
   Upload,
@@ -21,6 +20,7 @@ import { supabase } from '../supabaseClient';
 import { resolveConsultantTitle } from '../lib/consultantTitles';
 import { resolveConsultantPhotoUrl, toStudioDisplayName } from '../lib/studioAssets';
 import { toConsultantPhotoSlug } from '../lib/formatName';
+import PeoplePicker from './PeoplePicker';
 import {
   DEFAULT_PHOTO_ADJUST,
   RANK_CANVAS,
@@ -807,48 +807,26 @@ export default function RankingVisualsStudio({ isActive = true }: { isActive?: b
               </div>
             </div>
 
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="z-label mb-0">
-                  Kişiler {personKeys.length ? `· ${personKeys.length} seçili` : '· tümü'}
-                </p>
-                <div className="flex items-center gap-3">
-                  {personKeys.length ? (
-                    <button
-                      type="button"
-                      className="text-[12px] text-[var(--z-muted)] hover:text-[var(--z-fg)]"
-                      onClick={() => setPersonKeys([])}
-                    >
-                      Seçimi temizle (tümü)
-                    </button>
-                  ) : null}
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--z-muted)]" />
-                    <input
-                      value={personQuery}
-                      onChange={(event) => setPersonQuery(event.target.value)}
-                      placeholder="Kişi ara"
-                      className="z-field w-52 py-2 pl-9 pr-3 text-[13px]"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="mt-3 flex max-h-44 flex-wrap gap-2 overflow-y-auto pr-1">
-                {visiblePeople.map((person) => (
-                  <ToggleChip
-                    key={person.key}
-                    active={personKeys.includes(person.key)}
-                    onClick={() => toggle(personKeys, person.key, setPersonKeys)}
-                  >
-                    {person.name}
-                    <span className="opacity-60">{person.count}</span>
-                  </ToggleChip>
-                ))}
-                {!visiblePeople.length ? (
-                  <p className="text-[13px] text-[var(--z-muted)]">Eşleşen kişi yok.</p>
-                ) : null}
-              </div>
-            </div>
+            <PeoplePicker
+              label="Kişiler"
+              noun="kişi"
+              items={visiblePeople.map((person) => ({
+                key: person.key,
+                label: person.name,
+                count: person.count,
+              }))}
+              selectedItems={personKeys.map((key) => {
+                const person = peopleIndex.find((p) => p.key === key);
+                return { key, label: person?.name ?? key };
+              })}
+              query={personQuery}
+              onQueryChange={setPersonQuery}
+              onToggle={(key) => toggle(personKeys, key, setPersonKeys)}
+              onClear={() => setPersonKeys([])}
+              searchPlaceholder="Kişi ara"
+              emptySelectionText="Tümü (kişi seçilmedi)"
+              emptyResultsText="Eşleşen kişi yok."
+            />
           </section>
 
           {/* Önizleme */}
