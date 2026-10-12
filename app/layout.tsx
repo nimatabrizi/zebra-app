@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { studioFontVariables } from "./fonts";
 import { ThemeProvider } from "../components/ThemeProvider";
+import SquareMeterInputs from "../components/SquareMeterInputs";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -56,6 +57,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-[var(--z-bg)] text-[var(--z-fg)]">
         <ThemeProvider>{children}</ThemeProvider>
+        <SquareMeterInputs />
       </body>
     </html>
   );

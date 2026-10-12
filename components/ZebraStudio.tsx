@@ -42,6 +42,8 @@ import {
   resolveConsultantTitle,
 } from '../lib/consultantTitles';
 import { useImageTransformGestures } from '../lib/useImageTransformGestures';
+import { useDragPinch } from '../lib/useDragPinch';
+import { toSquareMeters } from '../lib/squareMeters';
 import { usePageZoomLock } from '../lib/usePageZoomLock';
 import {
   downloadGeneratedImages,
@@ -85,7 +87,40 @@ type ZebraStudioProps = {
   ) => void;
   /** İsimli çıktı için gereken alanlar hazır olduğunda bildirir. */
   onDesignReadyChange?: (ready: boolean) => void;
+  /** Danışman fotoğrafı tuvalde sürüklenip ölçeklenebilir (yalnızca Satıldı/Kiralandı). */
+  consultantPhotoAdjustable?: boolean;
+  /** Format başına verilirse yakalama sırasında hedef formatın değeri kullanılır. */
+  consultantPhotoTransform?:
+    | ConsultantPhotoTransform
+    | Record<StudioFormat, ConsultantPhotoTransform>;
+  onConsultantPhotoTransformChange?: (
+    next: ConsultantPhotoTransform,
+    format: StudioFormat
+  ) => void;
 };
+
+/** x/y tuval pikseli; zoom mevcut portre ölçeğine çarpan. */
+export type ConsultantPhotoTransform = { x: number; y: number; zoom: number };
+
+export const DEFAULT_CONSULTANT_PHOTO_TRANSFORM: ConsultantPhotoTransform = {
+  x: 0,
+  y: 0,
+  zoom: 1,
+};
+
+const CONSULTANT_PHOTO_MAX_SHIFT = 400;
+
+export function clampConsultantPhotoTransform(
+  next: ConsultantPhotoTransform
+): ConsultantPhotoTransform {
+  const shift = (value: number) =>
+    Math.max(-CONSULTANT_PHOTO_MAX_SHIFT, Math.min(CONSULTANT_PHOTO_MAX_SHIFT, value));
+  return {
+    x: shift(next.x),
+    y: shift(next.y),
+    zoom: Math.max(0.8, Math.min(1.6, next.zoom)),
+  };
+}
 
 type IdentityMode = 'named' | 'anonymous';
 type PortfolioTransform = { x: number; y: number; zoom: number };
@@ -243,6 +278,8 @@ function IdentityLayer({
   side,
   failed,
   onError,
+  photoTransform = DEFAULT_CONSULTANT_PHOTO_TRANSFORM,
+  photoGestures,
 }: {
   format: StudioFormat;
   partnership: boolean;
@@ -251,6 +288,8 @@ function IdentityLayer({
   side: 'left' | 'right';
   failed: boolean;
   onError: () => void;
+  photoTransform?: ConsultantPhotoTransform;
+  photoGestures?: ReturnType<typeof useDragPinch>;
 }) {
   const post = format === 'post';
   const portraitHeight = post
@@ -283,11 +322,19 @@ function IdentityLayer({
   const right = side === 'right';
   // object-contain kutuyu ortalar; köşeye dayamak için kutuyu tuvalin dışına taşır
   const edgeOffset = partnership ? (post ? -70 : -80) : post ? -70 : -55;
+  const photoScale = (partnership ? 1.05 : 1.08) * photoTransform.zoom;
+  const photoCss =
+    photoTransform.x === 0 && photoTransform.y === 0
+      ? `scale(${photoScale})`
+      : `translate(${photoTransform.x}px, ${photoTransform.y}px) scale(${photoScale})`;
+  const adjustable = Boolean(photoGestures && photoSrc && !failed);
 
   return (
     <>
       <div
-        className="absolute z-[4] pointer-events-none"
+        className={`absolute z-[4] ${
+          adjustable ? 'pointer-events-auto cursor-grab active:cursor-grabbing' : 'pointer-events-none'
+        }`}
         style={{
           width: portraitWidth,
           height: portraitHeight,
@@ -296,7 +343,9 @@ function IdentityLayer({
           left: right ? undefined : edgeOffset,
           right: right ? edgeOffset : undefined,
           overflow: 'hidden',
+          touchAction: adjustable ? 'none' : undefined,
         }}
+        {...(adjustable ? photoGestures : {})}
       >
         {photoSrc && !failed ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -306,7 +355,7 @@ function IdentityLayer({
             crossOrigin="anonymous"
             className="absolute inset-0 w-full h-full object-contain object-bottom"
             style={{
-              transform: `scale(${partnership ? 1.05 : 1.08})`,
+              transform: photoCss,
               transformOrigin: 'bottom center',
             }}
             draggable={false}
@@ -330,7 +379,7 @@ function IdentityLayer({
               maskPosition: 'center bottom',
               WebkitMaskRepeat: 'no-repeat',
               maskRepeat: 'no-repeat',
-              transform: `scale(${partnership ? 1.05 : 1.08})`,
+              transform: photoCss,
               transformOrigin: 'bottom center',
             }}
           />
@@ -426,6 +475,9 @@ export default function ZebraStudio({
   formatOverride,
   onCaptureReady,
   onDesignReadyChange,
+  consultantPhotoAdjustable = false,
+  consultantPhotoTransform = DEFAULT_CONSULTANT_PHOTO_TRANSFORM,
+  onConsultantPhotoTransformChange,
 }: ZebraStudioProps) {
   const isManager = usesManagerShell(role);
   const [format, setFormat] = useState<StudioFormat>('post');
@@ -467,11 +519,43 @@ export default function ZebraStudio({
   const selectedConsultantIdRef = useRef('');
   const selectedPartnerIdRef = useRef('');
   const portfolioSurfaceRef = useRef<HTMLDivElement>(null);
+  const portfolioDraggable =
+    (fullscreenPreview || consultantPhotoAdjustable) && Boolean(portfolioPreview);
   const portfolioGestures = useImageTransformGestures({
     targetRef: portfolioSurfaceRef,
-    enabled: fullscreenPreview && Boolean(portfolioPreview) && !exporting,
+    enabled: portfolioDraggable && !exporting,
     transform: portfolioTransform,
     onChange: setPortfolioTransform,
+  });
+
+  const activePhotoTransform: ConsultantPhotoTransform =
+    'zoom' in consultantPhotoTransform
+      ? consultantPhotoTransform
+      : consultantPhotoTransform[format] ?? DEFAULT_CONSULTANT_PHOTO_TRANSFORM;
+  const photoGestureStartRef = useRef(DEFAULT_CONSULTANT_PHOTO_TRANSFORM);
+  const photoScaleRef = useRef(1);
+  const consultantPhotoGestures = useDragPinch({
+    enabled:
+      consultantPhotoAdjustable &&
+      Boolean(onConsultantPhotoTransformChange) &&
+      !exporting,
+    onStart: (element) => {
+      photoGestureStartRef.current = activePhotoTransform;
+      const rect = element.getBoundingClientRect();
+      photoScaleRef.current = element.offsetWidth > 0 ? element.offsetWidth / rect.width : 1;
+    },
+    onMove: ({ dx, dy, ratio }) => {
+      const base = photoGestureStartRef.current;
+      const k = photoScaleRef.current;
+      onConsultantPhotoTransformChange?.(
+        clampConsultantPhotoTransform({
+          x: base.x + dx * k,
+          y: base.y + dy * k,
+          zoom: base.zoom * ratio,
+        }),
+        format
+      );
+    },
   });
 
   useEffect(() => {
@@ -1160,13 +1244,12 @@ export default function ZebraStudio({
               >
                 <div
                   className={`absolute inset-0 z-0 bg-[#263648] ${
-                    fullscreenPreview && portfolioPreview
+                    portfolioDraggable
                       ? 'cursor-grab active:cursor-grabbing'
                       : ''
                   }`}
                   style={{
-                    touchAction:
-                      fullscreenPreview && portfolioPreview ? 'none' : 'auto',
+                    touchAction: portfolioDraggable ? 'none' : 'auto',
                   }}
                   ref={portfolioSurfaceRef}
                   onPointerDown={portfolioGestures.onPointerDown}
@@ -1246,7 +1329,7 @@ export default function ZebraStudio({
                         fontWeight: 600,
                       }}
                     >
-                      {toTurkishUpper(subheadline.trim())}
+                      {toTurkishUpper(toSquareMeters(subheadline.trim()))}
                     </p>
                   ) : null}
                   {headline.trim() ? (
@@ -1258,7 +1341,7 @@ export default function ZebraStudio({
                         fontWeight: 700,
                       }}
                     >
-                      {headline.trim().normalize('NFC')}
+                      {toSquareMeters(headline.trim().normalize('NFC'))}
                     </h2>
                   ) : null}
                 </div>
@@ -1299,6 +1382,14 @@ export default function ZebraStudio({
                       side="left"
                       failed={brokenPhoto === consultantSrc}
                       onError={() => setBrokenPhoto(consultantSrc || '')}
+                      photoTransform={
+                        consultantPhotoAdjustable ? activePhotoTransform : undefined
+                      }
+                      photoGestures={
+                        consultantPhotoAdjustable && onConsultantPhotoTransformChange
+                          ? consultantPhotoGestures
+                          : undefined
+                      }
                     />
                     {partnership && partner.name ? (
                       <IdentityLayer

@@ -26,7 +26,10 @@ import {
   STATUS_OVERLAY_VP9_MIME,
   STATUS_VIDEO_DURATION_SEC,
   STATUS_VIDEO_OPTIONS,
+  DEFAULT_STATUS_OVERLAY_TRANSFORM,
+  clampStatusOverlayTransform,
   statusOverlayLayout,
+  type StatusOverlayTransform,
   type StatusVideoKind,
   type StudioFormat,
 } from '../lib/studioAssets';
@@ -42,7 +45,12 @@ import {
   type ImageTransform,
 } from '../lib/useImageTransformGestures';
 import { usePageZoomLock } from '../lib/usePageZoomLock';
-import ZebraStudio from './ZebraStudio';
+import { useDragPinch } from '../lib/useDragPinch';
+import ZebraStudio, {
+  DEFAULT_CONSULTANT_PHOTO_TRANSFORM,
+  clampConsultantPhotoTransform,
+  type ConsultantPhotoTransform,
+} from './ZebraStudio';
 
 type SlotState = {
   file: File | null;
@@ -74,17 +82,53 @@ function StatusOverlayLayer({
   overlayHevcUrl,
   playing,
   clockRef,
+  transform = DEFAULT_STATUS_OVERLAY_TRANSFORM,
+  onTransformChange,
 }: {
   format: StudioFormat;
   overlayUrl: string;
   overlayHevcUrl: string;
   playing: boolean;
   clockRef: React.RefObject<Record<StudioFormat, number>>;
+  transform?: StatusOverlayTransform;
+  /** Verilirse önizlemede taşıma/ölçekleme tutamağı çizilir (dışa aktarıma girmez). */
+  onTransformChange?: (next: StatusOverlayTransform) => void;
 }) {
   const canvas = SOCIAL_STUDIO_CANVAS[format];
-  const layout = statusOverlayLayout(format);
+  const layout = statusOverlayLayout(format, transform);
   const overlayRef = useRef<HTMLVideoElement>(null);
   const [overlayVisible, setOverlayVisible] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const gestureStartRef = useRef(DEFAULT_STATUS_OVERLAY_TRANSFORM);
+  const canvasPerScreenPxRef = useRef(1);
+  const handleGestures = useDragPinch({
+    enabled: Boolean(onTransformChange),
+    onStart: (element) => {
+      gestureStartRef.current = transform;
+      const width = element.parentElement?.getBoundingClientRect().width;
+      canvasPerScreenPxRef.current = width ? canvas.width / width : 1;
+      setDragging(true);
+    },
+    onMove: ({ dx, dy, ratio }) => {
+      const base = gestureStartRef.current;
+      const k = canvasPerScreenPxRef.current;
+      onTransformChange?.(
+        clampStatusOverlayTransform(format, {
+          dx: base.dx + dx * k,
+          dy: base.dy + dy * k,
+          scale: base.scale * ratio,
+        })
+      );
+    },
+    onEnd: () => setDragging(false),
+  });
+  const box: React.CSSProperties = {
+    left: `${(layout.left / canvas.width) * 100}%`,
+    top: `${(layout.top / canvas.height) * 100}%`,
+    width: `${(layout.width / canvas.width) * 100}%`,
+    height: `${(layout.height / canvas.height) * 100}%`,
+    transform: `rotate(${layout.rotationDeg}deg)`,
+  };
 
   // <source> listesi değişince Safari yeni kaynağı ancak load() ile seçer.
   useEffect(() => {
@@ -144,32 +188,139 @@ function StatusOverlayLayer({
   }, [playing, overlayUrl, format, clockRef]);
 
   return (
-    <video
-      ref={overlayRef}
-      muted
-      playsInline
-      // Eski WebKit sürümleri yalnızca bu özniteliği tanır.
-      webkit-playsinline="true"
-      disablePictureInPicture
-      disableRemotePlayback
-      preload="auto"
-      className="pointer-events-none absolute"
-      style={{
-        left: `${(layout.left / canvas.width) * 100}%`,
-        top: `${(layout.top / canvas.height) * 100}%`,
-        width: `${(layout.width / canvas.width) * 100}%`,
-        height: `${(layout.height / canvas.height) * 100}%`,
-        transform: `rotate(${layout.rotationDeg}deg)`,
-        visibility: overlayVisible ? 'visible' : 'hidden',
-        backgroundColor: 'transparent',
-      }}
-    >
-      {/* Safari/iOS: alpha yalnızca HEVC hvc1 .mov ile korunur. */}
-      <source src={overlayHevcUrl} type={STATUS_OVERLAY_HEVC_MIME} />
-      {/* Chrome / Firefox / Edge: VP9 alpha WebM. */}
-      <source src={overlayUrl} type={STATUS_OVERLAY_VP9_MIME} />
-    </video>
+    <>
+      <video
+        ref={overlayRef}
+        muted
+        playsInline
+        // Eski WebKit sürümleri yalnızca bu özniteliği tanır.
+        webkit-playsinline="true"
+        disablePictureInPicture
+        disableRemotePlayback
+        preload="auto"
+        className="pointer-events-none absolute"
+        style={{
+          ...box,
+          visibility: overlayVisible ? 'visible' : 'hidden',
+          backgroundColor: 'transparent',
+        }}
+      >
+        {/* Safari/iOS: alpha yalnızca HEVC hvc1 .mov ile korunur. */}
+        <source src={overlayHevcUrl} type={STATUS_OVERLAY_HEVC_MIME} />
+        {/* Chrome / Firefox / Edge: VP9 alpha WebM. */}
+        <source src={overlayUrl} type={STATUS_OVERLAY_VP9_MIME} />
+      </video>
+      {onTransformChange ? (
+        <div
+          aria-hidden
+          title="Animasyonu taşı · iki parmakla ölçekle"
+          className={`pointer-events-auto absolute z-10 cursor-move rounded-xl border-2 border-dashed transition-[border-color,background-color] duration-150 ${
+            dragging
+              ? 'border-white bg-white/10'
+              : 'border-white/35 hover:border-white/70'
+          }`}
+          style={{ ...box, touchAction: 'none' }}
+          {...handleGestures}
+        />
+      ) : null}
+    </>
   );
+}
+
+type AdjustSegment = { id: string; label: string };
+
+function TransformBar({
+  segments,
+  active,
+  onSelect,
+  percent,
+  onMinus,
+  onPlus,
+  onReset,
+  overlay = false,
+}: {
+  segments: AdjustSegment[];
+  active: string;
+  onSelect: (id: string) => void;
+  percent: number;
+  onMinus: () => void;
+  onPlus: () => void;
+  onReset: () => void;
+  /** Görselin üstünde (tam ekran) mı, sayfa yüzeyinde mi duruyor. */
+  overlay?: boolean;
+}) {
+  const shell = overlay
+    ? 'border-white/15 bg-black/65 text-white backdrop-blur-sm'
+    : 'border-[var(--z-border)] bg-[var(--z-elevated)] text-[var(--z-fg)]';
+  const segmentActive = overlay
+    ? 'bg-white text-black'
+    : 'bg-[var(--z-inverse)] text-[var(--z-inverse-fg)]';
+  const segmentIdle = overlay
+    ? 'text-white/70 hover:text-white'
+    : 'text-[var(--z-muted)] hover:text-[var(--z-fg)]';
+  const iconButton = overlay
+    ? 'hover:bg-white/10'
+    : 'hover:bg-[var(--z-hover-strong)]';
+
+  return (
+    <div
+      className={`pointer-events-auto flex items-center gap-1 rounded-full border p-1 ${shell}`}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-center gap-0.5">
+        {segments.map((segment) => (
+          <button
+            key={segment.id}
+            type="button"
+            onClick={() => onSelect(segment.id)}
+            className={`h-8 rounded-full px-3 text-[12px] font-medium transition-colors ${
+              active === segment.id ? segmentActive : segmentIdle
+            }`}
+          >
+            {segment.label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onMinus}
+        className={`flex h-8 w-8 items-center justify-center rounded-full ${iconButton}`}
+        aria-label="Küçült"
+      >
+        <Minus className="h-4 w-4" />
+      </button>
+      <span className="w-11 text-center text-[11px] tabular-nums">%{percent}</span>
+      <button
+        type="button"
+        onClick={onPlus}
+        className={`flex h-8 w-8 items-center justify-center rounded-full ${iconButton}`}
+        aria-label="Büyüt"
+      >
+        <Plus className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={onReset}
+        className={`flex h-8 w-8 items-center justify-center rounded-full ${iconButton}`}
+        aria-label="Sıfırla"
+      >
+        <RefreshCcw className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+const OVERLAY_SCALE_STEP = 0.1;
+
+function stepOverlayScale(
+  format: StudioFormat,
+  transform: StatusOverlayTransform,
+  delta: number
+): StatusOverlayTransform {
+  return clampStatusOverlayTransform(format, {
+    ...transform,
+    scale: Math.round((transform.scale + delta) * 100) / 100,
+  });
 }
 
 function FormatPreview({
@@ -185,6 +336,8 @@ function FormatPreview({
   clockRef,
   fullscreen = false,
   onFullscreen,
+  overlayTransform = DEFAULT_STATUS_OVERLAY_TRANSFORM,
+  onOverlayTransformChange,
 }: {
   format: StudioFormat;
   sourceUrl: string | null;
@@ -198,16 +351,73 @@ function FormatPreview({
   clockRef: React.RefObject<Record<StudioFormat, number>>;
   fullscreen?: boolean;
   onFullscreen?: () => void;
+  overlayTransform?: StatusOverlayTransform;
+  onOverlayTransformChange?: (next: StatusOverlayTransform) => void;
 }) {
   const canvas = SOCIAL_STUDIO_CANVAS[format];
   const maxPreviewWidth = format === 'post' ? 300 : 230;
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const [adjustTarget, setAdjustTarget] = useState<'image' | 'overlay'>('image');
+  const imageAdjustable = Boolean(sourceUrl && onImageTransformChange);
   const imageGestures = useImageTransformGestures({
     targetRef: surfaceRef,
-    enabled: fullscreen && Boolean(sourceUrl) && Boolean(onImageTransformChange),
+    enabled: imageAdjustable,
     transform: imageTransform,
     onChange: onImageTransformChange || (() => undefined),
   });
+
+  const segments: AdjustSegment[] = onOverlayTransformChange
+    ? [
+        { id: 'image', label: 'Görsel' },
+        { id: 'overlay', label: 'Animasyon' },
+      ]
+    : [{ id: 'image', label: 'Görsel' }];
+  const target = onOverlayTransformChange ? adjustTarget : 'image';
+  const controlBar =
+    imageAdjustable && onImageTransformChange ? (
+      <TransformBar
+        overlay={fullscreen}
+        segments={segments}
+        active={target}
+        onSelect={(id) => setAdjustTarget(id === 'overlay' ? 'overlay' : 'image')}
+        percent={Math.round(
+          (target === 'overlay' ? overlayTransform.scale : imageTransform.zoom) * 100
+        )}
+        onMinus={() => {
+          if (target === 'overlay') {
+            onOverlayTransformChange?.(
+              stepOverlayScale(format, overlayTransform, -OVERLAY_SCALE_STEP)
+            );
+            return;
+          }
+          onImageTransformChange({
+            ...imageTransform,
+            zoom: Math.max(1, imageTransform.zoom - 0.1),
+            x: imageTransform.zoom - 0.1 <= 1 ? 0 : imageTransform.x,
+            y: imageTransform.zoom - 0.1 <= 1 ? 0 : imageTransform.y,
+          });
+        }}
+        onPlus={() => {
+          if (target === 'overlay') {
+            onOverlayTransformChange?.(
+              stepOverlayScale(format, overlayTransform, OVERLAY_SCALE_STEP)
+            );
+            return;
+          }
+          onImageTransformChange({
+            ...imageTransform,
+            zoom: Math.min(1.8, imageTransform.zoom + 0.1),
+          });
+        }}
+        onReset={() => {
+          if (target === 'overlay') {
+            onOverlayTransformChange?.({ ...DEFAULT_STATUS_OVERLAY_TRANSFORM });
+            return;
+          }
+          onImageTransformChange(DEFAULT_IMAGE_TRANSFORM);
+        }}
+      />
+    ) : null;
 
   const outerStyle: React.CSSProperties = fullscreen
     ? {
@@ -238,15 +448,10 @@ function FormatPreview({
         <div
           ref={surfaceRef}
           className={`absolute inset-0 ${
-            fullscreen && sourceUrl
-              ? 'cursor-grab active:cursor-grabbing'
-              : ''
+            imageAdjustable ? 'cursor-grab active:cursor-grabbing' : ''
           }`}
           style={{
-            touchAction:
-              fullscreen && sourceUrl && onImageTransformChange
-                ? 'none'
-                : 'auto',
+            touchAction: imageAdjustable ? 'none' : 'auto',
           }}
           onPointerDown={imageGestures.onPointerDown}
           onPointerMove={imageGestures.onPointerMove}
@@ -280,52 +485,11 @@ function FormatPreview({
             overlayHevcUrl={overlayHevcUrl}
             playing={playing && Boolean(sourceUrl)}
             clockRef={clockRef}
+            transform={overlayTransform}
+            onTransformChange={sourceUrl ? onOverlayTransformChange : undefined}
           />
-          {fullscreen && sourceUrl && onImageTransformChange ? (
-            <div
-              className="pointer-events-auto absolute bottom-3 left-3 z-20 flex items-center gap-1 rounded-full border border-white/15 bg-black/65 p-1 text-white backdrop-blur-sm"
-              onPointerDown={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={() =>
-                  onImageTransformChange({
-                    ...imageTransform,
-                    zoom: Math.max(1, imageTransform.zoom - 0.1),
-                    x: imageTransform.zoom - 0.1 <= 1 ? 0 : imageTransform.x,
-                    y: imageTransform.zoom - 0.1 <= 1 ? 0 : imageTransform.y,
-                  })
-                }
-                className="flex h-8 w-8 items-center justify-center rounded-full"
-                aria-label="Uzaklaştır"
-              >
-                <Minus className="h-4 w-4" />
-              </button>
-              <span className="w-11 text-center text-[11px] tabular-nums">
-                %{Math.round(imageTransform.zoom * 100)}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  onImageTransformChange({
-                    ...imageTransform,
-                    zoom: Math.min(1.8, imageTransform.zoom + 0.1),
-                  })
-                }
-                className="flex h-8 w-8 items-center justify-center rounded-full"
-                aria-label="Yakınlaştır"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onImageTransformChange(DEFAULT_IMAGE_TRANSFORM)}
-                className="flex h-8 w-8 items-center justify-center rounded-full"
-                aria-label="Konumu sıfırla"
-              >
-                <RefreshCcw className="h-3.5 w-3.5" />
-              </button>
-            </div>
+          {fullscreen && controlBar ? (
+            <div className="absolute bottom-3 left-3 z-20">{controlBar}</div>
           ) : null}
         </div>
 
@@ -358,6 +522,7 @@ function FormatPreview({
           </>
         )}
       </div>
+      {!fullscreen ? controlBar : null}
     </div>
   );
 }
@@ -374,6 +539,8 @@ function FullscreenPreviewModal({
   onToggleSound,
   onClose,
   clockRef,
+  overlayTransform,
+  onOverlayTransformChange,
 }: {
   format: StudioFormat;
   sourceUrl: string;
@@ -381,6 +548,8 @@ function FullscreenPreviewModal({
   overlayHevcUrl: string;
   imageTransform: ImageTransform;
   onImageTransformChange: (next: ImageTransform) => void;
+  overlayTransform: StatusOverlayTransform;
+  onOverlayTransformChange: (next: StatusOverlayTransform) => void;
   statusLabel: string;
   soundOn: boolean;
   onToggleSound: () => void;
@@ -418,7 +587,7 @@ function FullscreenPreviewModal({
             {statusLabel} · {SOCIAL_STUDIO_CANVAS[format].label}
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Sürükleyin · iki parmak veya tekerlek ile yakınlaştırın
+            Görseli veya animasyon çerçevesini sürükleyin · iki parmakla ölçekleyin
           </p>
         </div>
         <button
@@ -445,6 +614,8 @@ function FullscreenPreviewModal({
           onToggleSound={onToggleSound}
           clockRef={clockRef}
           fullscreen
+          overlayTransform={overlayTransform}
+          onOverlayTransformChange={onOverlayTransformChange}
         />
       </div>
     </div>,
@@ -591,6 +762,21 @@ export default function SoldRentedStudio({
     post: { ...DEFAULT_IMAGE_TRANSFORM },
     story: { ...DEFAULT_IMAGE_TRANSFORM },
   });
+  const [overlayTransforms, setOverlayTransforms] = useState<
+    Record<StudioFormat, StatusOverlayTransform>
+  >({
+    post: { ...DEFAULT_STATUS_OVERLAY_TRANSFORM },
+    story: { ...DEFAULT_STATUS_OVERLAY_TRANSFORM },
+  });
+  const [consultantTransforms, setConsultantTransforms] = useState<
+    Record<StudioFormat, ConsultantPhotoTransform>
+  >({
+    post: { ...DEFAULT_CONSULTANT_PHOTO_TRANSFORM },
+    story: { ...DEFAULT_CONSULTANT_PHOTO_TRANSFORM },
+  });
+  const [designAdjustTarget, setDesignAdjustTarget] = useState<
+    'consultant' | 'overlay'
+  >('consultant');
   const [designHost, setDesignHost] = useState<HTMLDivElement | null>(null);
   const [designReady, setDesignReady] = useState(false);
   const designCaptureRef = useRef<
@@ -626,6 +812,16 @@ export default function SoldRentedStudio({
   const audioPlaying = isActive && hasAnySource && !exporting;
   const previewPlaying = audioPlaying && !fullscreenFormat;
   const closeFullscreen = useCallback(() => setFullscreenFormat(null), []);
+  const setOverlayTransformFor = useCallback(
+    (format: StudioFormat, next: StatusOverlayTransform) =>
+      setOverlayTransforms((current) => ({ ...current, [format]: next })),
+    []
+  );
+  const setConsultantTransformFor = useCallback(
+    (next: ConsultantPhotoTransform, format: StudioFormat) =>
+      setConsultantTransforms((current) => ({ ...current, [format]: next })),
+    []
+  );
 
   // Önizlemeler sessiz döner; ses yalnızca kullanıcının açtığı formatta ve
   // o formatın animasyonuyla eşzamanlı çalar.
@@ -773,6 +969,7 @@ export default function SoldRentedStudio({
             sourceTransform: designMode
               ? DEFAULT_IMAGE_TRANSFORM
               : imageTransforms[format],
+            overlayTransform: overlayTransforms[format],
             onProgress: (p) => {
               setProgress({
                 ratio: baseRatio + p.ratio * span,
@@ -800,7 +997,15 @@ export default function SoldRentedStudio({
         window.setTimeout(() => setProgress(null), 1800);
       }
     },
-    [designMode, designReady, imageTransforms, kind, post.file, story.file]
+    [
+      designMode,
+      designReady,
+      imageTransforms,
+      overlayTransforms,
+      kind,
+      post.file,
+      story.file,
+    ]
   );
 
   return (
@@ -936,6 +1141,9 @@ export default function SoldRentedStudio({
             formatOverride={previewFormat}
             onCaptureReady={handleCaptureReady}
             onDesignReadyChange={setDesignReady}
+            consultantPhotoAdjustable
+            consultantPhotoTransform={consultantTransforms}
+            onConsultantPhotoTransformChange={setConsultantTransformFor}
             canvasOverlay={
               <StatusOverlayLayer
                 format={previewFormat}
@@ -943,6 +1151,10 @@ export default function SoldRentedStudio({
                 overlayHevcUrl={statusMeta.overlayHevcUrl}
                 playing={previewPlaying}
                 clockRef={clockRef}
+                transform={overlayTransforms[previewFormat]}
+                onTransformChange={(next) =>
+                  setOverlayTransformFor(previewFormat, next)
+                }
               />
             }
           />
@@ -993,6 +1205,16 @@ export default function SoldRentedStudio({
               overlayUrl={statusMeta.overlayUrl}
               overlayHevcUrl={statusMeta.overlayHevcUrl}
               imageTransform={imageTransforms[previewFormat]}
+              onImageTransformChange={(next) =>
+                setImageTransforms((current) => ({
+                  ...current,
+                  [previewFormat]: next,
+                }))
+              }
+              overlayTransform={overlayTransforms[previewFormat]}
+              onOverlayTransformChange={(next) =>
+                setOverlayTransformFor(previewFormat, next)
+              }
               playing={
                 previewPlaying &&
                 Boolean(previewFormat === 'post' ? post.url : story.url)
@@ -1009,10 +1231,82 @@ export default function SoldRentedStudio({
           )}
         </div>
         {designMode ? (
-          <p className="mt-3 text-xs leading-relaxed text-zinc-500">
-            Fotoğrafı konumlandırmak için tam ekran önizlemeyi açın. Durum
-            animasyonu MP4 çıktısına encode sırasında eklenir.
-          </p>
+          <div className="mt-3 flex flex-col items-center gap-3">
+            {designReady ? (
+              <TransformBar
+                segments={[
+                  { id: 'consultant', label: 'Danışman' },
+                  { id: 'overlay', label: 'Animasyon' },
+                ]}
+                active={designAdjustTarget}
+                onSelect={(id) =>
+                  setDesignAdjustTarget(id === 'overlay' ? 'overlay' : 'consultant')
+                }
+                percent={Math.round(
+                  (designAdjustTarget === 'overlay'
+                    ? overlayTransforms[previewFormat].scale
+                    : consultantTransforms[previewFormat].zoom) * 100
+                )}
+                onMinus={() =>
+                  designAdjustTarget === 'overlay'
+                    ? setOverlayTransformFor(
+                        previewFormat,
+                        stepOverlayScale(
+                          previewFormat,
+                          overlayTransforms[previewFormat],
+                          -OVERLAY_SCALE_STEP
+                        )
+                      )
+                    : setConsultantTransformFor(
+                        clampConsultantPhotoTransform({
+                          ...consultantTransforms[previewFormat],
+                          zoom:
+                            Math.round(
+                              (consultantTransforms[previewFormat].zoom - 0.1) * 100
+                            ) / 100,
+                        }),
+                        previewFormat
+                      )
+                }
+                onPlus={() =>
+                  designAdjustTarget === 'overlay'
+                    ? setOverlayTransformFor(
+                        previewFormat,
+                        stepOverlayScale(
+                          previewFormat,
+                          overlayTransforms[previewFormat],
+                          OVERLAY_SCALE_STEP
+                        )
+                      )
+                    : setConsultantTransformFor(
+                        clampConsultantPhotoTransform({
+                          ...consultantTransforms[previewFormat],
+                          zoom:
+                            Math.round(
+                              (consultantTransforms[previewFormat].zoom + 0.1) * 100
+                            ) / 100,
+                        }),
+                        previewFormat
+                      )
+                }
+                onReset={() =>
+                  designAdjustTarget === 'overlay'
+                    ? setOverlayTransformFor(previewFormat, {
+                        ...DEFAULT_STATUS_OVERLAY_TRANSFORM,
+                      })
+                    : setConsultantTransformFor(
+                        { ...DEFAULT_CONSULTANT_PHOTO_TRANSFORM },
+                        previewFormat
+                      )
+                }
+              />
+            ) : null}
+            <p className="text-xs leading-relaxed text-zinc-500">
+              Danışman fotoğrafını, portföy görselini ve animasyon çerçevesini
+              önizlemede sürükleyin. Durum animasyonu MP4 çıktısına encode
+              sırasında eklenir.
+            </p>
+          </div>
         ) : null}
       </section>
 
@@ -1103,6 +1397,10 @@ export default function SoldRentedStudio({
                 ...current,
                 [fullscreenFormat]: next,
               }))
+            }
+            overlayTransform={overlayTransforms[fullscreenFormat]}
+            onOverlayTransformChange={(next) =>
+              setOverlayTransformFor(fullscreenFormat, next)
             }
             statusLabel={statusMeta.label}
             soundOn={soundFormat === fullscreenFormat}

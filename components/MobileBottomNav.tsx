@@ -84,7 +84,7 @@ export default function MobileBottomNav({
       className="fixed inset-x-0 bottom-0 z-[55] lg:hidden pointer-events-none"
     >
       <div className="mx-auto max-w-lg px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-auto">
-        <div className="relative flex items-stretch gap-1 rounded-[26px] border border-[var(--z-border-strong)] bg-[var(--z-surface-glass)] px-2 py-2 shadow-[var(--z-shadow-float)] backdrop-blur-2xl">
+        <div className="relative flex items-stretch gap-1.5 rounded-[26px] border border-[var(--z-border-strong)] bg-[var(--z-surface-glass)] px-1.5 py-1.5 shadow-[var(--z-shadow-float)] backdrop-blur-2xl">
           {items.map((item) => {
             const Icon = item.icon;
             const isActive =

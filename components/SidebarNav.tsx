@@ -25,7 +25,7 @@ import {
 } from '../lib/sidebarNav';
 import { isUserAdmin, usesManagerShell } from '../lib/authIdentity';
 
-const ICONS: Record<SidebarItem['icon'], LucideIcon> = {
+export const SIDEBAR_ICONS: Record<SidebarItem['icon'], LucideIcon> = {
   LayoutGrid,
   CalendarDays,
   Users,
@@ -112,7 +112,7 @@ export default function SidebarNav({
   return (
     <nav className="flex-1 px-3 space-y-0.5 custom-scrollbar overflow-y-auto pb-2">
       {items.map((item) => {
-        const Icon = ICONS[item.icon];
+        const Icon = SIDEBAR_ICONS[item.icon];
         const hasChildren = Array.isArray(item.children) && item.children.length > 0;
         const isOpen = openGroupId === item.id;
         const childActive = hasChildren

@@ -7,7 +7,10 @@ import {
   STATUS_OVERLAY_DELAY_SEC,
   STATUS_VIDEO_DURATION_SEC,
   STATUS_VIDEO_OPTIONS,
+  clampStatusOverlayTransform,
+  isDefaultStatusOverlayTransform,
   statusOverlayLayout,
+  type StatusOverlayTransform,
   type StatusVideoKind,
   type StudioFormat,
 } from './studioAssets';
@@ -96,6 +99,55 @@ async function writeUrlToFFmpeg(
 }
 
 /**
+ * Kaynak: tek kareyi 5 sn döngüle + cover, ardından önizlemedeki zoom/konum.
+ * Overlay: referans ölçüsünde (veya kullanıcının taşıyıp ölçeklediği yerde), eğik,
+ * videonun başından STATUS_OVERLAY_DELAY_SEC kadar sonra girer. Ses: 0'dan 5 sn.
+ */
+export function buildStatusFilter(options: {
+  format: StudioFormat;
+  sourceTransform?: ImageTransform;
+  overlayTransform?: StatusOverlayTransform;
+}): string {
+  const { format } = options;
+  const sourceTransform = options.sourceTransform || { x: 0, y: 0, zoom: 1 };
+  const sourceZoom = Math.max(1, Math.min(1.8, sourceTransform.zoom));
+  const sourceX = Math.max(-1, Math.min(1, sourceTransform.x));
+  const sourceY = Math.max(-1, Math.min(1, sourceTransform.y));
+  const canvas = SOCIAL_STUDIO_CANVAS[format];
+  const dur = STATUS_VIDEO_DURATION_SEC;
+  const delay = STATUS_OVERLAY_DELAY_SEC;
+
+  const moved = !isDefaultStatusOverlayTransform(options.overlayTransform);
+  const overlay = moved
+    ? clampStatusOverlayTransform(format, options.overlayTransform as StatusOverlayTransform)
+    : null;
+  const layout = statusOverlayLayout(format, overlay);
+  const rotation = `${layout.rotationDeg}*PI/180`;
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  // Varsayılan konumda filtre eski çıktıyla bire bir aynı kalmalı.
+  const ovWidth = overlay ? even(layout.width) : layout.width;
+  const ovHeight = overlay ? even(layout.height) : layout.height;
+  const ovX = overlay ? `${Math.round(canvas.width / 2 + overlay.dx) || 0}-w/2` : '(W-w)/2';
+
+  return [
+    `[0:v]scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=increase,` +
+      `crop=${canvas.width}:${canvas.height},` +
+      `scale=ceil(${canvas.width}*${sourceZoom}/2)*2:ceil(${canvas.height}*${sourceZoom}/2)*2,` +
+      `crop=${canvas.width}:${canvas.height}:` +
+      `x=(in_w-out_w)/2-(${sourceX})*(in_w-out_w)/2:` +
+      `y=(in_h-out_h)/2-(${sourceY})*(in_h-out_h)/2,` +
+      `setsar=1,fps=30,` +
+      `trim=duration=${dur},setpts=PTS-STARTPTS[base]`,
+    `[1:v]scale=${ovWidth}:${ovHeight},format=rgba,` +
+      `rotate=${rotation}:ow=rotw(${rotation}):oh=roth(${rotation}):c=none,` +
+      `fps=30,trim=duration=${dur - delay},setpts=PTS-STARTPTS,` +
+      `tpad=start_duration=${delay}:start_mode=add:color=0x00000000[ov]`,
+    `[base][ov]overlay=${ovX}:${layout.centerY}-h/2:format=auto:eof_action=pass[vout]`,
+    `[2:a]atrim=0:${dur},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:channel_layouts=stereo[aout]`,
+  ].join(';');
+}
+
+/**
  * Kaynak görseli ölçekle/crop et, alpha overlay’i ortala, MP3 ekle → 5 sn H.264/AAC MP4.
  * İşlem tamamen istemcide; sunucuya görsel gönderilmez.
  */
@@ -104,13 +156,10 @@ export async function encodeStatusMp4(options: {
   kind: StatusVideoKind;
   format: StudioFormat;
   sourceTransform?: ImageTransform;
+  overlayTransform?: StatusOverlayTransform;
   onProgress?: (progress: StatusExportProgress) => void;
 }): Promise<Blob> {
   const { sourceFile, kind, format, onProgress } = options;
-  const sourceTransform = options.sourceTransform || { x: 0, y: 0, zoom: 1 };
-  const sourceZoom = Math.max(1, Math.min(1.8, sourceTransform.zoom));
-  const sourceX = Math.max(-1, Math.min(1, sourceTransform.x));
-  const sourceY = Math.max(-1, Math.min(1, sourceTransform.y));
   const canvas = SOCIAL_STUDIO_CANVAS[format];
   const meta = statusMeta(kind);
   activeProgressHandler = onProgress;
@@ -137,31 +186,12 @@ export async function encodeStatusMp4(options: {
   await writeUrlToFFmpeg(ffmpeg, meta.overlayUrl, overlayName);
   await writeUrlToFFmpeg(ffmpeg, STATUS_AUDIO_URL, audioName);
 
-  const layout = statusOverlayLayout(format);
   const dur = STATUS_VIDEO_DURATION_SEC;
-  const rotation = `${layout.rotationDeg}*PI/180`;
-
-  // Kaynak: tek kareyi 5 sn döngüle + cover, ardından önizlemedeki zoom/konum.
-  // Overlay: 6. kareden başlar; referans ölçüsünde, eğik, merkezin üstünde ve
-  // videonun başından STATUS_OVERLAY_DELAY_SEC kadar sonra girer
-  // Ses: 0'dan 5 sn
-  const delay = STATUS_OVERLAY_DELAY_SEC;
-  const filter = [
-    `[0:v]scale=${canvas.width}:${canvas.height}:force_original_aspect_ratio=increase,` +
-      `crop=${canvas.width}:${canvas.height},` +
-      `scale=ceil(${canvas.width}*${sourceZoom}/2)*2:ceil(${canvas.height}*${sourceZoom}/2)*2,` +
-      `crop=${canvas.width}:${canvas.height}:` +
-      `x=(in_w-out_w)/2-(${sourceX})*(in_w-out_w)/2:` +
-      `y=(in_h-out_h)/2-(${sourceY})*(in_h-out_h)/2,` +
-      `setsar=1,fps=30,` +
-      `trim=duration=${dur},setpts=PTS-STARTPTS[base]`,
-    `[1:v]scale=${layout.width}:${layout.height},format=rgba,` +
-      `rotate=${rotation}:ow=rotw(${rotation}):oh=roth(${rotation}):c=none,` +
-      `fps=30,trim=duration=${dur - delay},setpts=PTS-STARTPTS,` +
-      `tpad=start_duration=${delay}:start_mode=add:color=0x00000000[ov]`,
-    `[base][ov]overlay=(W-w)/2:${layout.centerY}-h/2:format=auto:eof_action=pass[vout]`,
-    `[2:a]atrim=0:${dur},asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:channel_layouts=stereo[aout]`,
-  ].join(';');
+  const filter = buildStatusFilter({
+    format,
+    sourceTransform: options.sourceTransform,
+    overlayTransform: options.overlayTransform,
+  });
 
   onProgress?.({ ratio: 0.18, label: `${canvas.label} encode başlıyor…` });
 

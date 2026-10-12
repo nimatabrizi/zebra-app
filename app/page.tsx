@@ -12,7 +12,7 @@
  * * Structural Preservation (100% INTACT):
  * - Backend data flow, multi-user scaffolding, Supabase integrations, and custom slots (15:00 - 18:00) preserved perfectly.
  */
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { 
@@ -79,6 +79,7 @@ import DayEventsModal from '../components/global-calendar/DayEventsModal';
 import OverviewDashboard from '../components/OverviewDashboard';
 import SidebarNav from '../components/SidebarNav';
 import MobileBottomNav from '../components/MobileBottomNav';
+import MobileMenuSheet from '../components/MobileMenuSheet';
 import ThemeToggle from '../components/ThemeToggle';
 import SmartSchedulingAssistant from '../components/SmartSchedulingAssistant';
 import WeatherBadge from '../components/WeatherBadge';
@@ -115,6 +116,7 @@ const [username, setUsername] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const closeMobileMenu = useCallback(() => setIsMobileMenuOpen(false), []);
   const [activeTab, setActiveTab] = useState('genel');
   const [fullName, setFullName] = useState(''); // Gerçek isim veritabanından çekilip buraya yazılacak
   const [currentUserId, setCurrentUserId] = useState(''); // Auth / profiles UUID
@@ -3806,7 +3808,6 @@ const [username, setUsername] = useState('');
       )}
 
       {/* Mobile Overlays */}
-      <div className={`fixed inset-0 bg-[var(--z-scrim)] backdrop-blur-md z-40 lg:hidden transition-opacity duration-300 ease-zebra cursor-pointer ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsMobileMenuOpen(false)} />
       <div className={`fixed inset-0 bg-[var(--z-scrim)] backdrop-blur-md z-[60] transition-opacity duration-300 ease-zebra cursor-pointer ${isNotificationOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsNotificationOpen(false)} />
 
       {/* NOTIFICATION CENTER */}
@@ -3864,7 +3865,7 @@ const [username, setUsername] = useState('');
       </aside>
 
       {/* SIDEBAR NAVIGATION */}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-[280px] bg-[var(--z-surface-glass)] backdrop-blur-2xl border-r border-[var(--z-border)] flex flex-col transition-transform duration-500 ease-zebra shrink-0 ${isMobileMenuOpen ? 'translate-x-0 shadow-[var(--z-shadow-float)]' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className="hidden lg:flex lg:static inset-y-0 left-0 z-50 w-[280px] bg-[var(--z-surface-glass)] backdrop-blur-2xl border-r border-[var(--z-border)] flex-col shrink-0">
         <div className="h-20 flex items-center px-6 shrink-0">
           <Image
             src="/icon-512x512.png"
@@ -3886,10 +3887,6 @@ const [username, setUsername] = useState('');
         />
 
         <div className="p-4 shrink-0 space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--z-muted-2)]">Tema</span>
-            <ThemeToggle compact />
-          </div>
           <div className="flex items-center justify-between bg-[var(--z-elevated)]/60 rounded-2xl p-3 border border-[var(--z-border)] transition-colors duration-300 ease-zebra hover:bg-[var(--z-elevated)] cursor-pointer group">
             <div className="flex items-center min-w-0">
               <div className="w-8 h-8 bg-[var(--z-nav-active)] text-[var(--z-fg)] rounded-full flex items-center justify-center text-xs font-medium shrink-0">
@@ -3917,14 +3914,17 @@ const [username, setUsername] = useState('');
               <Search className="w-4 h-4 text-[var(--z-muted)] absolute left-4 group-focus-within:text-[var(--z-fg)] transition-colors duration-300" />
               <input type="text" placeholder="Arama yapın..." className="z-input w-full text-[14px] rounded-full pl-11 pr-4 h-10" />
             </div>
-            <p className="sm:hidden text-[15px] font-medium tracking-tight text-[var(--z-fg)] truncate">
-              Zebra 360
-            </p>
+            <Image
+              src="/icon-512x512.png"
+              alt="Zebra 360"
+              width={32}
+              height={32}
+              className="sm:hidden w-8 h-8 rounded-full object-cover shrink-0"
+              priority
+            />
           </div>
           <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
-            <div className="hidden lg:block">
-              <ThemeToggle compact />
-            </div>
+            <ThemeToggle />
             {canShowNewCekimBtn && (
               <button
                 type="button"
@@ -5266,6 +5266,26 @@ const [username, setUsername] = useState('');
         onNavigate={navigateToTab}
         onOpenMore={() => setIsMobileMenuOpen(true)}
       />
+
+      {isMobileMenuOpen ? (
+        <MobileMenuSheet
+          role={role}
+          fullName={fullName}
+          displayName={toTitleCaseName(fullName)}
+          roleText={roleLabel(role)}
+          initials={toTitleCaseName(fullName)
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((part, index, parts) => (index === 0 || index === parts.length - 1 ? part[0] : ''))
+            .join('')
+            .toLocaleUpperCase('tr-TR')}
+          activeTab={activeTab}
+          badgeCounts={menuBadgeCounts}
+          onNavigate={navigateToTab}
+          onClose={closeMobileMenu}
+          onLogout={handleLogout}
+        />
+      ) : null}
 
       <style dangerouslySetInnerHTML={{__html: `
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }

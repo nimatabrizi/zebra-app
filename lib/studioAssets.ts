@@ -96,21 +96,65 @@ export type StatusOverlayLayout = {
   rotationDeg: number;
 };
 
-export function statusOverlayLayout(format: StudioFormat): StatusOverlayLayout {
+/** dx/dy tuval pikseli; scale taban ölçüye çarpan. */
+export type StatusOverlayTransform = { dx: number; dy: number; scale: number };
+
+export const DEFAULT_STATUS_OVERLAY_TRANSFORM: StatusOverlayTransform = {
+  dx: 0,
+  dy: 0,
+  scale: 1,
+};
+
+export const STATUS_OVERLAY_MIN_SCALE = 0.5;
+export const STATUS_OVERLAY_MAX_SCALE = 1.6;
+
+export function isDefaultStatusOverlayTransform(
+  transform?: StatusOverlayTransform | null
+): boolean {
+  return (
+    !transform ||
+    (transform.dx === 0 && transform.dy === 0 && transform.scale === 1)
+  );
+}
+
+export function clampStatusOverlayTransform(
+  format: StudioFormat,
+  transform: StatusOverlayTransform
+): StatusOverlayTransform {
   const canvas = SOCIAL_STUDIO_CANVAS[format];
-  const width = Math.round(
-    STATUS_OVERLAY_SOURCE_SIZE.width * STATUS_OVERLAY_SCALE
-  );
-  const height = Math.round(
-    STATUS_OVERLAY_SOURCE_SIZE.height * STATUS_OVERLAY_SCALE
-  );
-  const centerY = Math.round(
+  const baseCenterY = Math.round(
     canvas.height * STATUS_OVERLAY_CENTER_Y_RATIO[format]
   );
+  const scale = Math.max(
+    STATUS_OVERLAY_MIN_SCALE,
+    Math.min(STATUS_OVERLAY_MAX_SCALE, transform.scale || 1)
+  );
+  const dx = Math.max(-canvas.width / 2, Math.min(canvas.width / 2, transform.dx || 0));
+  const dy = Math.max(-baseCenterY, Math.min(canvas.height - baseCenterY, transform.dy || 0));
+  return { dx, dy, scale };
+}
+
+export function statusOverlayLayout(
+  format: StudioFormat,
+  transform?: StatusOverlayTransform | null
+): StatusOverlayLayout {
+  const canvas = SOCIAL_STUDIO_CANVAS[format];
+  const t = isDefaultStatusOverlayTransform(transform)
+    ? DEFAULT_STATUS_OVERLAY_TRANSFORM
+    : clampStatusOverlayTransform(format, transform as StatusOverlayTransform);
+  const width = Math.round(
+    STATUS_OVERLAY_SOURCE_SIZE.width * STATUS_OVERLAY_SCALE * t.scale
+  );
+  const height = Math.round(
+    STATUS_OVERLAY_SOURCE_SIZE.height * STATUS_OVERLAY_SCALE * t.scale
+  );
+  const centerX = canvas.width / 2 + t.dx;
+  const centerY =
+    Math.round(canvas.height * STATUS_OVERLAY_CENTER_Y_RATIO[format] + t.dy) || 0;
   return {
     width,
     height,
-    left: Math.round((canvas.width - width) / 2),
+    left: Math.round(centerX - width / 2),
     top: Math.round(centerY - height / 2),
     centerY,
     rotationDeg: STATUS_OVERLAY_ROTATION_DEG,

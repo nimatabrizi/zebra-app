@@ -328,11 +328,11 @@ export default function OverviewDashboard({
         style={{ animationDelay: '40ms' }}
       >
         <p className="z-page-kicker mb-5">Zebra 360</p>
-        <h1 className="max-w-[14ch] text-[clamp(2.6rem,7vw,4.75rem)] font-medium tracking-[-0.045em] leading-[0.95] text-[var(--z-fg)]">
+        <h1 className="truncate whitespace-nowrap text-[clamp(1.75rem,8vw,4.75rem)] font-medium tracking-[-0.045em] leading-[1.05] text-[var(--z-fg)]">
           {greeting}
           {firstName ? (
             <>
-              <br />
+              {' '}
               <span className="text-[var(--z-fg)]/55">{firstName}</span>
             </>
           ) : null}
