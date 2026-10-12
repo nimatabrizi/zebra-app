@@ -238,6 +238,50 @@ function PortalWhen({
   return createPortal(children, document.body);
 }
 
+/** gap: alttaki tamamen saydam satırların görsel yüksekliğine oranı; aspectHW: yükseklik/genişlik. */
+type PhotoBottomGap = { gap: number; aspectHW: number };
+
+const photoBottomGapCache = new Map<string, PhotoBottomGap>();
+
+function measurePhotoBottomGap(
+  src: string,
+  image: HTMLImageElement
+): PhotoBottomGap | null {
+  const cached = photoBottomGapCache.get(src);
+  if (cached) return cached;
+  if (!image.naturalWidth || !image.naturalHeight) return null;
+  const height = Math.min(image.naturalHeight, 512);
+  const width = Math.max(
+    1,
+    Math.round((image.naturalWidth * height) / image.naturalHeight)
+  );
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) return null;
+    context.drawImage(image, 0, 0, width, height);
+    const pixels = context.getImageData(0, 0, width, height).data;
+    let emptyRows = 0;
+    scan: for (let y = height - 1; y >= 0; y -= 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (pixels[(y * width + x) * 4 + 3]! > 16) break scan;
+      }
+      emptyRows += 1;
+    }
+    const result: PhotoBottomGap = {
+      gap: emptyRows >= height ? 0 : Math.min(0.25, emptyRows / height),
+      aspectHW: image.naturalHeight / image.naturalWidth,
+    };
+    photoBottomGapCache.set(src, result);
+    return result;
+  } catch {
+    // CORS başlığı yoksa tuval okunamaz; fotoğraf olduğu gibi kalır.
+    return null;
+  }
+}
+
 function IdentityLayer({
   format,
   partnership,
@@ -286,6 +330,24 @@ function IdentityLayer({
   const right = side === 'right';
   // object-contain kutuyu ortalar; köşeye dayamak için kutuyu tuvalin dışına taşır
   const edgeOffset = partnership ? (post ? -70 : -80) : post ? -70 : -55;
+  const [measuredPhoto, setMeasuredPhoto] = useState<
+    ({ src: string } & PhotoBottomGap) | null
+  >(null);
+  const photoGap = photoSrc
+    ? measuredPhoto?.src === photoSrc
+      ? measuredPhoto
+      : photoBottomGapCache.get(photoSrc)
+    : undefined;
+  const photoScale = partnership ? 1.05 : 1.08;
+  // Alttaki saydam satırlar silüeti footer çizgisinden koparmasın.
+  const photoShift = photoGap?.gap
+    ? photoGap.gap *
+      Math.min(portraitWidth * photoGap.aspectHW, portraitHeight) *
+      photoScale
+    : 0;
+  const photoCss = photoShift
+    ? `translateY(${photoShift.toFixed(2)}px) scale(${photoScale})`
+    : `scale(${photoScale})`;
 
   return (
     <>
@@ -309,11 +371,15 @@ function IdentityLayer({
             crossOrigin="anonymous"
             className="absolute inset-0 w-full h-full object-contain object-bottom"
             style={{
-              transform: `scale(${partnership ? 1.05 : 1.08})`,
+              transform: photoCss,
               transformOrigin: 'bottom center',
             }}
             draggable={false}
             onError={onError}
+            onLoad={(event) => {
+              const measured = measurePhotoBottomGap(photoSrc, event.currentTarget);
+              if (measured) setMeasuredPhoto({ src: photoSrc, ...measured });
+            }}
           />
         ) : null}
 
@@ -333,7 +399,7 @@ function IdentityLayer({
               maskPosition: 'center bottom',
               WebkitMaskRepeat: 'no-repeat',
               maskRepeat: 'no-repeat',
-              transform: `scale(${partnership ? 1.05 : 1.08})`,
+              transform: photoCss,
               transformOrigin: 'bottom center',
             }}
           />
