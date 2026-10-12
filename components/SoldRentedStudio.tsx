@@ -46,11 +46,7 @@ import {
 } from '../lib/useImageTransformGestures';
 import { usePageZoomLock } from '../lib/usePageZoomLock';
 import { useDragPinch } from '../lib/useDragPinch';
-import ZebraStudio, {
-  DEFAULT_CONSULTANT_PHOTO_TRANSFORM,
-  clampConsultantPhotoTransform,
-  type ConsultantPhotoTransform,
-} from './ZebraStudio';
+import ZebraStudio from './ZebraStudio';
 
 type SlotState = {
   file: File | null;
@@ -768,15 +764,6 @@ export default function SoldRentedStudio({
     post: { ...DEFAULT_STATUS_OVERLAY_TRANSFORM },
     story: { ...DEFAULT_STATUS_OVERLAY_TRANSFORM },
   });
-  const [consultantTransforms, setConsultantTransforms] = useState<
-    Record<StudioFormat, ConsultantPhotoTransform>
-  >({
-    post: { ...DEFAULT_CONSULTANT_PHOTO_TRANSFORM },
-    story: { ...DEFAULT_CONSULTANT_PHOTO_TRANSFORM },
-  });
-  const [designAdjustTarget, setDesignAdjustTarget] = useState<
-    'consultant' | 'overlay'
-  >('consultant');
   const [designHost, setDesignHost] = useState<HTMLDivElement | null>(null);
   const [designReady, setDesignReady] = useState(false);
   const designCaptureRef = useRef<
@@ -815,11 +802,6 @@ export default function SoldRentedStudio({
   const setOverlayTransformFor = useCallback(
     (format: StudioFormat, next: StatusOverlayTransform) =>
       setOverlayTransforms((current) => ({ ...current, [format]: next })),
-    []
-  );
-  const setConsultantTransformFor = useCallback(
-    (next: ConsultantPhotoTransform, format: StudioFormat) =>
-      setConsultantTransforms((current) => ({ ...current, [format]: next })),
     []
   );
 
@@ -1141,9 +1123,7 @@ export default function SoldRentedStudio({
             formatOverride={previewFormat}
             onCaptureReady={handleCaptureReady}
             onDesignReadyChange={setDesignReady}
-            consultantPhotoAdjustable
-            consultantPhotoTransform={consultantTransforms}
-            onConsultantPhotoTransformChange={setConsultantTransformFor}
+            portfolioDraggableInPreview
             canvasOverlay={
               <StatusOverlayLayer
                 format={previewFormat}
@@ -1234,76 +1214,40 @@ export default function SoldRentedStudio({
           <div className="mt-3 flex flex-col items-center gap-3">
             {designReady ? (
               <TransformBar
-                segments={[
-                  { id: 'consultant', label: 'Danışman' },
-                  { id: 'overlay', label: 'Animasyon' },
-                ]}
-                active={designAdjustTarget}
-                onSelect={(id) =>
-                  setDesignAdjustTarget(id === 'overlay' ? 'overlay' : 'consultant')
-                }
-                percent={Math.round(
-                  (designAdjustTarget === 'overlay'
-                    ? overlayTransforms[previewFormat].scale
-                    : consultantTransforms[previewFormat].zoom) * 100
-                )}
+                segments={[{ id: 'overlay', label: 'Animasyon' }]}
+                active="overlay"
+                onSelect={() => undefined}
+                percent={Math.round(overlayTransforms[previewFormat].scale * 100)}
                 onMinus={() =>
-                  designAdjustTarget === 'overlay'
-                    ? setOverlayTransformFor(
-                        previewFormat,
-                        stepOverlayScale(
-                          previewFormat,
-                          overlayTransforms[previewFormat],
-                          -OVERLAY_SCALE_STEP
-                        )
-                      )
-                    : setConsultantTransformFor(
-                        clampConsultantPhotoTransform({
-                          ...consultantTransforms[previewFormat],
-                          zoom:
-                            Math.round(
-                              (consultantTransforms[previewFormat].zoom - 0.1) * 100
-                            ) / 100,
-                        }),
-                        previewFormat
-                      )
+                  setOverlayTransformFor(
+                    previewFormat,
+                    stepOverlayScale(
+                      previewFormat,
+                      overlayTransforms[previewFormat],
+                      -OVERLAY_SCALE_STEP
+                    )
+                  )
                 }
                 onPlus={() =>
-                  designAdjustTarget === 'overlay'
-                    ? setOverlayTransformFor(
-                        previewFormat,
-                        stepOverlayScale(
-                          previewFormat,
-                          overlayTransforms[previewFormat],
-                          OVERLAY_SCALE_STEP
-                        )
-                      )
-                    : setConsultantTransformFor(
-                        clampConsultantPhotoTransform({
-                          ...consultantTransforms[previewFormat],
-                          zoom:
-                            Math.round(
-                              (consultantTransforms[previewFormat].zoom + 0.1) * 100
-                            ) / 100,
-                        }),
-                        previewFormat
-                      )
+                  setOverlayTransformFor(
+                    previewFormat,
+                    stepOverlayScale(
+                      previewFormat,
+                      overlayTransforms[previewFormat],
+                      OVERLAY_SCALE_STEP
+                    )
+                  )
                 }
                 onReset={() =>
-                  designAdjustTarget === 'overlay'
-                    ? setOverlayTransformFor(previewFormat, {
-                        ...DEFAULT_STATUS_OVERLAY_TRANSFORM,
-                      })
-                    : setConsultantTransformFor(
-                        { ...DEFAULT_CONSULTANT_PHOTO_TRANSFORM },
-                        previewFormat
-                      )
+                  setOverlayTransformFor(previewFormat, {
+                    ...DEFAULT_STATUS_OVERLAY_TRANSFORM,
+                  })
                 }
               />
             ) : null}
             <p className="text-xs leading-relaxed text-zinc-500">
-              Danışman fotoğrafını, portföy görselini ve animasyon çerçevesini
-              önizlemede sürükleyin. Durum animasyonu MP4 çıktısına encode
+              Portföy görselini ve animasyon çerçevesini önizlemede
+              sürükleyin. Durum animasyonu MP4 çıktısına encode
               sırasında eklenir.
             </p>
           </div>
