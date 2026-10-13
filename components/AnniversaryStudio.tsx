@@ -45,6 +45,8 @@ type AdjustTarget = 'photo' | 'name';
 
 const ADJUST_STORAGE_KEY = 'zebra-yil-donumu-adjust-v1';
 const OFFSET_LIMIT = 700;
+/** Yüzün oturacağı kutu (tuval pikseli); yalnızca ayar önizlemesinde çizilir. */
+const FACE_GUIDES = { x: [65, 391], y: [763, 1168] } as const;
 
 function clampOffset(value: number) {
   return Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, Math.round(value)));
@@ -657,6 +659,22 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
                     className="h-full w-full"
                     aria-label={editing.displayName}
                   />
+                  <div aria-hidden className="pointer-events-none absolute inset-0">
+                    {FACE_GUIDES.x.map((x) => (
+                      <span
+                        key={`x-${x}`}
+                        className="absolute inset-y-0 border-l border-dashed border-white/50"
+                        style={{ left: `${(x / ANNIVERSARY_CANVAS.width) * 100}%` }}
+                      />
+                    ))}
+                    {FACE_GUIDES.y.map((y) => (
+                      <span
+                        key={`y-${y}`}
+                        className="absolute inset-x-0 border-t border-dashed border-white/50"
+                        style={{ top: `${(y / ANNIVERSARY_CANVAS.height) * 100}%` }}
+                      />
+                    ))}
+                  </div>
                   {!previewReady ? (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <Loader2 className="h-6 w-6 animate-spin text-[var(--z-muted)]" />
@@ -698,33 +716,27 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
                   </div>
 
                   <p className="mt-4 text-[12px] leading-relaxed text-[var(--z-muted)]">
-                    {target === 'photo' ? 'Fotoğrafı' : 'İsmi'} önizlemede sürükleyerek taşıyın. Ayar
-                    yalnızca bu kişinin yıl dönümü görseli için geçerlidir.
+                    {target === 'photo'
+                      ? 'Fotoğrafı sürükleyerek taşıyın; yüzü kesikli çizgilerin oluşturduğu kutuya oturtun. Çizgiler yalnızca önizlemede görünür.'
+                      : 'İsmi önizlemede sürükleyerek taşıyın.'}{' '}
+                    Ayar yalnızca bu kişinin yıl dönümü görseli için geçerlidir.
                   </p>
 
-                  {(
-                    [
-                      { id: 'scale', label: 'Boyut', min: 0.5, max: 1.8, step: 0.01, format: (v: number) => `%${Math.round(v * 100)}` },
-                      { id: 'dx', label: 'Yatay', min: -OFFSET_LIMIT, max: OFFSET_LIMIT, step: 1, format: (v: number) => `${v}px` },
-                      { id: 'dy', label: 'Dikey', min: -OFFSET_LIMIT, max: OFFSET_LIMIT, step: 1, format: (v: number) => `${v}px` },
-                    ] as const
-                  ).map((control) => (
-                    <label key={control.id} className="mt-5 block">
-                      <span className="flex justify-between text-[12px] text-[var(--z-muted)]">
-                        <span>{control.label}</span>
-                        <span className="tabular-nums text-[var(--z-fg)]">{control.format(part[control.id])}</span>
-                      </span>
-                      <input
-                        type="range"
-                        min={control.min}
-                        max={control.max}
-                        step={control.step}
-                        value={part[control.id]}
-                        onChange={(event) => updatePart(target, { [control.id]: Number(event.target.value) })}
-                        className="mt-2 w-full accent-[var(--z-fg)]"
-                      />
-                    </label>
-                  ))}
+                  <label className="mt-5 block">
+                    <span className="flex justify-between text-[12px] text-[var(--z-muted)]">
+                      <span>Boyut</span>
+                      <span className="tabular-nums text-[var(--z-fg)]">%{Math.round(part.scale * 100)}</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={1.8}
+                      step={0.01}
+                      value={part.scale}
+                      onChange={(event) => updatePart(target, { scale: Number(event.target.value) })}
+                      className="mt-2 w-full accent-[var(--z-fg)]"
+                    />
+                  </label>
 
                   <div className="mt-auto flex flex-col gap-2 pt-8">
                     <button
