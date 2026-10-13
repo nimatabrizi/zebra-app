@@ -29,11 +29,11 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 function readStoredText() {
-  if (typeof window === 'undefined') return '';
+  if (typeof window === 'undefined') return CONDOLENCE_EXAMPLE_TEXT;
   try {
-    return window.localStorage.getItem(STORAGE_KEY) || '';
+    return window.localStorage.getItem(STORAGE_KEY) || CONDOLENCE_EXAMPLE_TEXT;
   } catch {
-    return '';
+    return CONDOLENCE_EXAMPLE_TEXT;
   }
 }
 
@@ -168,8 +168,14 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
     });
   };
 
-  const startFromExample = () => {
-    if (text.trim() && !window.confirm('Mevcut metin örnek metinle değiştirilsin mi?')) return;
+  const resetText = () => {
+    if (
+      text.trim() &&
+      text !== CONDOLENCE_EXAMPLE_TEXT &&
+      !window.confirm('Yazı sıfırlansın mı? Yaptığınız değişiklikler silinir ve kurumsal örnek metin geri gelir.')
+    ) {
+      return;
+    }
     setText(CONDOLENCE_EXAMPLE_TEXT);
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
@@ -211,7 +217,7 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
     ) : null;
 
   return (
-    <div className="panel-enter pb-20 lg:pb-0">
+    <div className="panel-enter">
       <header className="flex items-end justify-between gap-6">
         <div>
           <p className="z-page-kicker">Zebra Studio · Kurumsal</p>
@@ -265,18 +271,11 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
             <div className="flex flex-wrap items-center gap-2 border-t border-[var(--z-border)] p-3">
               <ToolButton onClick={() => wrapSelection('**', '**')} icon={<Bold className="h-4 w-4" />} label="Kalın" />
               <span className="flex-1" />
-              <ToolButton
-                onClick={startFromExample}
-                icon={<RotateCcw className="h-4 w-4" />}
-                label={
-                  <>
-                    <span className="sm:hidden">Örnek</span>
-                    <span className="hidden sm:inline">Örnekle başla</span>
-                  </>
-                }
-              />
+              <ToolButton onClick={resetText} icon={<RotateCcw className="h-4 w-4" />} label="Sıfırla" />
             </div>
           </div>
+
+          {downloadButton('flex min-h-[50px] w-full rounded-[18px] lg:hidden')}
 
           <details className="group rounded-2xl bg-[var(--z-elevated)]">
             <summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between gap-3 px-5 text-[15px] font-medium text-[var(--z-fg)] [&::-webkit-details-marker]:hidden">
@@ -310,16 +309,11 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
                 ? `Metin uzun, yazı küçültüldü (${fontSize} px)`
                 : `Yazı boyutu ${fontSize} px`}
           </p>
+          <div className="pt-2 lg:hidden">
+            {downloadButton('mx-auto flex min-h-[50px] w-full max-w-[400px] rounded-[18px]')}
+          </div>
         </aside>
       </div>
-
-      {isActive ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[max(6rem,calc(env(safe-area-inset-bottom)+5.25rem))] z-[50] lg:hidden">
-          <div className="pointer-events-auto mx-auto max-w-lg px-3">
-            {downloadButton('flex min-h-[50px] w-full rounded-[18px] shadow-[var(--z-shadow-float)]')}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
