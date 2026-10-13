@@ -11,7 +11,6 @@ import {
   Download,
   ImageOff,
   Loader2,
-  RotateCcw,
   Search,
   SlidersHorizontal,
   X,
@@ -20,7 +19,9 @@ import { supabase } from '../supabaseClient';
 import { resolveConsultantTitle } from '../lib/consultantTitles';
 import { resolveConsultantPhotoUrl, toStudioDisplayName } from '../lib/studioAssets';
 import { toConsultantPhotoSlug } from '../lib/formatName';
-import { DEFAULT_PHOTO_ADJUST, canvasToBlob, rankFileSlug, type PhotoAdjust } from '../lib/rankingVisuals';
+import { canvasToBlob, rankFileSlug, type PhotoAdjust } from '../lib/rankingVisuals';
+import { sameAdjust, useSavedAdjustments } from '../lib/visualAdjustments';
+import { AdjustSaveActions, useUnsavedChangesGuard } from './AdjustSaveControls';
 import {
   ANNIVERSARY_CANVAS,
   DEFAULT_ANNIVERSARY_ADJUST,
@@ -50,14 +51,6 @@ const FACE_GUIDES = { x: [65, 391], y: [763, 1168] } as const;
 
 function clampOffset(value: number) {
   return Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, Math.round(value)));
-}
-
-function isDefaultPart(adjust: PhotoAdjust) {
-  return adjust.scale === 1 && adjust.dx === 0 && adjust.dy === 0;
-}
-
-function isDefaultAdjust(adjust: AnniversaryAdjust) {
-  return isDefaultPart(adjust.photo) && isDefaultPart(adjust.name);
 }
 
 function thumbnailBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -190,14 +183,27 @@ function MissingDatesModal({ people, onClose }: { people: Consultant[]; onClose:
   );
 }
 
-export default function AnniversaryStudio({ isActive = true }: { isActive?: boolean }) {
+export default function AnniversaryStudio({
+  isActive = true,
+  canSave = false,
+}: {
+  isActive?: boolean;
+  canSave?: boolean;
+}) {
   const [today] = useState(() => new Date());
   const [consultants, setConsultants] = useState<Consultant[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [missingOpen, setMissingOpen] = useState(false);
 
-  const [adjustments, setAdjustments] = useState<Record<string, AnniversaryAdjust>>({});
+  const {
+    saved: adjustments,
+    save: saveAdjust,
+    remove: removeAdjust,
+  } = useSavedAdjustments<AnniversaryAdjust>('yil-donumu', {
+    legacyStorageKey: ADJUST_STORAGE_KEY,
+    canSave,
+  });
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [thumbErrors, setThumbErrors] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<Consultant | null>(null);
@@ -215,23 +221,6 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
   const [exporting, setExporting] = useState<{ current: number; total: number } | null>(null);
   const [downloadingKey, setDownloadingKey] = useState('');
   const thumbUrlsRef = useRef<Record<string, string>>({});
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(ADJUST_STORAGE_KEY);
-      if (raw) setAdjustments(JSON.parse(raw));
-    } catch {
-      /* bozuk kayıt yok sayılır */
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ADJUST_STORAGE_KEY, JSON.stringify(adjustments));
-    } catch {
-      /* kota dolu olabilir */
-    }
-  }, [adjustments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -418,20 +407,20 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
     setEditing(person);
   };
 
-  const commitDraft = (person: Consultant, adjust: AnniversaryAdjust) => {
-    setAdjustments((current) => {
-      const next = { ...current };
-      if (isDefaultAdjust(adjust)) delete next[person.key];
-      else next[person.key] = adjust;
-      return next;
-    });
-  };
-
   const closeEditor = () => {
-    if (editing) commitDraft(editing, draft);
     setEditing(null);
     setPreviewReady(false);
   };
+
+  const dirty = Boolean(canSave && editing && !sameAdjust(draft, adjustFor(editing)));
+  const saveDraft = async () => {
+    if (editing) await saveAdjust(editing.key, draft);
+  };
+  const { requestClose, dialog: unsavedDialog } = useUnsavedChangesGuard({
+    dirty,
+    onSave: saveDraft,
+    onClose: closeEditor,
+  });
 
   const updatePart = (part: AdjustTarget, next: Partial<PhotoAdjust>) =>
     setDraft((current) => ({ ...current, [part]: { ...current[part], ...next } }));
@@ -639,7 +628,7 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
         ? createPortal(
             <div
               className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--z-scrim)] p-4 backdrop-blur-md"
-              onClick={closeEditor}
+              onClick={requestClose}
             >
               <div
                 className="z-modal zebra-sheet-enter flex max-h-[92vh] w-full max-w-3xl flex-col gap-6 overflow-y-auto p-5 sm:p-7 md:grid md:grid-cols-[minmax(0,1fr)_280px]"
@@ -688,7 +677,7 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
                       <p className="mt-2 text-[17px] font-medium text-[var(--z-fg)]">{editing.displayName}</p>
                       <p className="mt-1 text-[12px] text-[var(--z-muted)]">{anniversaryLabel(editing)}</p>
                     </div>
-                    <button type="button" onClick={closeEditor} className="z-btn-icon h-9 w-9" aria-label="Kapat">
+                    <button type="button" onClick={requestClose} className="z-btn-icon h-9 w-9" aria-label="Kapat">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
@@ -719,7 +708,7 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
                     {target === 'photo'
                       ? 'Fotoğrafı sürükleyerek taşıyın; yüzü kesikli çizgilerin oluşturduğu kutuya oturtun. Çizgiler yalnızca önizlemede görünür.'
                       : 'İsmi önizlemede sürükleyerek taşıyın.'}{' '}
-                    Ayar yalnızca bu kişinin yıl dönümü görseli için geçerlidir.
+                    Kaydedilen ayar bu kişinin yıl dönümü görselinde hep kullanılır.
                   </p>
 
                   <label className="mt-5 block">
@@ -739,20 +728,21 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
                   </label>
 
                   <div className="mt-auto flex flex-col gap-2 pt-8">
-                    <button
-                      type="button"
-                      onClick={() => updatePart(target, DEFAULT_PHOTO_ADJUST)}
-                      className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> {target === 'photo' ? 'Fotoğrafı' : 'İsmi'} sıfırla
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        commitDraft(editing, draft);
-                        void downloadOne(editing, draft);
+                    <AdjustSaveActions
+                      canSave={canSave}
+                      dirty={dirty}
+                      hasSaved={Boolean(adjustments[editing.key])}
+                      onSave={saveDraft}
+                      onResetScreen={() => setDraft(DEFAULT_ANNIVERSARY_ADJUST)}
+                      onDeleteSaved={async () => {
+                        await removeAdjust(editing.key);
+                        setDraft(DEFAULT_ANNIVERSARY_ADJUST);
                       }}
-                      className="z-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void downloadOne(editing, draft)}
+                      className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
                     >
                       <Download className="h-3.5 w-3.5" /> PNG indir
                     </button>
@@ -763,6 +753,7 @@ export default function AnniversaryStudio({ isActive = true }: { isActive?: bool
             document.body
           )
         : null}
+      {unsavedDialog}
     </div>
   );
 }

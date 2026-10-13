@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
-import { Download, ImageOff, Loader2, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
+import { Download, ImageOff, Loader2, SlidersHorizontal, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { resolveConsultantTitle } from '../lib/consultantTitles';
 import { resolveConsultantPhotoUrl, toStudioDisplayName } from '../lib/studioAssets';
@@ -11,6 +11,8 @@ import { toConsultantPhotoSlug } from '../lib/formatName';
 import { DEFAULT_PHOTO_ADJUST, canvasToBlob, rankFileSlug, type PhotoAdjust } from '../lib/rankingVisuals';
 import { BIRTHDAY_CANVAS, renderBirthdayVisual, type BirthdayPerson } from '../lib/birthdayVisuals';
 import BirthdayPicker from './BirthdayPicker';
+import { sameAdjust, useSavedAdjustments } from '../lib/visualAdjustments';
+import { AdjustSaveActions, useUnsavedChangesGuard } from './AdjustSaveControls';
 
 type Consultant = BirthdayPerson & {
   key: string;
@@ -33,10 +35,6 @@ const OFFSET_LIMIT = 700;
 
 function clampOffset(value: number) {
   return Math.max(-OFFSET_LIMIT, Math.min(OFFSET_LIMIT, Math.round(value)));
-}
-
-function isDefaultAdjust(adjust: PhotoAdjust) {
-  return adjust.scale === 1 && adjust.dx === 0 && adjust.dy === 0;
 }
 
 function thumbnailBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -64,12 +62,25 @@ function fileNameFor(person: Consultant) {
   return `dogum-gunu-${rankFileSlug(person.name)}.png`;
 }
 
-export default function BirthdayStudio({ isActive = true }: { isActive?: boolean }) {
+export default function BirthdayStudio({
+  isActive = true,
+  canSave = false,
+}: {
+  isActive?: boolean;
+  canSave?: boolean;
+}) {
   const [consultants, setConsultants] = useState<Consultant[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
 
-  const [adjustments, setAdjustments] = useState<Record<string, PhotoAdjust>>({});
+  const {
+    saved: adjustments,
+    save: saveAdjust,
+    remove: removeAdjust,
+  } = useSavedAdjustments<PhotoAdjust>('dogum-gunu', {
+    legacyStorageKey: ADJUST_STORAGE_KEY,
+    canSave,
+  });
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [thumbErrors, setThumbErrors] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<Consultant | null>(null);
@@ -82,23 +93,6 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
   const [exporting, setExporting] = useState<{ current: number; total: number } | null>(null);
   const [downloadingKey, setDownloadingKey] = useState('');
   const thumbUrlsRef = useRef<Record<string, string>>({});
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(ADJUST_STORAGE_KEY);
-      if (raw) setAdjustments(JSON.parse(raw));
-    } catch {
-      /* bozuk kayıt yok sayılır */
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ADJUST_STORAGE_KEY, JSON.stringify(adjustments));
-    } catch {
-      /* kota dolu olabilir */
-    }
-  }, [adjustments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -258,20 +252,20 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
     setEditing(person);
   };
 
-  const commitDraft = (person: Consultant, adjust: PhotoAdjust) => {
-    setAdjustments((current) => {
-      const next = { ...current };
-      if (isDefaultAdjust(adjust)) delete next[person.key];
-      else next[person.key] = adjust;
-      return next;
-    });
-  };
-
   const closeEditor = () => {
-    if (editing) commitDraft(editing, draft);
     setEditing(null);
     setPreviewReady(false);
   };
+
+  const dirty = Boolean(canSave && editing && !sameAdjust(draft, adjustFor(editing)));
+  const saveDraft = async () => {
+    if (editing) await saveAdjust(editing.key, draft);
+  };
+  const { requestClose, dialog: unsavedDialog } = useUnsavedChangesGuard({
+    dirty,
+    onSave: saveDraft,
+    onClose: closeEditor,
+  });
 
   const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -455,7 +449,7 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
         ? createPortal(
             <div
               className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--z-scrim)] p-4 backdrop-blur-md"
-              onClick={closeEditor}
+              onClick={requestClose}
             >
               <div
                 className="z-modal zebra-sheet-enter flex max-h-[92vh] w-full max-w-3xl flex-col gap-6 overflow-y-auto p-5 sm:p-7 md:grid md:grid-cols-[minmax(0,1fr)_280px]"
@@ -488,14 +482,14 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
                       <p className="mt-2 text-[17px] font-medium text-[var(--z-fg)]">{editing.displayName}</p>
                       <p className="mt-1 text-[12px] text-[var(--z-muted)]">{editing.title}</p>
                     </div>
-                    <button type="button" onClick={closeEditor} className="z-btn-icon h-9 w-9" aria-label="Kapat">
+                    <button type="button" onClick={requestClose} className="z-btn-icon h-9 w-9" aria-label="Kapat">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
 
                   <p className="mt-6 text-[12px] leading-relaxed text-[var(--z-muted)]">
-                    Fotoğrafı önizlemede sürükleyerek kaydırın. Ayar yalnızca bu kişinin doğum günü
-                    görseli için geçerlidir.
+                    Fotoğrafı önizlemede sürükleyerek kaydırın. Kaydedilen ayar bu kişinin doğum günü
+                    görselinde hep kullanılır.
                   </p>
 
                   {(
@@ -525,20 +519,21 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
                   ))}
 
                   <div className="mt-auto flex flex-col gap-2 pt-8">
-                    <button
-                      type="button"
-                      onClick={() => setDraft(DEFAULT_PHOTO_ADJUST)}
-                      className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> Varsayılana dön
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        commitDraft(editing, draft);
-                        void downloadOne(editing, draft);
+                    <AdjustSaveActions
+                      canSave={canSave}
+                      dirty={dirty}
+                      hasSaved={Boolean(adjustments[editing.key])}
+                      onSave={saveDraft}
+                      onResetScreen={() => setDraft(DEFAULT_PHOTO_ADJUST)}
+                      onDeleteSaved={async () => {
+                        await removeAdjust(editing.key);
+                        setDraft(DEFAULT_PHOTO_ADJUST);
                       }}
-                      className="z-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void downloadOne(editing, draft)}
+                      className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
                     >
                       <Download className="h-3.5 w-3.5" /> PNG indir
                     </button>
@@ -549,6 +544,7 @@ export default function BirthdayStudio({ isActive = true }: { isActive?: boolean
             document.body
           )
         : null}
+      {unsavedDialog}
     </div>
   );
 }

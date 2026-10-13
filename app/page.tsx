@@ -100,6 +100,7 @@ import {
   collectNavTabIds,
   isLiveContentTab,
 } from '../lib/sidebarNav';
+import { canSaveVisualAdjustments } from '../lib/visualAdjustments';
 import {
   appointmentToCalendarEvent,
   buildDayMarkers,
@@ -4046,7 +4047,7 @@ const [username, setUsername] = useState('');
                     : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
-                <BatchProductionStudio />
+                <BatchProductionStudio canSave={canSaveVisualAdjustments(role, fullName)} />
               </div>
             )}
 
@@ -4059,7 +4060,7 @@ const [username, setUsername] = useState('');
                     : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
-                <BadgeCardStudio />
+                <BadgeCardStudio canSave={canSaveVisualAdjustments(role, fullName)} />
               </div>
             )}
 
@@ -4072,7 +4073,10 @@ const [username, setUsername] = useState('');
                     : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
-                <RankingVisualsStudio isActive={activeTab === 'studio-siralama'} />
+                <RankingVisualsStudio
+                  isActive={activeTab === 'studio-siralama'}
+                  canSave={canSaveVisualAdjustments(role, fullName)}
+                />
               </div>
             )}
 
@@ -4085,7 +4089,10 @@ const [username, setUsername] = useState('');
                     : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
-                <BirthdayStudio isActive={activeTab === 'studio-dogum-gunu'} />
+                <BirthdayStudio
+                  isActive={activeTab === 'studio-dogum-gunu'}
+                  canSave={canSaveVisualAdjustments(role, fullName)}
+                />
               </div>
             )}
 
@@ -4098,11 +4105,14 @@ const [username, setUsername] = useState('');
                     : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
-                <AnniversaryStudio isActive={activeTab === 'studio-yil-donumu'} />
+                <AnniversaryStudio
+                  isActive={activeTab === 'studio-yil-donumu'}
+                  canSave={canSaveVisualAdjustments(role, fullName)}
+                />
               </div>
             )}
 
-            {canSeeNimaOnlyTools(fullName) && (
+            {canSeePersonelStudios(role, fullName) && (
               <div
                 aria-hidden={activeTab !== 'studio-giris'}
                 className={
@@ -4111,7 +4121,10 @@ const [username, setUsername] = useState('');
                     : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
                 }
               >
-                <EntryVisualsStudio isActive={activeTab === 'studio-giris'} />
+                <EntryVisualsStudio
+                  isActive={activeTab === 'studio-giris'}
+                  canSave={canSaveVisualAdjustments(role, fullName)}
+                />
               </div>
             )}
 

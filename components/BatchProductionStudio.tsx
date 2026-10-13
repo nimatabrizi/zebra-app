@@ -41,6 +41,8 @@ import {
   type GeneratedImageFile,
 } from '../lib/generatedImageDelivery';
 import GeneratedImageShareSheet from './GeneratedImageShareSheet';
+import { AdjustSaveActions } from './AdjustSaveControls';
+import { sameAdjust, useSavedAdjustments } from '../lib/visualAdjustments';
 
 const DEFAULT_TITLE = toTurkishUpper(DEFAULT_CONSULTANT_TITLE);
 const PHOTO_H_MIN = 200;
@@ -292,6 +294,18 @@ const defaultLayout = (format: StudioFormat = 'story'): LayoutState => {
     },
   };
 };
+
+/** Kayıtlı düzeni varsayılanın üzerine katman katman giydirir (sonradan eklenen alanlar için). */
+function withSavedLayout(format: StudioFormat, saved?: LayoutState): LayoutState {
+  const base = defaultLayout(format);
+  if (!saved) return base;
+  return {
+    photo: { ...base.photo, ...saved.photo },
+    name: { ...base.name, ...saved.name },
+    status: { ...base.status, ...saved.status },
+    phone: { ...base.phone, ...saved.phone },
+  };
+}
 
 function resolveTextAlign(align?: TextAlign | null): TextAlign {
   return align === 'left' || align === 'right' ? align : 'center';
@@ -1211,7 +1225,7 @@ function FullscreenExportPreview({
   );
 }
 
-export default function BatchProductionStudio() {
+export default function BatchProductionStudio({ canSave = false }: { canSave?: boolean }) {
   const [consultants, setConsultants] = useState<ConsultantRow[]>([]);
   const [photoSlugs, setPhotoSlugs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1229,10 +1243,29 @@ export default function BatchProductionStudio() {
     post: null,
     story: null,
   });
-  const [layouts, setLayouts] = useState<Record<StudioFormat, LayoutState>>({
-    post: defaultLayout('post'),
-    story: defaultLayout('story'),
-  });
+  const {
+    saved: savedLayouts,
+    save: saveLayout,
+    remove: removeLayout,
+  } = useSavedAdjustments<LayoutState>('toplu', { canSave });
+  const [layoutEdits, setLayoutEdits] = useState<Partial<Record<StudioFormat, LayoutState>>>({});
+  const layouts = useMemo<Record<StudioFormat, LayoutState>>(
+    () => ({
+      post: layoutEdits.post ?? withSavedLayout('post', savedLayouts.post),
+      story: layoutEdits.story ?? withSavedLayout('story', savedLayouts.story),
+    }),
+    [layoutEdits, savedLayouts]
+  );
+  const setLayouts = useCallback(
+    (update: (prev: Record<StudioFormat, LayoutState>) => Record<StudioFormat, LayoutState>) =>
+      setLayoutEdits((edits) =>
+        update({
+          post: edits.post ?? withSavedLayout('post', savedLayouts.post),
+          story: edits.story ?? withSavedLayout('story', savedLayouts.story),
+        })
+      ),
+    [savedLayouts]
+  );
   const [selectedLayer, setSelectedLayer] = useState<LayerId | null>(null);
   const canvasW = STUDIO_CANVAS[format].width;
   const canvasH = STUDIO_CANVAS[format].height;
@@ -1398,7 +1431,7 @@ export default function BatchProductionStudio() {
         };
       });
     },
-    [format, canvasW, canvasH]
+    [format, canvasW, canvasH, setLayouts]
   );
 
   const updateLayerSize = useCallback(
@@ -1433,7 +1466,7 @@ export default function BatchProductionStudio() {
         };
       });
     },
-    [format]
+    [format, setLayouts]
   );
 
   const preserveMainScroll = () => {
@@ -2119,8 +2152,25 @@ export default function BatchProductionStudio() {
 
             <p className="mt-4 text-center text-[12px] text-[#636366]">
               Katmanı seç · sürükle · köşeden ölçekle. Ayarlar tüm danışmanlara
-              uygulanır.
+              uygulanır; kaydedilen düzen bu formatta hep kullanılır.
             </p>
+            <AdjustSaveActions
+              className="mx-auto mt-4 w-full max-w-xs"
+              canSave={canSave}
+              dirty={
+                canSave && !sameAdjust(layout, withSavedLayout(format, savedLayouts[format]))
+              }
+              hasSaved={Boolean(savedLayouts[format])}
+              onSave={() => saveLayout(format, layout)}
+              onResetScreen={() =>
+                setLayoutEdits((edits) => ({ ...edits, [format]: defaultLayout(format) }))
+              }
+              onDeleteSaved={async () => {
+                await removeLayout(format);
+                setLayoutEdits((edits) => ({ ...edits, [format]: defaultLayout(format) }));
+              }}
+              resetLabel="Varsayılan düzene dön"
+            />
           </div>
         </section>
 

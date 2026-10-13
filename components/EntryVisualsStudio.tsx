@@ -23,6 +23,8 @@ import { toConsultantPhotoSlug } from '../lib/formatName';
 import { canvasToBlob, rankFileSlug } from '../lib/rankingVisuals';
 import PasteListModal from './PasteListModal';
 import PeoplePicker from './PeoplePicker';
+import { AdjustSaveActions, useUnsavedChangesGuard } from './AdjustSaveControls';
+import { useSavedAdjustments } from '../lib/visualAdjustments';
 import {
   DEFAULT_GIRIS_ADJUST,
   DEFAULT_GIRIS_COLOR,
@@ -208,7 +210,13 @@ function EffectsControls({
   );
 }
 
-export default function EntryVisualsStudio({ isActive = true }: { isActive?: boolean }) {
+export default function EntryVisualsStudio({
+  isActive = true,
+  canSave = false,
+}: {
+  isActive?: boolean;
+  canSave?: boolean;
+}) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -217,7 +225,14 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
 
   const [defaults, setDefaults] = useState<GirisEffects>(DEFAULT_GIRIS_EFFECTS);
   const [bleed, setBleed] = useState(false);
-  const [settings, setSettings] = useState<Record<string, PersonSettings>>({});
+  const {
+    saved: settings,
+    save: saveSettings,
+    remove: removeSettings,
+  } = useSavedAdjustments<PersonSettings>('giris', {
+    legacyStorageKey: ADJUST_STORAGE_KEY,
+    canSave,
+  });
   const [thumbs, setThumbs] = useState<Record<string, { url: string; info: GirisRenderInfo }>>({});
   const [thumbErrors, setThumbErrors] = useState<Record<string, string>>({});
   const thumbUrlsRef = useRef<Record<string, string>>({});
@@ -239,8 +254,6 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(ADJUST_STORAGE_KEY);
-      if (raw) setSettings(JSON.parse(raw));
       const rawDefaults = localStorage.getItem(DEFAULTS_STORAGE_KEY);
       if (rawDefaults) {
         const parsed = JSON.parse(rawDefaults);
@@ -251,14 +264,6 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
       /* bozuk kayıt yok sayılır */
     }
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ADJUST_STORAGE_KEY, JSON.stringify(settings));
-    } catch {
-      /* kota dolu olabilir */
-    }
-  }, [settings]);
 
   useEffect(() => {
     try {
@@ -447,15 +452,11 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
     setEditing(person);
   };
 
-  const commitDraft = (person: Profile, adjust: GirisAdjust, effects: GirisEffects) => {
-    setSettings((current) => {
-      const next = { ...current };
-      const entry: PersonSettings = { adjust };
-      if (!sameJson(effects, defaults)) entry.effects = effects;
-      if (sameJson(adjust, DEFAULT_GIRIS_ADJUST) && !entry.effects) delete next[person.key];
-      else next[person.key] = entry;
-      return next;
-    });
+  const saveDraft = async () => {
+    if (!editing) return;
+    const entry: PersonSettings = { adjust: draftAdjust };
+    if (!sameJson(draftEffects, defaults)) entry.effects = draftEffects;
+    await saveSettings(editing.key, entry);
   };
 
   const reloadPhoto = async (person: Profile) => {
@@ -471,11 +472,21 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
   };
 
   const closeEditor = () => {
-    if (editing) commitDraft(editing, draftAdjust, draftEffects);
     setEditing(null);
     setPreviewReady(false);
     setShowBefore(false);
   };
+
+  const dirty = Boolean(
+    canSave &&
+      editing &&
+      (!sameJson(draftAdjust, adjustFor(editing)) || !sameJson(draftEffects, effectsFor(editing)))
+  );
+  const { requestClose, dialog: unsavedDialog } = useUnsavedChangesGuard({
+    dirty,
+    onSave: saveDraft,
+    onClose: closeEditor,
+  });
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -878,7 +889,7 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
         ? createPortal(
             <div
               className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--z-scrim)] p-4 backdrop-blur-md"
-              onClick={closeEditor}
+              onClick={requestClose}
             >
               <div
                 className="z-modal zebra-sheet-enter flex max-h-[94vh] w-full max-w-4xl flex-col gap-6 overflow-y-auto p-5 sm:p-7 md:grid md:h-[94vh] md:grid-cols-[minmax(0,1fr)_300px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden"
@@ -911,7 +922,7 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
                       <p className="mt-2 text-[17px] font-medium text-[var(--z-fg)]">{editing.displayName}</p>
                       <p className="mt-1 text-[12px] text-[var(--z-muted)]">{editing.title}</p>
                     </div>
-                    <button type="button" onClick={closeEditor} className="z-btn-icon h-9 w-9" aria-label="Kapat">
+                    <button type="button" onClick={requestClose} className="z-btn-icon h-9 w-9" aria-label="Kapat">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
@@ -925,7 +936,7 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
                   ) : null}
 
                   <p className="mt-4 text-[12px] leading-relaxed text-[var(--z-muted)]">
-                    Fotoğrafı önizlemede sürükleyerek kaydırın. Ayarlar yalnızca bu kişi için geçerlidir.
+                    Fotoğrafı önizlemede sürükleyerek kaydırın. Kaydedilen ayarlar bu kişinin görselinde hep kullanılır.
                   </p>
 
                   <Slider label="Boyut" value={draftAdjust.scale} min={0.6} max={1.6} step={0.01} format={(v) => `%${Math.round(v * 100)}`} onChange={(v) => setDraftAdjust((c) => ({ ...c, scale: v }))} />
@@ -962,24 +973,26 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
                     >
                       <RefreshCw className={`h-3.5 w-3.5 ${reloadingPhoto ? 'animate-spin' : ''}`} /> Fotoğrafı yeniden yükle
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
+                    <AdjustSaveActions
+                      canSave={canSave}
+                      dirty={dirty}
+                      hasSaved={Boolean(settings[editing.key])}
+                      onSave={saveDraft}
+                      onResetScreen={() => {
                         setDraftAdjust(DEFAULT_GIRIS_ADJUST);
                         setDraftEffects(defaults);
                       }}
-                      className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> Varsayılana dön
-                    </button>
+                      onDeleteSaved={async () => {
+                        await removeSettings(editing.key);
+                        setDraftAdjust(DEFAULT_GIRIS_ADJUST);
+                        setDraftEffects(defaults);
+                      }}
+                    />
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
                         disabled={Boolean(busyKey)}
-                        onClick={() => {
-                          commitDraft(editing, draftAdjust, draftEffects);
-                          void downloadPdfOne(editing, { adjust: draftAdjust, effects: draftEffects });
-                        }}
+                        onClick={() => void downloadPdfOne(editing, { adjust: draftAdjust, effects: draftEffects })}
                         className="z-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-50"
                       >
                         {busyKey === `pdf|${editing.key}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />} PDF
@@ -987,10 +1000,7 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
                       <button
                         type="button"
                         disabled={Boolean(busyKey)}
-                        onClick={() => {
-                          commitDraft(editing, draftAdjust, draftEffects);
-                          void downloadPngOne(editing, { adjust: draftAdjust, effects: draftEffects });
-                        }}
+                        onClick={() => void downloadPngOne(editing, { adjust: draftAdjust, effects: draftEffects })}
                         className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-50"
                       >
                         {busyKey === `png|${editing.key}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} PNG
@@ -1003,6 +1013,7 @@ export default function EntryVisualsStudio({ isActive = true }: { isActive?: boo
             document.body
           )
         : null}
+      {unsavedDialog}
     </div>
   );
 }

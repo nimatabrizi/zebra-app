@@ -4,7 +4,13 @@
  * Pasif ürün sayfaları menüde aktif; içerik "Yakında" placeholder gösterir.
  */
 
-import { isNimaTabrizi, isUserAdmin, isPilotRole, isPersonelRole } from './authIdentity';
+import {
+  isNimaTabrizi,
+  isUserAdmin,
+  isPilotRole,
+  isPersonelRole,
+  normalizeAppRole,
+} from './authIdentity';
 
 export type SidebarLeaf = {
   id: string;
@@ -63,17 +69,19 @@ export const CORE_LIVE_TABS = [
   'users-add',
 ] as const;
 
-/** Toplu Üretim, Sıralama, Giriş Görselleri, Kullanıcı Yönetimi */
+/** Toplu Üretim, Sıralama, Kullanıcı Yönetimi */
 export function canSeeNimaOnlyTools(fullName?: string | null): boolean {
   return isNimaTabrizi(fullName);
 }
 
-/** Doğum Günü ve Yaka Kartı: personel rolü + Nima Tabrizi */
+/** Yaka Kartı, Doğum Günü, Giriş Görselleri, Yıl Dönümleri: personel + broker + Nima Tabrizi */
 export function canSeePersonelStudios(
   role?: string | null,
   fullName?: string | null
 ): boolean {
-  return isPersonelRole(role) || isNimaTabrizi(fullName);
+  return (
+    isPersonelRole(role) || normalizeAppRole(role) === 'broker' || isNimaTabrizi(fullName)
+  );
 }
 
 export type NavAccessOptions = {
@@ -101,6 +109,26 @@ function sharedProductModules(options?: {
   const includeSiralama = options?.includeSiralama === true;
   const includeDogumGunu = options?.includeDogumGunu === true;
   const includeGiris = options?.includeGiris === true;
+  const kurumsalLeaves: SidebarLeaf[] = [
+    ...(includeTopluUretim
+      ? [{ id: 'studio-toplu', label: 'Toplu Üretim', isEnabled: true }]
+      : []),
+    ...(includeYakaKarti
+      ? [{ id: 'studio-yaka-karti', label: 'Yaka Kartı', isEnabled: true }]
+      : []),
+    ...(includeSiralama
+      ? [{ id: 'studio-siralama', label: 'Sıralama Görselleri', isEnabled: true }]
+      : []),
+    ...(includeDogumGunu
+      ? [{ id: 'studio-dogum-gunu', label: 'Doğum Günü', isEnabled: true }]
+      : []),
+    ...(includeGiris
+      ? [{ id: 'studio-giris', label: 'Giriş Görselleri', isEnabled: true }]
+      : []),
+    ...(includeDogumGunu
+      ? [{ id: 'studio-yil-donumu', label: 'Yıl Dönümleri', isEnabled: true }]
+      : []),
+  ];
   return [
     ...(includeMusteri
       ? [
@@ -145,23 +173,15 @@ function sharedProductModules(options?: {
             },
           ],
         },
-        ...(includeTopluUretim
-          ? [{ id: 'studio-toplu', label: 'Toplu Üretim', isEnabled: true }]
-          : []),
-        ...(includeYakaKarti
-          ? [{ id: 'studio-yaka-karti', label: 'Yaka Kartı', isEnabled: true }]
-          : []),
-        ...(includeSiralama
-          ? [{ id: 'studio-siralama', label: 'Sıralama Görselleri', isEnabled: true }]
-          : []),
-        ...(includeDogumGunu
+        ...(kurumsalLeaves.length
           ? [
-              { id: 'studio-dogum-gunu', label: 'Doğum Günü', isEnabled: true },
-              { id: 'studio-yil-donumu', label: 'Yıl Dönümleri', isEnabled: true },
+              {
+                id: 'studio-kurumsal-group',
+                label: 'Kurumsal Tasarımlar',
+                isEnabled: true,
+                children: kurumsalLeaves,
+              },
             ]
-          : []),
-        ...(includeGiris
-          ? [{ id: 'studio-giris', label: 'Giriş Görselleri', isEnabled: true }]
           : []),
         { id: 'studio-branda', label: 'Branda', isEnabled: true },
         { id: 'studio-brosur', label: 'Broşür', isEnabled: true },
@@ -256,7 +276,7 @@ export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
       includeYakaKarti: personelStudios,
       includeSiralama: nima,
       includeDogumGunu: personelStudios,
-      includeGiris: nima,
+      includeGiris: personelStudios,
     }),
     {
       id: 'randevu-sistemi',
@@ -296,7 +316,7 @@ export function buildManagerNav(
       includeYakaKarti: personelStudios,
       includeSiralama: nima,
       includeDogumGunu: personelStudios,
-      includeGiris: nima,
+      includeGiris: personelStudios,
     }),
     {
       id: 'randevu-sistemi',
@@ -382,10 +402,11 @@ export function isLiveContentTab(
   if (id === 'cekim-raporu' && role === 'broker') return true;
   if (id === 'studio-yeni-portfoy') return true;
   if (id === 'studio-satildi-kiralandi') return true;
-  if (id === 'studio-toplu' || id === 'studio-siralama' || id === 'studio-giris') {
+  if (id === 'studio-toplu' || id === 'studio-siralama') {
     return canSeeNimaOnlyTools(fullName);
   }
   if (
+    id === 'studio-giris' ||
     id === 'studio-yaka-karti' ||
     id === 'studio-dogum-gunu' ||
     id === 'studio-yil-donumu'

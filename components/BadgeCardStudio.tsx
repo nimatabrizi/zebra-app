@@ -12,7 +12,6 @@ import {
   ListChecks,
   Loader2,
   RefreshCw,
-  RotateCcw,
   Search,
   SlidersHorizontal,
   User,
@@ -42,6 +41,8 @@ import {
 } from '../lib/studioAssets';
 import { applyColorAdjust, DEFAULT_GIRIS_COLOR } from '../lib/girisVisuals';
 import PasteListModal from './PasteListModal';
+import { AdjustSaveActions, useUnsavedChangesGuard } from './AdjustSaveControls';
+import { sameAdjust, useSavedAdjustments } from '../lib/visualAdjustments';
 
 const PASTE_LIST_STORAGE_KEY = 'zebra-yaka-karti-paste-list-v1';
 
@@ -70,10 +71,6 @@ const OFFSET_LIMIT = 1200;
 
 function isManualPlacement(adjust: BadgeAdjust) {
   return adjust.scale !== 1 || adjust.dx !== 0 || adjust.dy !== 0;
-}
-
-function isDefaultBadgeAdjust(adjust: BadgeAdjust) {
-  return !isManualPlacement(adjust) && !(adjust.red && adjust.red > 0);
 }
 
 const colorPhotoCache = new Map<string, Promise<string | null>>();
@@ -925,17 +922,7 @@ function AdjustSlider({
   );
 }
 
-function readStoredAdjustments(): Record<string, BadgeAdjust> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(ADJUST_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, BadgeAdjust>) : {};
-  } catch {
-    return {};
-  }
-}
-
-export default function BadgeCardStudio() {
+export default function BadgeCardStudio({ canSave = false }: { canSave?: boolean }) {
   const [people, setPeople] = useState<BadgePerson[]>([]);
   const [photoSlugs, setPhotoSlugs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -956,19 +943,18 @@ export default function BadgeCardStudio() {
   const [exportPhotoBroken, setExportPhotoBroken] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
-  const [adjustments, setAdjustments] = useState<Record<string, BadgeAdjust>>(readStoredAdjustments);
+  const {
+    saved: adjustments,
+    save: saveAdjust,
+    remove: removeAdjust,
+  } = useSavedAdjustments<BadgeAdjust>('yaka-karti', {
+    legacyStorageKey: ADJUST_STORAGE_KEY,
+    canSave,
+  });
   const [editing, setEditing] = useState<BadgePerson | null>(null);
   const [draftAdjust, setDraftAdjust] = useState<BadgeAdjust>(DEFAULT_BADGE_ADJUST);
   const [busyId, setBusyId] = useState('');
   const dragRef = useRef<{ pointerId: number; startX: number; startY: number; origin: BadgeAdjust } | null>(null);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ADJUST_STORAGE_KEY, JSON.stringify(adjustments));
-    } catch {
-      /* kota dolu olabilir */
-    }
-  }, [adjustments]);
 
   const adjustFor = (id: string) => adjustments[id] || DEFAULT_BADGE_ADJUST;
 
@@ -1128,23 +1114,22 @@ export default function BadgeCardStudio() {
     setReloadToken((value) => value + 1);
   };
 
-  const commitAdjust = (id: string, adjust: BadgeAdjust) =>
-    setAdjustments((current) => {
-      const next = { ...current };
-      if (isDefaultBadgeAdjust(adjust)) delete next[id];
-      else next[id] = adjust;
-      return next;
-    });
-
   const openEditor = (person: BadgePerson) => {
     setDraftAdjust(adjustFor(person.id));
     setEditing(person);
   };
 
-  const closeEditor = () => {
-    if (editing) commitAdjust(editing.id, draftAdjust);
-    setEditing(null);
+  const closeEditor = () => setEditing(null);
+
+  const dirty = Boolean(canSave && editing && !sameAdjust(draftAdjust, adjustFor(editing.id)));
+  const saveDraft = async () => {
+    if (editing) await saveAdjust(editing.id, draftAdjust);
   };
+  const { requestClose, dialog: unsavedDialog } = useUnsavedChangesGuard({
+    dirty,
+    onSave: saveDraft,
+    onClose: closeEditor,
+  });
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -1547,7 +1532,7 @@ export default function BadgeCardStudio() {
         ? createPortal(
             <div
               className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--z-scrim)] p-4 backdrop-blur-md"
-              onClick={closeEditor}
+              onClick={requestClose}
             >
               <div
                 className="z-modal zebra-sheet-enter flex max-h-[94vh] w-full max-w-3xl flex-col gap-6 overflow-y-auto p-5 sm:p-7 md:grid md:h-[94vh] md:grid-cols-[minmax(0,1fr)_280px] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden"
@@ -1569,12 +1554,12 @@ export default function BadgeCardStudio() {
                       <p className="mt-2 text-[17px] font-medium text-white">{editing.displayName}</p>
                       <p className="mt-1 text-[12px] text-[#86868B]">{editing.title}</p>
                     </div>
-                    <button type="button" onClick={closeEditor} className="z-btn-icon h-9 w-9" aria-label="Kapat">
+                    <button type="button" onClick={requestClose} className="z-btn-icon h-9 w-9" aria-label="Kapat">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
                   <p className="mt-4 text-[12px] leading-relaxed text-[#86868B]">
-                    Fotoğrafı önizlemede sürükleyerek kaydırın. Ayar yalnızca bu kişi için geçerlidir.
+                    Fotoğrafı önizlemede sürükleyerek kaydırın. Kaydedilen ayar bu kişinin kartında hep kullanılır.
                   </p>
                   <AdjustSlider label="Boyut" value={draftAdjust.scale} min={0.6} max={1.6} step={0.01} format={(v) => `%${Math.round(v * 100)}`} onChange={(v) => setDraftAdjust((c) => ({ ...c, scale: v }))} />
                   <AdjustSlider label="Yatay" value={draftAdjust.dx} min={-OFFSET_LIMIT} max={OFFSET_LIMIT} step={1} format={(v) => `${v}px`} onChange={(v) => setDraftAdjust((c) => ({ ...c, dx: v }))} />
@@ -1582,21 +1567,22 @@ export default function BadgeCardStudio() {
                   <p className="mt-7 text-[13px] font-medium text-white">Renk</p>
                   <AdjustSlider label="Kırmızılık azalt" value={draftAdjust.red ?? 0} min={0} max={100} step={1} format={(v) => `${v}`} onChange={(v) => setDraftAdjust((c) => ({ ...c, red: v }))} />
                   <div className="mt-auto flex flex-col gap-2 pt-8">
-                    <button
-                      type="button"
-                      onClick={() => setDraftAdjust(DEFAULT_BADGE_ADJUST)}
-                      className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px]"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" /> Varsayılana dön
-                    </button>
+                    <AdjustSaveActions
+                      canSave={canSave}
+                      dirty={dirty}
+                      hasSaved={Boolean(adjustments[editing.id])}
+                      onSave={saveDraft}
+                      onResetScreen={() => setDraftAdjust(DEFAULT_BADGE_ADJUST)}
+                      onDeleteSaved={async () => {
+                        await removeAdjust(editing.id);
+                        setDraftAdjust(DEFAULT_BADGE_ADJUST);
+                      }}
+                    />
                     <button
                       type="button"
                       disabled={exporting}
-                      onClick={() => {
-                        commitAdjust(editing.id, draftAdjust);
-                        downloadOne(editing);
-                      }}
-                      className="z-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-50"
+                      onClick={() => downloadOne(editing)}
+                      className="z-btn-ghost inline-flex items-center justify-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-50"
                     >
                       {busyId === editing.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} PDF
                     </button>
@@ -1607,6 +1593,7 @@ export default function BadgeCardStudio() {
             document.body
           )
         : null}
+      {unsavedDialog}
 
       <div
         aria-hidden
@@ -1615,7 +1602,13 @@ export default function BadgeCardStudio() {
         <div ref={exportCanvasRef}>
           <BadgeFace
             person={exportPerson}
-            adjust={exportPerson ? adjustFor(exportPerson.id) : DEFAULT_BADGE_ADJUST}
+            adjust={
+              exportPerson
+                ? editing?.id === exportPerson.id
+                  ? draftAdjust
+                  : adjustFor(exportPerson.id)
+                : DEFAULT_BADGE_ADJUST
+            }
             photoFailed={exportPhotoBroken}
             onPhotoError={() => setExportPhotoBroken(true)}
           />
