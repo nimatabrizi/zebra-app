@@ -57,6 +57,7 @@ export const CORE_LIVE_TABS = [
   'studio-yaka-karti',
   'studio-siralama',
   'studio-dogum-gunu',
+  'studio-yil-donumu',
   'studio-giris',
   'users-overview',
   'users-add',
@@ -154,7 +155,10 @@ function sharedProductModules(options?: {
           ? [{ id: 'studio-siralama', label: 'Sıralama Görselleri', isEnabled: true }]
           : []),
         ...(includeDogumGunu
-          ? [{ id: 'studio-dogum-gunu', label: 'Doğum Günü', isEnabled: true }]
+          ? [
+              { id: 'studio-dogum-gunu', label: 'Doğum Günü', isEnabled: true },
+              { id: 'studio-yil-donumu', label: 'Yıl Dönümleri', isEnabled: true },
+            ]
           : []),
         ...(includeGiris
           ? [{ id: 'studio-giris', label: 'Giriş Görselleri', isEnabled: true }]
@@ -381,7 +385,11 @@ export function isLiveContentTab(
   if (id === 'studio-toplu' || id === 'studio-siralama' || id === 'studio-giris') {
     return canSeeNimaOnlyTools(fullName);
   }
-  if (id === 'studio-yaka-karti' || id === 'studio-dogum-gunu') {
+  if (
+    id === 'studio-yaka-karti' ||
+    id === 'studio-dogum-gunu' ||
+    id === 'studio-yil-donumu'
+  ) {
     return canSeePersonelStudios(role, fullName);
   }
   if (id === 'users-overview' || id === 'users-add') {

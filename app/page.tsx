@@ -89,6 +89,7 @@ import BatchProductionStudio from '../components/BatchProductionStudio';
 import BadgeCardStudio from '../components/BadgeCardStudio';
 import RankingVisualsStudio from '../components/RankingVisualsStudio';
 import BirthdayStudio from '../components/BirthdayStudio';
+import AnniversaryStudio from '../components/AnniversaryStudio';
 import EntryVisualsStudio from '../components/EntryVisualsStudio';
 import UserManagement from '../components/UserManagement';
 import {
@@ -4085,6 +4086,19 @@ const [username, setUsername] = useState('');
                 }
               >
                 <BirthdayStudio isActive={activeTab === 'studio-dogum-gunu'} />
+              </div>
+            )}
+
+            {canSeePersonelStudios(role, fullName) && (
+              <div
+                aria-hidden={activeTab !== 'studio-yil-donumu'}
+                className={
+                  activeTab === 'studio-yil-donumu'
+                    ? ''
+                    : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                }
+              >
+                <AnniversaryStudio isActive={activeTab === 'studio-yil-donumu'} />
               </div>
             )}
 

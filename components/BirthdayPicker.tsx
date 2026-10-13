@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Cake, Check, ImageOff, Loader2, Search, X } from 'lucide-react';
+import { Cake, Check, ImageOff, Loader2, Search, X, type LucideIcon } from 'lucide-react';
 
 export type BirthdayPickerPerson = {
   key: string;
@@ -10,6 +10,8 @@ export type BirthdayPickerPerson = {
   month?: number | null;
   day?: number | null;
   missingPhoto?: boolean;
+  /** Tarihten önce gösterilen kısa bilgi (ör. "3. yıl"). */
+  note?: string;
 };
 
 type BirthdayPickerProps = {
@@ -19,6 +21,10 @@ type BirthdayPickerProps = {
   onRemove: (key: string) => void;
   onClear: () => void;
   loading?: boolean;
+  icon?: LucideIcon;
+  /** Ay satırı başlığı; varsayılan "Ekim doğumlular". */
+  monthLabel?: (monthName: string) => string;
+  emptyMonthText?: string;
 };
 
 type Option =
@@ -82,6 +88,9 @@ export default function BirthdayPicker({
   onRemove,
   onClear,
   loading = false,
+  icon: Icon = Cake,
+  monthLabel = (monthName) => `${monthName} doğumlular`,
+  emptyMonthText = 'Bu ayda doğum günü kayıtlı kişi yok',
 }: BirthdayPickerProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -289,7 +298,7 @@ export default function BirthdayPicker({
                 onClick={() => onAdd(shortcut.keys)}
                 className="inline-flex items-center gap-1.5 rounded-full border border-[var(--z-border)] bg-[var(--z-surface)] px-3.5 py-2 text-[13px] font-medium text-[var(--z-fg)] transition-colors hover:border-[var(--z-border-strong)] disabled:cursor-default disabled:opacity-45 sm:py-1.5 sm:text-[12px]"
               >
-                {allSelected ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Cake className="h-3.5 w-3.5" />}
+                {allSelected ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : <Icon className="h-3.5 w-3.5" />}
                 {shortcut.label}
                 <span className="tabular-nums text-[var(--z-muted)]">{shortcut.keys.length}</span>
               </button>
@@ -326,16 +335,16 @@ export default function BirthdayPicker({
                     className={`${rowClass} mb-1 disabled:opacity-50`}
                   >
                     <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--z-inverse)] text-[var(--z-inverse-fg)]">
-                      <Cake className="h-4 w-4" />
+                      <Icon className="h-4 w-4" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-[15px] font-semibold text-[var(--z-fg)] sm:text-[14px]">
-                        {monthName} doğumlular
+                        {monthLabel(monthName)}
                       </span>
                       <span className="block text-[12px] text-[var(--z-muted)]">
                         {option.keys.length
                           ? `${option.keys.length} kişi${pending < option.keys.length ? ` · ${option.keys.length - pending} zaten seçili` : ''}`
-                          : 'Bu ayda doğum günü kayıtlı kişi yok'}
+                          : emptyMonthText}
                       </span>
                     </span>
                     {option.keys.length ? (
@@ -349,7 +358,7 @@ export default function BirthdayPicker({
 
               const { person } = option;
               const isSelected = selectedSet.has(person.key);
-              const meta = [formatBirthday(person), person.title].filter(Boolean).join(' · ');
+              const meta = [person.note, formatBirthday(person), person.title].filter(Boolean).join(' · ');
               return (
                 <button
                   key={person.key}
