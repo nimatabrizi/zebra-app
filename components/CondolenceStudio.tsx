@@ -7,12 +7,14 @@ import {
   CONDOLENCE_CANVAS,
   CONDOLENCE_EXAMPLE_TEXT,
   CONDOLENCE_LAYOUT,
+  CONDOLENCE_TEMPLATE_TEXT,
   parseRuns,
   plainCondolenceText,
   renderCondolenceVisual,
 } from '../lib/condolenceVisuals';
 
-const STORAGE_KEY = 'zebra-vefat-text';
+const STORAGE_KEY = 'zebra-vefat-text-v2';
+const LEGACY_STORAGE_KEY = 'zebra-vefat-text';
 const PREVIEW_DELAY_MS = 120;
 
 type Tab = 'write' | 'preview';
@@ -29,11 +31,12 @@ function downloadBlob(blob: Blob, fileName: string) {
 }
 
 function readStoredText() {
-  if (typeof window === 'undefined') return CONDOLENCE_EXAMPLE_TEXT;
+  if (typeof window === 'undefined') return CONDOLENCE_TEMPLATE_TEXT;
   try {
-    return window.localStorage.getItem(STORAGE_KEY) || CONDOLENCE_EXAMPLE_TEXT;
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return window.localStorage.getItem(STORAGE_KEY) || CONDOLENCE_TEMPLATE_TEXT;
   } catch {
-    return CONDOLENCE_EXAMPLE_TEXT;
+    return CONDOLENCE_TEMPLATE_TEXT;
   }
 }
 
@@ -171,12 +174,12 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
   const resetText = () => {
     if (
       text.trim() &&
-      text !== CONDOLENCE_EXAMPLE_TEXT &&
-      !window.confirm('Yazı sıfırlansın mı? Yaptığınız değişiklikler silinir ve kurumsal örnek metin geri gelir.')
+      text !== CONDOLENCE_TEMPLATE_TEXT &&
+      !window.confirm('Yazı sıfırlansın mı? Yaptığınız değişiklikler silinir ve boş kalıp geri gelir.')
     ) {
       return;
     }
-    setText(CONDOLENCE_EXAMPLE_TEXT);
+    setText(CONDOLENCE_TEMPLATE_TEXT);
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 

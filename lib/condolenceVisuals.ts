@@ -270,6 +270,13 @@ export const CONDOLENCE_EXAMPLE_TEXT = [
   'Babamıza Allah’tan rahmet;\narkadaşımıza, ailesine ve tüm sevenlerine\nsabır ve başsağlığı diliyoruz.',
 ].join('\n\n');
 
+/** Stüdyonun açılış ve "Sıfırla" metni: xxx alanları kullanıcı tarafından doldurulur. */
+export const CONDOLENCE_TEMPLATE_TEXT = [
+  'Değerli arkadaşımız xxx’in\nkıymetli xxx **xxx**’in vefatını derin bir üzüntüyle öğrenmiş bulunuyoruz.',
+  'Cenazesi, xxx xxx günü\nİkindi namazına müteakip xxx’nde kaldırılacaktır.',
+  'xxx Allah’tan rahmet;\narkadaşımıza, ailesine ve tüm sevenlerine\nsabır ve başsağlığı diliyoruz.',
+].join('\n\n');
+
 /* ------------------------------------------------------------------ */
 /* Çizim                                                               */
 /* ------------------------------------------------------------------ */
