@@ -65,11 +65,12 @@ export const CORE_LIVE_TABS = [
   'studio-dogum-gunu',
   'studio-yil-donumu',
   'studio-giris',
+  'studio-vefat',
   'users-overview',
   'users-add',
 ] as const;
 
-/** Toplu Üretim, Sıralama, Kullanıcı Yönetimi */
+/** Toplu Üretim, Sıralama, Vefat Görseli, Kullanıcı Yönetimi */
 export function canSeeNimaOnlyTools(fullName?: string | null): boolean {
   return isNimaTabrizi(fullName);
 }
@@ -102,6 +103,7 @@ function sharedProductModules(options?: {
   includeSiralama?: boolean;
   includeDogumGunu?: boolean;
   includeGiris?: boolean;
+  includeVefat?: boolean;
 }): SidebarItem[] {
   const includeMusteri = options?.includeMusteri !== false;
   const includeTopluUretim = options?.includeTopluUretim === true;
@@ -109,6 +111,7 @@ function sharedProductModules(options?: {
   const includeSiralama = options?.includeSiralama === true;
   const includeDogumGunu = options?.includeDogumGunu === true;
   const includeGiris = options?.includeGiris === true;
+  const includeVefat = options?.includeVefat === true;
   const kurumsalLeaves: SidebarLeaf[] = [
     ...(includeTopluUretim
       ? [{ id: 'studio-toplu', label: 'Toplu Üretim', isEnabled: true }]
@@ -127,6 +130,9 @@ function sharedProductModules(options?: {
       : []),
     ...(includeDogumGunu
       ? [{ id: 'studio-yil-donumu', label: 'Yıl Dönümleri', isEnabled: true }]
+      : []),
+    ...(includeVefat
+      ? [{ id: 'studio-vefat', label: 'Vefat Görseli', isEnabled: true }]
       : []),
   ];
   return [
@@ -277,6 +283,7 @@ export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
       includeSiralama: nima,
       includeDogumGunu: personelStudios,
       includeGiris: personelStudios,
+      includeVefat: nima,
     }),
     {
       id: 'randevu-sistemi',
@@ -317,6 +324,7 @@ export function buildManagerNav(
       includeSiralama: nima,
       includeDogumGunu: personelStudios,
       includeGiris: personelStudios,
+      includeVefat: nima,
     }),
     {
       id: 'randevu-sistemi',
@@ -402,7 +410,7 @@ export function isLiveContentTab(
   if (id === 'cekim-raporu' && role === 'broker') return true;
   if (id === 'studio-yeni-portfoy') return true;
   if (id === 'studio-satildi-kiralandi') return true;
-  if (id === 'studio-toplu' || id === 'studio-siralama') {
+  if (id === 'studio-toplu' || id === 'studio-siralama' || id === 'studio-vefat') {
     return canSeeNimaOnlyTools(fullName);
   }
   if (

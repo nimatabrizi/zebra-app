@@ -91,6 +91,7 @@ import RankingVisualsStudio from '../components/RankingVisualsStudio';
 import BirthdayStudio from '../components/BirthdayStudio';
 import AnniversaryStudio from '../components/AnniversaryStudio';
 import EntryVisualsStudio from '../components/EntryVisualsStudio';
+import CondolenceStudio from '../components/CondolenceStudio';
 import UserManagement from '../components/UserManagement';
 import {
   buildConsultantNav,
@@ -4125,6 +4126,19 @@ const [username, setUsername] = useState('');
                   isActive={activeTab === 'studio-giris'}
                   canSave={canSaveVisualAdjustments(role, fullName)}
                 />
+              </div>
+            )}
+
+            {canSeeNimaOnlyTools(fullName) && (
+              <div
+                aria-hidden={activeTab !== 'studio-vefat'}
+                className={
+                  activeTab === 'studio-vefat'
+                    ? ''
+                    : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                }
+              >
+                <CondolenceStudio isActive={activeTab === 'studio-vefat'} />
               </div>
             )}
 
