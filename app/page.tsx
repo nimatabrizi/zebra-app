@@ -3039,7 +3039,7 @@ const [username, setUsername] = useState('');
   };
 
   return (
-    <div className="min-h-screen flex font-sans antialiased text-[var(--z-fg)] overflow-hidden selection:bg-white/20 selection:text-white bg-[var(--z-bg)]">
+    <div className="min-h-screen flex font-sans antialiased text-[var(--z-fg)] overflow-hidden selection:bg-[var(--z-border-strong)] selection:text-[var(--z-fg)] bg-[var(--z-bg)]">
       
       {/* Toast Notification */}
       <div className={`fixed bottom-24 lg:bottom-10 left-1/2 -translate-x-1/2 z-[110] transition-all duration-500 ease-zebra pointer-events-none

@@ -1,9 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Bold, ChevronDown, Download, Loader2, RotateCcw, UserPlus, X } from 'lucide-react';
-import { supabase } from '../supabaseClient';
-import { toStudioDisplayName } from '../lib/studioAssets';
+import { Bold, ChevronDown, Download, Loader2, RotateCcw } from 'lucide-react';
 import { canvasToBlob, rankFileSlug } from '../lib/rankingVisuals';
 import {
   CONDOLENCE_CANVAS,
@@ -12,7 +10,6 @@ import {
   parseRuns,
   plainCondolenceText,
   renderCondolenceVisual,
-  genitiveSuffix,
 } from '../lib/condolenceVisuals';
 
 const STORAGE_KEY = 'zebra-vefat-text';
@@ -82,23 +79,16 @@ function ToolButton({
   onClick,
   icon,
   label,
-  active = false,
 }: {
   onClick: () => void;
   icon: React.ReactNode;
   label: React.ReactNode;
-  active?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={active}
-      className={`inline-flex min-h-[44px] items-center gap-2 rounded-full px-4 text-[14px] font-medium transition-colors ${
-        active
-          ? 'bg-[var(--z-inverse)] text-[var(--z-inverse-fg)]'
-          : 'bg-[var(--z-elevated)] text-[var(--z-fg)] hover:bg-[var(--z-border)]'
-      }`}
+      className="inline-flex min-h-[44px] items-center gap-2 rounded-full bg-[var(--z-elevated)] px-4 text-[14px] font-medium text-[var(--z-fg)] transition-colors hover:bg-[var(--z-border)]"
     >
       {icon}
       {label}
@@ -110,33 +100,12 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
   const [text, setText] = useState(readStoredText);
   const [previewText, setPreviewText] = useState(text);
   const [tab, setTab] = useState<Tab>('write');
-  const [nameOpen, setNameOpen] = useState(false);
-  const [nameDraft, setNameDraft] = useState('');
-  const [people, setPeople] = useState<string[]>([]);
   const [previewReady, setPreviewReady] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [fontSize, setFontSize] = useState<number>(CONDOLENCE_LAYOUT.fontSize);
   const [downloading, setDownloading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const thumbCanvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase.from('profiles').select('tam_isim');
-      if (cancelled) return;
-      const names = new Set<string>();
-      for (const row of data || []) {
-        const name = toStudioDisplayName(String((row as { tam_isim?: string }).tam_isim || '').trim());
-        if (name) names.add(name);
-      }
-      setPeople(Array.from(names).sort((a, b) => a.localeCompare(b, 'tr')));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     try {
@@ -169,9 +138,8 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
         do {
           state.pending = false;
           const canvas = await renderCondolenceVisual(previewTextRef.current);
-          for (const target of [previewCanvasRef.current, thumbCanvasRef.current]) {
-            target?.getContext('2d')?.drawImage(canvas, 0, 0, target.width, target.height);
-          }
+          const target = previewCanvasRef.current;
+          target?.getContext('2d')?.drawImage(canvas, 0, 0, target.width, target.height);
           setFontSize(Number(canvas.dataset.fontSize) || CONDOLENCE_LAYOUT.fontSize);
           setPreviewReady(true);
           setPreviewError('');
@@ -186,27 +154,18 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
   }, [previewText, isActive]);
 
   /** Seçimi `before` ile `after` arasına alır; seçim yoksa imleç ortada kalır. */
-  const wrapSelection = (before: string, after = '', replacement?: string) => {
+  const wrapSelection = (before: string, after = '') => {
     const el = textareaRef.current;
     const start = el?.selectionStart ?? text.length;
     const end = el?.selectionEnd ?? text.length;
-    const middle = replacement ?? text.slice(start, end);
-    const next = text.slice(0, start) + before + middle + after + text.slice(end);
-    setText(next);
+    const middle = text.slice(start, end);
+    setText(text.slice(0, start) + before + middle + after + text.slice(end));
     requestAnimationFrame(() => {
       if (!el) return;
       el.focus();
-      const caret = replacement !== undefined || start !== end
-        ? start + before.length + middle.length + after.length
-        : start + before.length;
+      const caret = start === end ? start + before.length : start + before.length + middle.length + after.length;
       el.setSelectionRange(caret, caret);
     });
-  };
-
-  const insertName = (value: string) => {
-    wrapSelection('**', '**', value.replace(/ /g, '\u00A0'));
-    setNameOpen(false);
-    setNameDraft('');
   };
 
   const startFromExample = () => {
@@ -229,7 +188,6 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
   };
 
   const empty = !text.trim();
-  const name = nameDraft.trim();
   const shrunk = fontSize < CONDOLENCE_LAYOUT.fontSize;
 
   const downloadButton = (className: string) => (
@@ -244,13 +202,9 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
     </button>
   );
 
-  const previewOverlay = (compact = false) =>
+  const previewOverlay =
     !previewReady || previewError || empty ? (
-      <div
-        className={`pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center ${
-          compact ? 'text-[10px]' : 'text-[15px]'
-        } text-white/60`}
-      >
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-[15px] text-white/60">
         {previewError ||
           (!previewReady ? <Loader2 className="h-6 w-6 animate-spin text-[var(--z-muted)]" /> : 'Metninizi yazın')}
       </div>
@@ -296,21 +250,6 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
 
       <div className="mt-6 grid gap-10 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:items-start xl:gap-14">
         <section className={`min-w-0 space-y-5 ${tab === 'write' ? '' : 'hidden lg:block'}`}>
-          <button
-            type="button"
-            onClick={() => setTab('preview')}
-            className="relative mx-auto block aspect-[9/16] w-28 overflow-hidden rounded-xl bg-black shadow-lg lg:hidden"
-            aria-label="Önizlemeyi büyüt"
-          >
-            <canvas
-              ref={thumbCanvasRef}
-              width={CONDOLENCE_CANVAS.width / 6}
-              height={CONDOLENCE_CANVAS.height / 6}
-              className="h-full w-full"
-            />
-            {previewOverlay(true)}
-          </button>
-
           <div className="z-card overflow-hidden p-0">
             <textarea
               ref={textareaRef}
@@ -321,16 +260,10 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
               lang="tr"
               aria-label="Vefat metni"
               placeholder={'Kıymetli arkadaşımız **Ad Soyad**’ın …\n\nParagrafları boş bir satırla ayırın.'}
-              className="block min-h-[340px] w-full resize-y bg-transparent p-5 text-[17px] leading-[1.6] text-[var(--z-fg)] outline-none placeholder:text-[var(--z-muted)] sm:p-6"
+              className="block min-h-[340px] selection:bg-[var(--z-border-strong)] selection:text-[var(--z-fg)] w-full resize-y bg-transparent p-5 text-[17px] leading-[1.6] text-[var(--z-fg)] outline-none placeholder:text-[var(--z-muted)] sm:p-6"
             />
             <div className="flex flex-wrap items-center gap-2 border-t border-[var(--z-border)] p-3">
               <ToolButton onClick={() => wrapSelection('**', '**')} icon={<Bold className="h-4 w-4" />} label="Kalın" />
-              <ToolButton
-                onClick={() => setNameOpen((open) => !open)}
-                icon={<UserPlus className="h-4 w-4" />}
-                label="İsim ekle"
-                active={nameOpen}
-              />
               <span className="flex-1" />
               <ToolButton
                 onClick={startFromExample}
@@ -343,59 +276,6 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
                 }
               />
             </div>
-            {nameOpen ? (
-              <div className="space-y-3 border-t border-[var(--z-border)] p-4">
-                <div className="flex items-center gap-2">
-                  <input
-                    autoFocus
-                    list="vefat-people"
-                    value={nameDraft}
-                    onChange={(event) => setNameDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && name) {
-                        event.preventDefault();
-                        insertName(name + genitiveSuffix(name));
-                      }
-                      if (event.key === 'Escape') setNameOpen(false);
-                    }}
-                    placeholder="Ad Soyad"
-                    aria-label="Eklenecek isim"
-                    className="min-h-[44px] w-full flex-1 rounded-xl bg-[var(--z-elevated)] px-4 text-[16px] text-[var(--z-fg)] outline-none placeholder:text-[var(--z-muted)]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setNameOpen(false)}
-                    className="z-btn-icon h-11 w-11 shrink-0"
-                    aria-label="Kapat"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                {name ? (
-                  <div className="flex flex-wrap gap-2">
-                    {Array.from(new Set([name + genitiveSuffix(name), name])).map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() => insertName(option)}
-                        className="min-h-[44px] rounded-full border border-[var(--z-border)] px-4 text-[15px] font-semibold text-[var(--z-fg)] hover:bg-[var(--z-elevated)]"
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[13px] text-[var(--z-muted)]">
-                    İsim kalın eklenir; ek sesli uyumuna göre seçilir (Özdemir’in, Koç’un).
-                  </p>
-                )}
-                <datalist id="vefat-people">
-                  {people.map((person) => (
-                    <option key={person} value={person} />
-                  ))}
-                </datalist>
-              </div>
-            ) : null}
           </div>
 
           <details className="group rounded-2xl bg-[var(--z-elevated)]">
@@ -421,7 +301,7 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
               className="h-full w-full"
               aria-label={plainCondolenceText(previewText) || 'Boş vefat görseli'}
             />
-            {previewOverlay()}
+            {previewOverlay}
           </div>
           <p className="text-center text-[13px] text-[var(--z-muted)]" aria-live="polite">
             {empty
