@@ -1,30 +1,24 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Download, Loader2, PenLine, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Bold, ChevronDown, Download, Loader2, RotateCcw, UserPlus, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { toStudioDisplayName } from '../lib/studioAssets';
 import { canvasToBlob, rankFileSlug } from '../lib/rankingVisuals';
 import {
   CONDOLENCE_CANVAS,
   CONDOLENCE_EXAMPLE_TEXT,
-  CONDOLENCE_PRAYERS,
-  CONDOLENCE_RELATIONS,
-  CONDOLENCE_TITLES,
-  EMPTY_CONDOLENCE_FORM,
-  autoColleagueSuffix,
-  autoDeceasedSuffix,
-  buildCondolenceText,
-  defaultOpening,
-  isSelfRelation,
+  CONDOLENCE_LAYOUT,
   parseRuns,
   plainCondolenceText,
   renderCondolenceVisual,
-  type CondolenceForm,
+  genitiveSuffix,
 } from '../lib/condolenceVisuals';
 
-type Mode = 'form' | 'custom';
+const STORAGE_KEY = 'zebra-vefat-text';
+const PREVIEW_DELAY_MS = 120;
+
+type Tab = 'write' | 'preview';
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -37,30 +31,25 @@ function downloadBlob(blob: Blob, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-const inputClass =
-  'mt-1.5 block min-h-[44px] w-full rounded-2xl border border-[var(--z-border)] bg-[var(--z-surface)] px-3.5 text-[16px] text-[var(--z-fg)] outline-none placeholder:text-[var(--z-muted)] focus:border-[var(--z-fg)] sm:text-[14px]';
-
-function Field({
-  label,
-  hint,
-  children,
-  className = '',
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={`block ${className}`}>
-      <span className="text-[12px] font-medium text-[var(--z-muted)]">{label}</span>
-      {children}
-      {hint ? <span className="mt-1 block text-[11px] text-[var(--z-muted)]">{hint}</span> : null}
-    </label>
-  );
+function readStoredText() {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
 }
 
-/** Metni paragraf/kalın işaretleriyle okunur gösterir (örnek ve özet için). */
+/** İndirilen dosyanın adı: metindeki ilk kalın isim. */
+function fileNameFor(text: string) {
+  const firstBold = text
+    .split('\n')
+    .flatMap((line) => parseRuns(line))
+    .find((run) => run.bold && run.text.trim());
+  const who = (firstBold?.text || 'gorsel').replace(/[’'].*$/, '').trim();
+  return `vefat-${rankFileSlug(who)}.png`;
+}
+
 function RichText({ text, className = '' }: { text: string; className?: string }) {
   return (
     <div className={`space-y-3 ${className}`}>
@@ -89,117 +78,48 @@ function RichText({ text, className = '' }: { text: string; className?: string }
   );
 }
 
-function CustomTextModal({
-  initial,
-  formText,
-  onApply,
-  onClose,
+function ToolButton({
+  onClick,
+  icon,
+  label,
+  active = false,
 }: {
-  initial: string;
-  formText: string;
-  onApply: (text: string) => void;
-  onClose: () => void;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: React.ReactNode;
+  active?: boolean;
 }) {
-  const [value, setValue] = useState(initial);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[300] flex items-end justify-center bg-[var(--z-scrim)] sm:items-center sm:p-4"
-      onClick={onClose}
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex min-h-[44px] items-center gap-2 rounded-full px-4 text-[14px] font-medium transition-colors ${
+        active
+          ? 'bg-[var(--z-inverse)] text-[var(--z-inverse-fg)]'
+          : 'bg-[var(--z-elevated)] text-[var(--z-fg)] hover:bg-[var(--z-border)]'
+      }`}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Yazıyı kendin yaz"
-        className="z-modal zebra-sheet-enter flex max-h-[92dvh] w-full max-w-5xl flex-col gap-5 overflow-y-auto rounded-b-none p-5 sm:rounded-b-[inherit] sm:p-7"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="z-page-kicker">Vefat görseli</p>
-            <p className="mt-2 text-[17px] font-semibold text-[var(--z-fg)]">Yazıyı kendin yaz</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-[var(--z-muted)]">
-              Paragrafları boş bir satırla ayırın. Kalın yazılacak ismi iki yıldız arasına alın:{' '}
-              <span className="font-mono text-[var(--z-fg)]">**Bekir Özdemir**</span>. Metin görselde
-              her zaman dikey olarak ortalanır.
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="z-btn-icon h-11 w-11 shrink-0" aria-label="Kapat">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
-          <textarea
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            rows={14}
-            autoFocus
-            className="min-h-[320px] w-full resize-y rounded-2xl border border-[var(--z-border)] bg-[var(--z-surface)] p-4 text-[16px] leading-relaxed text-[var(--z-fg)] outline-none focus:border-[var(--z-fg)] sm:text-[15px]"
-            placeholder="Değerli arkadaşımız …"
-          />
-          <aside className="rounded-2xl border border-[var(--z-border)] bg-[var(--z-elevated)] p-5">
-            <p className="z-page-kicker">Örnek kurumsal metin</p>
-            <RichText
-              text={CONDOLENCE_EXAMPLE_TEXT}
-              className="mt-3 text-[15px] leading-relaxed text-[var(--z-muted)]"
-            />
-            <p className="mt-4 text-[11px] leading-relaxed text-[var(--z-muted)]">
-              Üslubu bu örneğe yakın tutun: kısa, saygılı, üç paragraf (bildirim, cenaze bilgisi, dilek).
-            </p>
-          </aside>
-        </div>
-
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-          <button
-            type="button"
-            onClick={() => setValue(formText)}
-            className="z-btn-ghost inline-flex min-h-[44px] items-center justify-center px-4 text-[13px]"
-          >
-            Formdaki metinle doldur
-          </button>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <button
-              type="button"
-              onClick={onClose}
-              className="z-btn-ghost inline-flex min-h-[44px] items-center justify-center px-5 text-[13px]"
-            >
-              Vazgeç
-            </button>
-            <button
-              type="button"
-              onClick={() => onApply(value)}
-              disabled={!value.trim()}
-              className="z-btn-primary inline-flex min-h-[44px] items-center justify-center px-6 text-[13px] disabled:opacity-40"
-            >
-              Uygula
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body
+      {icon}
+      {label}
+    </button>
   );
 }
 
 export default function CondolenceStudio({ isActive = true }: { isActive?: boolean }) {
-  const [form, setForm] = useState<CondolenceForm>(EMPTY_CONDOLENCE_FORM);
-  const [mode, setMode] = useState<Mode>('form');
-  const [customText, setCustomText] = useState('');
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [text, setText] = useState(readStoredText);
+  const [previewText, setPreviewText] = useState(text);
+  const [tab, setTab] = useState<Tab>('write');
+  const [nameOpen, setNameOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const [people, setPeople] = useState<string[]>([]);
   const [previewReady, setPreviewReady] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [fontSize, setFontSize] = useState<number>(CONDOLENCE_LAYOUT.fontSize);
   const [downloading, setDownloading] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const thumbCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,20 +138,23 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
     };
   }, []);
 
-  const formText = useMemo(() => buildCondolenceText(form), [form]);
-  const text = mode === 'custom' && customText.trim() ? customText : formText;
-  const self = isSelfRelation(form.relation);
+  useEffect(() => {
+    try {
+      if (text) window.localStorage.setItem(STORAGE_KEY, text);
+      else window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Gizli sekme vb.: metin yalnızca bu oturumda kalır.
+    }
+    const timer = setTimeout(() => setPreviewText(text), PREVIEW_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [text]);
 
-  const update = <K extends keyof CondolenceForm>(key: K, value: CondolenceForm[K]) =>
-    setForm((current) => ({ ...current, [key]: value }));
-
-  // Yazarken kare kaçırmamak için: çizim sürerken gelen istek biriktirilir,
-  // çizim bitince en güncel metinle bir kez daha çizilir.
-  const textRef = useRef(text);
+  // Çizim sürerken gelen istek biriktirilir; çizim bitince en güncel metinle bir kez daha çizilir.
+  const previewTextRef = useRef(previewText);
   const renderStateRef = useRef({ busy: false, pending: false });
   useEffect(() => {
-    textRef.current = text;
-  }, [text]);
+    previewTextRef.current = previewText;
+  }, [previewText]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -245,13 +168,13 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
       try {
         do {
           state.pending = false;
-          const canvas = await renderCondolenceVisual(textRef.current);
-          const target = previewCanvasRef.current;
-          if (target) {
-            target.getContext('2d')?.drawImage(canvas, 0, 0, target.width, target.height);
-            setPreviewReady(true);
-            setPreviewError('');
+          const canvas = await renderCondolenceVisual(previewTextRef.current);
+          for (const target of [previewCanvasRef.current, thumbCanvasRef.current]) {
+            target?.getContext('2d')?.drawImage(canvas, 0, 0, target.width, target.height);
           }
+          setFontSize(Number(canvas.dataset.fontSize) || CONDOLENCE_LAYOUT.fontSize);
+          setPreviewReady(true);
+          setPreviewError('');
         } while (state.pending);
       } catch (error) {
         setPreviewError(error instanceof Error ? error.message : 'Önizleme çizilemedi');
@@ -260,14 +183,44 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
       }
     };
     void paint();
-  }, [text, isActive]);
+  }, [previewText, isActive]);
+
+  /** Seçimi `before` ile `after` arasına alır; seçim yoksa imleç ortada kalır. */
+  const wrapSelection = (before: string, after = '', replacement?: string) => {
+    const el = textareaRef.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    const middle = replacement ?? text.slice(start, end);
+    const next = text.slice(0, start) + before + middle + after + text.slice(end);
+    setText(next);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      const caret = replacement !== undefined || start !== end
+        ? start + before.length + middle.length + after.length
+        : start + before.length;
+      el.setSelectionRange(caret, caret);
+    });
+  };
+
+  const insertName = (value: string) => {
+    wrapSelection('**', '**', value.replace(/ /g, '\u00A0'));
+    setNameOpen(false);
+    setNameDraft('');
+  };
+
+  const startFromExample = () => {
+    if (text.trim() && !window.confirm('Mevcut metin örnek metinle değiştirilsin mi?')) return;
+    setText(CONDOLENCE_EXAMPLE_TEXT);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
 
   const download = async () => {
+    if (!text.trim()) return;
     setDownloading(true);
     try {
       const canvas = await renderCondolenceVisual(text);
-      const who = form.deceasedName.trim() || form.colleagueName.trim() || 'gorsel';
-      downloadBlob(await canvasToBlob(canvas), `vefat-${rankFileSlug(who)}.png`);
+      downloadBlob(await canvasToBlob(canvas), fileNameFor(text));
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Görsel oluşturulamadı');
     } finally {
@@ -275,266 +228,217 @@ export default function CondolenceStudio({ isActive = true }: { isActive?: boole
     }
   };
 
-  const chooseMode = (next: Mode) => {
-    setMode(next);
-    if (next === 'custom' && !customText.trim()) setEditorOpen(true);
-  };
+  const empty = !text.trim();
+  const name = nameDraft.trim();
+  const shrunk = fontSize < CONDOLENCE_LAYOUT.fontSize;
 
-  const closeEditor = useCallback(() => setEditorOpen(false), []);
+  const downloadButton = (className: string) => (
+    <button
+      type="button"
+      onClick={download}
+      disabled={downloading || empty}
+      className={`z-btn-primary items-center justify-center gap-2 px-6 text-[15px] font-semibold disabled:opacity-40 ${className}`}
+    >
+      {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+      PNG indir
+    </button>
+  );
+
+  const previewOverlay = (compact = false) =>
+    !previewReady || previewError || empty ? (
+      <div
+        className={`pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center ${
+          compact ? 'text-[10px]' : 'text-[15px]'
+        } text-white/60`}
+      >
+        {previewError ||
+          (!previewReady ? <Loader2 className="h-6 w-6 animate-spin text-[var(--z-muted)]" /> : 'Metninizi yazın')}
+      </div>
+    ) : null;
 
   return (
-    <div className="panel-enter space-y-10">
-      <header>
-        <p className="z-page-kicker">Zebra Studio · Kurumsal</p>
-        <h1 className="z-page-title mt-3">Vefat Görseli</h1>
-        <p className="z-page-sub">
-          Bilgileri doldurun; metin kurumsal kalıba göre otomatik kurulur ve görselin ortasına
-          yerleşir. Boş bırakılan bilgi görselde yer almaz.
-        </p>
+    <div className="panel-enter pb-20 lg:pb-0">
+      <header className="flex items-end justify-between gap-6">
+        <div>
+          <p className="z-page-kicker">Zebra Studio · Kurumsal</p>
+          <h1 className="z-page-title mt-3">Vefat Görseli</h1>
+        </div>
+        {downloadButton('hidden min-h-[44px] lg:inline-flex')}
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] lg:items-start">
-        <section className="z-card space-y-8 p-6 sm:p-8">
-          <div className="grid grid-cols-2 gap-1 rounded-full bg-[var(--z-elevated)] p-1">
-            {(
-              [
-                { id: 'form', label: 'Form ile' },
-                { id: 'custom', label: 'Yazıyı kendin yaz' },
-              ] as const
-            ).map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => chooseMode(option.id)}
-                className={`min-h-[40px] rounded-full text-[13px] font-medium transition-colors ${
-                  mode === option.id
-                    ? 'bg-[var(--z-inverse)] text-[var(--z-inverse-fg)]'
-                    : 'text-[var(--z-muted)] hover:text-[var(--z-fg)]'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+      <div
+        role="tablist"
+        aria-label="Görünüm"
+        className="mt-6 grid grid-cols-2 gap-1 rounded-full bg-[var(--z-bg-elevated)] p-1 ring-1 ring-[var(--z-border)] lg:hidden"
+      >
+        {(
+          [
+            { id: 'write', label: 'Yaz' },
+            { id: 'preview', label: 'Önizle' },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === option.id}
+            onClick={() => setTab(option.id)}
+            className={`min-h-[40px] rounded-full text-[15px] font-medium transition-colors ${
+              tab === option.id
+                ? 'bg-[var(--z-surface)] text-[var(--z-fg)] shadow-sm ring-1 ring-[var(--z-border-strong)]'
+                : 'text-[var(--z-muted)]'
+            }`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
 
-          {mode === 'custom' ? (
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-[var(--z-border)] bg-[var(--z-elevated)] p-5">
-                {customText.trim() ? (
-                  <RichText text={customText} className="text-[14px] leading-relaxed text-[var(--z-muted)]" />
+      <div className="mt-6 grid gap-10 lg:mt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:items-start xl:gap-14">
+        <section className={`min-w-0 space-y-5 ${tab === 'write' ? '' : 'hidden lg:block'}`}>
+          <button
+            type="button"
+            onClick={() => setTab('preview')}
+            className="relative mx-auto block aspect-[9/16] w-28 overflow-hidden rounded-xl bg-black shadow-lg lg:hidden"
+            aria-label="Önizlemeyi büyüt"
+          >
+            <canvas
+              ref={thumbCanvasRef}
+              width={CONDOLENCE_CANVAS.width / 6}
+              height={CONDOLENCE_CANVAS.height / 6}
+              className="h-full w-full"
+            />
+            {previewOverlay(true)}
+          </button>
+
+          <div className="z-card overflow-hidden p-0">
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              rows={14}
+              spellCheck
+              lang="tr"
+              aria-label="Vefat metni"
+              placeholder={'Kıymetli arkadaşımız **Ad Soyad**’ın …\n\nParagrafları boş bir satırla ayırın.'}
+              className="block min-h-[340px] w-full resize-y bg-transparent p-5 text-[17px] leading-[1.6] text-[var(--z-fg)] outline-none placeholder:text-[var(--z-muted)] sm:p-6"
+            />
+            <div className="flex flex-wrap items-center gap-2 border-t border-[var(--z-border)] p-3">
+              <ToolButton onClick={() => wrapSelection('**', '**')} icon={<Bold className="h-4 w-4" />} label="Kalın" />
+              <ToolButton
+                onClick={() => setNameOpen((open) => !open)}
+                icon={<UserPlus className="h-4 w-4" />}
+                label="İsim ekle"
+                active={nameOpen}
+              />
+              <span className="flex-1" />
+              <ToolButton
+                onClick={startFromExample}
+                icon={<RotateCcw className="h-4 w-4" />}
+                label={
+                  <>
+                    <span className="sm:hidden">Örnek</span>
+                    <span className="hidden sm:inline">Örnekle başla</span>
+                  </>
+                }
+              />
+            </div>
+            {nameOpen ? (
+              <div className="space-y-3 border-t border-[var(--z-border)] p-4">
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    list="vefat-people"
+                    value={nameDraft}
+                    onChange={(event) => setNameDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && name) {
+                        event.preventDefault();
+                        insertName(name + genitiveSuffix(name));
+                      }
+                      if (event.key === 'Escape') setNameOpen(false);
+                    }}
+                    placeholder="Ad Soyad"
+                    aria-label="Eklenecek isim"
+                    className="min-h-[44px] w-full flex-1 rounded-xl bg-[var(--z-elevated)] px-4 text-[16px] text-[var(--z-fg)] outline-none placeholder:text-[var(--z-muted)]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNameOpen(false)}
+                    className="z-btn-icon h-11 w-11 shrink-0"
+                    aria-label="Kapat"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {name ? (
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from(new Set([name + genitiveSuffix(name), name])).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => insertName(option)}
+                        className="min-h-[44px] rounded-full border border-[var(--z-border)] px-4 text-[15px] font-semibold text-[var(--z-fg)] hover:bg-[var(--z-elevated)]"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
                 ) : (
                   <p className="text-[13px] text-[var(--z-muted)]">
-                    Henüz metin yazılmadı; önizlemede formdaki metin gösteriliyor.
+                    İsim kalın eklenir; ek sesli uyumuna göre seçilir (Özdemir’in, Koç’un).
                   </p>
                 )}
+                <datalist id="vefat-people">
+                  {people.map((person) => (
+                    <option key={person} value={person} />
+                  ))}
+                </datalist>
               </div>
-              <button
-                type="button"
-                onClick={() => setEditorOpen(true)}
-                className="z-btn-primary inline-flex min-h-[44px] w-full items-center justify-center gap-2 px-5 text-[13px]"
-              >
-                <PenLine className="h-4 w-4" /> Metni düzenle
-              </button>
+            ) : null}
+          </div>
+
+          <details className="group rounded-2xl bg-[var(--z-elevated)]">
+            <summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between gap-3 px-5 text-[15px] font-medium text-[var(--z-fg)] [&::-webkit-details-marker]:hidden">
+              Örnek kurumsal metin
+              <ChevronDown className="h-4 w-4 text-[var(--z-muted)] transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="px-5 pb-5">
+              <RichText text={CONDOLENCE_EXAMPLE_TEXT} className="text-[15px] leading-relaxed text-[var(--z-muted)]" />
+              <p className="mt-4 text-[13px] leading-relaxed text-[var(--z-muted)]">
+                Kısa ve saygılı tutun: bildirim, cenaze bilgisi, dilek.
+              </p>
             </div>
-          ) : (
-            <>
-              <fieldset className="space-y-4">
-                <legend className="z-page-kicker">Çalışan</legend>
-                <div className="grid gap-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)_88px]">
-                  <Field label="Sıfatı">
-                    <input
-                      list="vefat-titles"
-                      value={form.colleagueTitle}
-                      onChange={(event) => update('colleagueTitle', event.target.value)}
-                      className={inputClass}
-                      placeholder="arkadaşımız"
-                    />
-                  </Field>
-                  <Field label="Adı soyadı">
-                    <input
-                      list="vefat-people"
-                      value={form.colleagueName}
-                      onChange={(event) => update('colleagueName', event.target.value)}
-                      className={inputClass}
-                      placeholder="Aysun Özdemir"
-                    />
-                  </Field>
-                  <Field label="Eki">
-                    <input
-                      value={form.colleagueSuffix}
-                      onChange={(event) => update('colleagueSuffix', event.target.value)}
-                      className={inputClass}
-                      placeholder={autoColleagueSuffix(form) || '’in'}
-                      aria-label="Çalışan adının eki"
-                    />
-                  </Field>
-                </div>
-              </fieldset>
-
-              <fieldset className="space-y-4">
-                <legend className="z-page-kicker">Vefat eden</legend>
-                <div
-                  className={`grid gap-4 ${self ? '' : 'sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.4fr)_88px]'}`}
-                >
-                  <Field label="Yakınlığı">
-                    <select
-                      value={
-                        CONDOLENCE_RELATIONS.some((r) => r.id === form.relation) ? form.relation : 'diger'
-                      }
-                      onChange={(event) =>
-                        update('relation', event.target.value === 'diger' ? '' : event.target.value)
-                      }
-                      className={inputClass}
-                    >
-                      {CONDOLENCE_RELATIONS.map((relation) => (
-                        <option key={relation.id} value={relation.id}>
-                          {relation.label}
-                        </option>
-                      ))}
-                      <option value="diger">Diğer (yazın)</option>
-                    </select>
-                  </Field>
-                  {self ? null : (
-                    <>
-                      <Field label="Adı soyadı">
-                        <input
-                          value={form.deceasedName}
-                          onChange={(event) => update('deceasedName', event.target.value)}
-                          className={inputClass}
-                          placeholder="Bekir Özdemir"
-                        />
-                      </Field>
-                      <Field label="Eki">
-                        <input
-                          value={form.deceasedSuffix}
-                          onChange={(event) => update('deceasedSuffix', event.target.value)}
-                          className={inputClass}
-                          placeholder={autoDeceasedSuffix(form) || '’in'}
-                          aria-label="Vefat edenin adının eki"
-                        />
-                      </Field>
-                    </>
-                  )}
-                </div>
-                {!self && !CONDOLENCE_RELATIONS.some((r) => r.id === form.relation) ? (
-                  <Field label="Yakınlık (serbest)" hint="Örn. kayınpederi, amcası, teyzesi">
-                    <input
-                      value={form.relation}
-                      onChange={(event) => update('relation', event.target.value)}
-                      className={inputClass}
-                      placeholder="kayınpederi"
-                    />
-                  </Field>
-                ) : null}
-                <p className="text-[11px] leading-relaxed text-[var(--z-muted)]">
-                  Ekler soyadının son ünlüsüne göre otomatik seçilir (Özdemir’in, Koç’un, Kaya’nın).
-                  Yanlışsa “Eki” kutusundan düzeltin.
-                </p>
-              </fieldset>
-
-              <fieldset className="space-y-4">
-                <legend className="z-page-kicker">Cenaze</legend>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Tarih" hint="Gün adı otomatik eklenir">
-                    <input
-                      type="date"
-                      value={form.funeralDate}
-                      onChange={(event) => update('funeralDate', event.target.value)}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Namaz vakti">
-                    <select
-                      value={form.prayer}
-                      onChange={(event) => update('prayer', event.target.value)}
-                      className={inputClass}
-                    >
-                      <option value="">Belirtilmedi</option>
-                      {CONDOLENCE_PRAYERS.map((prayer) => (
-                        <option key={prayer} value={prayer}>
-                          {prayer} namazı
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
-                <Field
-                  label="Cami"
-                  hint="Sonuna “Camii’nde kaldırılacaktır” eklenir. Cami boşsa cenaze paragrafı görselde yer almaz."
-                >
-                  <input
-                    value={form.mosque}
-                    onChange={(event) => update('mosque', event.target.value)}
-                    className={inputClass}
-                    placeholder="Manisa Demirci Beyazıt"
-                  />
-                </Field>
-              </fieldset>
-
-              <fieldset className="space-y-4">
-                <legend className="z-page-kicker">Dilek</legend>
-                <Field label="Son paragrafın başı" hint="… Allah’tan rahmet;">
-                  <input
-                    value={form.opening}
-                    onChange={(event) => update('opening', event.target.value)}
-                    className={inputClass}
-                    placeholder={defaultOpening(form)}
-                  />
-                </Field>
-              </fieldset>
-
-              <datalist id="vefat-titles">
-                {CONDOLENCE_TITLES.map((title) => (
-                  <option key={title} value={title} />
-                ))}
-              </datalist>
-              <datalist id="vefat-people">
-                {people.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-            </>
-          )}
+          </details>
         </section>
 
-        <aside className="space-y-4 lg:sticky lg:top-6">
-          <div className="relative mx-auto aspect-[9/16] w-full max-w-[380px] overflow-hidden rounded-2xl bg-[var(--z-elevated)]">
+        <aside className={`space-y-3 lg:sticky lg:top-6 ${tab === 'preview' ? '' : 'hidden lg:block'}`}>
+          <div className="relative mx-auto aspect-[9/16] w-full max-w-[400px] overflow-hidden rounded-[20px] bg-black shadow-[0_24px_60px_-20px_rgba(0,0,0,0.45)]">
             <canvas
               ref={previewCanvasRef}
               width={CONDOLENCE_CANVAS.width / 2}
               height={CONDOLENCE_CANVAS.height / 2}
               className="h-full w-full"
-              aria-label={plainCondolenceText(text)}
+              aria-label={plainCondolenceText(previewText) || 'Boş vefat görseli'}
             />
-            {!previewReady || previewError ? (
-              <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-[12px] text-[var(--z-muted)]">
-                {previewError || <Loader2 className="h-6 w-6 animate-spin" />}
-              </div>
-            ) : null}
+            {previewOverlay()}
           </div>
-          <button
-            type="button"
-            onClick={download}
-            disabled={downloading}
-            className="z-btn-primary mx-auto flex min-h-[44px] w-full max-w-[380px] items-center justify-center gap-2 px-6 text-[13px] disabled:opacity-50"
-          >
-            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            PNG indir
-          </button>
+          <p className="text-center text-[13px] text-[var(--z-muted)]" aria-live="polite">
+            {empty
+              ? 'Metin görselde her zaman dikeyde ortalanır.'
+              : shrunk
+                ? `Metin uzun, yazı küçültüldü (${fontSize} px)`
+                : `Yazı boyutu ${fontSize} px`}
+          </p>
         </aside>
       </div>
 
-      {editorOpen ? (
-        <CustomTextModal
-          initial={customText.trim() ? customText : formText}
-          formText={formText}
-          onApply={(value) => {
-            setCustomText(value);
-            setMode('custom');
-            setEditorOpen(false);
-          }}
-          onClose={closeEditor}
-        />
+      {isActive ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-[max(6rem,calc(env(safe-area-inset-bottom)+5.25rem))] z-[50] lg:hidden">
+          <div className="pointer-events-auto mx-auto max-w-lg px-3">
+            {downloadButton('flex min-h-[50px] w-full rounded-[18px] shadow-[var(--z-shadow-float)]')}
+          </div>
+        </div>
       ) : null}
     </div>
   );

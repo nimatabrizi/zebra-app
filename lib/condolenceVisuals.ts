@@ -449,6 +449,7 @@ export async function renderCondolenceVisual(text: string): Promise<HTMLCanvasEl
 
   const { centerX, areaTop, areaBottom, lineRatio, paragraphRatio, color, boldColor } = CONDOLENCE_LAYOUT;
   const layout = fitLayout(ctx, text);
+  canvas.dataset.fontSize = String(layout.size);
   if (!layout.paragraphs.length) return canvas;
 
   ctx.font = fontFor(false, layout.size);
