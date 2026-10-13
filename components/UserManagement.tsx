@@ -1796,6 +1796,29 @@ export default function UserManagement({
   );
 }
 
+/** Arka planı saydam portre PNG'sini indirir; varsa yüksek çözünürlüklü kopya tercih edilir. */
+async function downloadUserPhoto(photoUrl: string) {
+  const bare = photoUrl.split('?')[0]!;
+  const candidates = bare.includes('/consultant-photos/')
+    ? [bare.replace('/consultant-photos/', '/consultant-photos-hires/'), bare]
+    : [bare];
+  for (const url of candidates) {
+    const res = await fetch(url, { cache: 'no-store' }).catch(() => null);
+    if (!res?.ok) continue;
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = decodeURIComponent(bare.split('/').pop() || 'fotograf.png');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+    return;
+  }
+  throw new Error('Fotoğraf bulunamadı');
+}
+
 function ViewUserModal({
   user,
   onClose,
@@ -1803,6 +1826,21 @@ function ViewUserModal({
   user: AdminUser;
   onClose: () => void;
 }) {
+  const [downloading, setDownloading] = useState(false);
+  const [photoMissing, setPhotoMissing] = useState(false);
+
+  const handleDownload = async () => {
+    if (!user.photoUrl) return;
+    setDownloading(true);
+    try {
+      await downloadUserPhoto(user.photoUrl);
+    } catch {
+      setPhotoMissing(true);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <ModalShell title="Kullanıcı bilgisi" onClose={onClose} wide>
       <div className="flex items-center gap-4 mb-5">
@@ -1850,8 +1888,21 @@ function ViewUserModal({
       </dl>
       <button
         type="button"
+        onClick={handleDownload}
+        disabled={!user.photoUrl || photoMissing || downloading}
+        className="z-btn-primary mt-6 inline-flex w-full h-11 items-center justify-center gap-2 text-[13px] cursor-pointer disabled:cursor-default disabled:opacity-40"
+      >
+        {downloading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Download className="w-4 h-4" />
+        )}
+        {!user.photoUrl || photoMissing ? 'Fotoğraf yok' : 'Fotoğrafı indir (PNG)'}
+      </button>
+      <button
+        type="button"
         onClick={onClose}
-        className="z-btn-ghost mt-6 w-full h-11 text-[13px] cursor-pointer"
+        className="z-btn-ghost mt-2 w-full h-11 text-[13px] cursor-pointer"
       >
         Kapat
       </button>
