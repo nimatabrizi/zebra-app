@@ -4129,7 +4129,7 @@ const [username, setUsername] = useState('');
               </div>
             )}
 
-            {canSeeNimaOnlyTools(fullName) && (
+            {canSeePersonelStudios(role, fullName) && (
               <div
                 aria-hidden={activeTab !== 'studio-vefat'}
                 className={

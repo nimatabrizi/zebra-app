@@ -70,7 +70,7 @@ export const CORE_LIVE_TABS = [
   'users-add',
 ] as const;
 
-/** Toplu Üretim, Sıralama, Vefat Görseli, Kullanıcı Yönetimi */
+/** Toplu Üretim, Sıralama, Kullanıcı Yönetimi */
 export function canSeeNimaOnlyTools(fullName?: string | null): boolean {
   return isNimaTabrizi(fullName);
 }
@@ -283,7 +283,7 @@ export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
       includeSiralama: nima,
       includeDogumGunu: personelStudios,
       includeGiris: personelStudios,
-      includeVefat: nima,
+      includeVefat: personelStudios,
     }),
     {
       id: 'randevu-sistemi',
@@ -324,7 +324,7 @@ export function buildManagerNav(
       includeSiralama: nima,
       includeDogumGunu: personelStudios,
       includeGiris: personelStudios,
-      includeVefat: nima,
+      includeVefat: personelStudios,
     }),
     {
       id: 'randevu-sistemi',
@@ -410,14 +410,15 @@ export function isLiveContentTab(
   if (id === 'cekim-raporu' && role === 'broker') return true;
   if (id === 'studio-yeni-portfoy') return true;
   if (id === 'studio-satildi-kiralandi') return true;
-  if (id === 'studio-toplu' || id === 'studio-siralama' || id === 'studio-vefat') {
+  if (id === 'studio-toplu' || id === 'studio-siralama') {
     return canSeeNimaOnlyTools(fullName);
   }
   if (
     id === 'studio-giris' ||
     id === 'studio-yaka-karti' ||
     id === 'studio-dogum-gunu' ||
-    id === 'studio-yil-donumu'
+    id === 'studio-yil-donumu' ||
+    id === 'studio-vefat'
   ) {
     return canSeePersonelStudios(role, fullName);
   }
