@@ -11,7 +11,11 @@ import { fillTracked, loadRankImage, measureOpaqueBox, trackedWidth } from './ra
 
 export const WELCOME_CANVAS = { width: 1080, height: 1920 } as const;
 
-export const WELCOME_ASSETS = { background: '/templates/hos-geldin/back.jpg' } as const;
+export const WELCOME_ASSETS = {
+  background: '/templates/hos-geldin/back.jpg',
+  /** Şablondaki "İşini Aşkla Yapanların Ofisi" yazısının arkası boş kopyası; alt gölgenin üstüne çizilir. */
+  slogan: { url: '/templates/hos-geldin/slogan.png', x: 238.17, y: 1779.63, width: 708.08 },
+} as const;
 
 export const WELCOME_FONTS = {
   name: { family: 'Zebra Welcome Name', url: '/fonts/hos-geldin/adelia.otf', format: 'opentype' },
@@ -31,14 +35,37 @@ export const WELCOME_LAYOUT = {
   fallback: { width: 650, centerX: 740, top: 680 },
   /** Fotoğrafın alt kısmı bu aralıkta zemine karışır. */
   fade: { start: 1580, end: 1780 },
+  /** Alt gölgenin rengi: şablonun alt kenarındaki lacivert. */
+  shadeColor: [13, 28, 37],
+  /** Gölge, yüksekliğinin bu oranında tam gücüne ulaşır. */
+  shadeRamp: 0.55,
 } as const;
 
 /** Önizlemedeki kesikli yüz kılavuzu (örnekteki yüzün çevresi). */
 export const WELCOME_FACE_GUIDES = { x: [595, 812], y: [770, 1085] } as const;
 
-export type WelcomeAdjust = { scale: number; dx: number; dy: number };
+/** Alttaki koyu gölge: `height` alttan yukarı piksel, `strength` 0–1. */
+export type WelcomeShade = { height: number; strength: number };
 
-export const DEFAULT_WELCOME_ADJUST: WelcomeAdjust = { scale: 1, dx: 0, dy: 0 };
+export type WelcomeAdjust = { scale: number; dx: number; dy: number; shade: WelcomeShade };
+
+export const WELCOME_SHADE_LIMITS = { minHeight: 200, maxHeight: 1400 } as const;
+
+export const DEFAULT_WELCOME_ADJUST: WelcomeAdjust = {
+  scale: 1,
+  dx: 0,
+  dy: 0,
+  shade: { height: 700, strength: 0 },
+};
+
+/** Gölge alanı olmayan eski kayıtlar varsayılan gölgeyle tamamlanır. */
+export function normalizeWelcomeAdjust(raw: Partial<WelcomeAdjust> | null | undefined): WelcomeAdjust {
+  return {
+    ...DEFAULT_WELCOME_ADJUST,
+    ...(raw || {}),
+    shade: { ...DEFAULT_WELCOME_ADJUST.shade, ...(raw?.shade || {}) },
+  };
+}
 
 let fontsPromise: Promise<void> | null = null;
 
@@ -126,6 +153,21 @@ function drawPhoto(ctx: CanvasRenderingContext2D, img: HTMLImageElement, placeme
   ctx.drawImage(layer, 0, 0);
 }
 
+function drawShade(ctx: CanvasRenderingContext2D, shade: WelcomeShade) {
+  if (shade.strength <= 0 || shade.height <= 0) return;
+  const { width: W, height: H } = WELCOME_CANVAS;
+  const [r, g, b] = WELCOME_LAYOUT.shadeColor;
+  const top = H - shade.height;
+  const full = top + shade.height * WELCOME_LAYOUT.shadeRamp;
+  const gradient = ctx.createLinearGradient(0, top, 0, full);
+  gradient.addColorStop(0, `rgba(${r},${g},${b},0)`);
+  gradient.addColorStop(1, `rgba(${r},${g},${b},${shade.strength})`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, top, W, full - top);
+  ctx.fillStyle = `rgba(${r},${g},${b},${shade.strength})`;
+  ctx.fillRect(0, full, W, H - full);
+}
+
 function drawName(ctx: CanvasRenderingContext2D, name: string) {
   const L = WELCOME_LAYOUT.name;
   let size: number = L.size;
@@ -171,7 +213,12 @@ export async function renderWelcomeVisual(
   content: WelcomeContent,
   adjust: WelcomeAdjust
 ): Promise<{ canvas: HTMLCanvasElement; faceFound: boolean }> {
-  const [background] = await Promise.all([loadBackground(), loadWelcomeFonts()]);
+  const [background, slogan] = await Promise.all([
+    loadBackground(),
+    loadRankImage(WELCOME_ASSETS.slogan.url),
+    loadWelcomeFonts(),
+  ]);
+  const settings = normalizeWelcomeAdjust(adjust);
   const { width: W, height: H } = WELCOME_CANVAS;
   const canvas = document.createElement('canvas');
   canvas.width = W;
@@ -184,8 +231,14 @@ export async function renderWelcomeVisual(
   if (content.photo) {
     const face = await measureFace(content.photo);
     faceFound = Boolean(face);
-    const placement = placePhoto(content.photo, face, adjust);
+    const placement = placePhoto(content.photo, face, settings);
     if (placement) drawPhoto(ctx, content.photo, placement);
+  }
+
+  drawShade(ctx, settings.shade);
+  if (slogan && settings.shade.strength > 0) {
+    const S = WELCOME_ASSETS.slogan;
+    ctx.drawImage(slogan, S.x, S.y, S.width, (slogan.naturalHeight / slogan.naturalWidth) * S.width);
   }
 
   ctx.fillStyle = '#FFFFFF';

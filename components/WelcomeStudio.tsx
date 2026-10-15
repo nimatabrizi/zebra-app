@@ -12,8 +12,11 @@ import {
   DEFAULT_WELCOME_TITLE,
   WELCOME_CANVAS,
   WELCOME_FACE_GUIDES,
+  WELCOME_SHADE_LIMITS,
+  normalizeWelcomeAdjust,
   renderWelcomeVisual,
   type WelcomeAdjust,
+  type WelcomeShade,
 } from '../lib/welcomeVisuals';
 
 type Tab = 'edit' | 'preview';
@@ -103,12 +106,13 @@ export default function WelcomeStudio({
 
   const personKey = name.trim() ? rankFileSlug(name.trim()) : '';
   const savedAdjust = personKey ? saved[personKey] : undefined;
-  const baseAdjust = savedAdjust || DEFAULT_WELCOME_ADJUST;
+  const baseAdjust = normalizeWelcomeAdjust(savedAdjust);
   const draft = draftState && draftState.key === personKey ? draftState.adjust : baseAdjust;
   const dirty = canSave && Boolean(personKey) && !sameAdjust(draft, baseAdjust);
 
   const updateDraft = (patch: Partial<WelcomeAdjust>) =>
     setDraftState({ key: personKey, adjust: { ...draft, ...patch } });
+  const updateShade = (patch: Partial<WelcomeShade>) => updateDraft({ shade: { ...draft.shade, ...patch } });
 
   // Sürüklerken kare kaçırmamak için: çizim sürerken gelen istek biriktirilir,
   // çizim bitince en güncel içerikle bir kez daha çizilir.
@@ -346,16 +350,17 @@ export default function WelcomeStudio({
             </label>
           </div>
 
-          {photo ? (
-            <div className="z-card space-y-5 p-5 sm:p-6">
-              <div>
-                <p className="text-[15px] font-semibold text-[var(--z-fg)]">Fotoğraf ayarı</p>
-                <p className="mt-1 text-[13px] leading-relaxed text-[var(--z-muted)]">
-                  Fotoğraf yüze göre otomatik yerleşir. Gerekirse önizlemede sürükleyerek taşıyın; yüzü
-                  kesikli çizgilerin oluşturduğu kutuya oturtun.
-                  {personKey ? ' Kaydedilen ayar bu kişinin görselinde hep kullanılır.' : ''}
-                </p>
-              </div>
+          <div className="z-card space-y-5 p-5 sm:p-6">
+            <div>
+              <p className="text-[15px] font-semibold text-[var(--z-fg)]">Görsel ayarı</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-[var(--z-muted)]">
+                {photo
+                  ? 'Fotoğraf yüze göre otomatik yerleşir. Gerekirse önizlemede sürükleyerek taşıyın; yüzü kesikli çizgilerin oluşturduğu kutuya oturtun.'
+                  : 'Alt gölge, fotoğrafın altını koyulaştırır; logo ve isim gölgenin üstünde kalır.'}
+                {personKey ? ' Kaydedilen ayar bu kişinin görselinde hep kullanılır.' : ''}
+              </p>
+            </div>
+            {photo ? (
               <label className="block">
                 <span className="flex justify-between text-[13px] text-[var(--z-muted)]">
                   <span>Boyut</span>
@@ -371,29 +376,66 @@ export default function WelcomeStudio({
                   className="mt-3 w-full accent-[var(--z-fg)]"
                 />
               </label>
-              {personKey ? (
-                <AdjustSaveActions
-                  canSave={canSave}
-                  dirty={dirty}
-                  hasSaved={Boolean(savedAdjust)}
-                  onSave={() => save(personKey, draft)}
-                  onResetScreen={() => setDraftState({ key: personKey, adjust: DEFAULT_WELCOME_ADJUST })}
-                  onDeleteSaved={async () => {
-                    await remove(personKey);
-                    setDraftState({ key: personKey, adjust: DEFAULT_WELCOME_ADJUST });
-                  }}
+            ) : null}
+            <div className="space-y-4 border-t border-[var(--z-border)] pt-5">
+              <p className="text-[14px] font-semibold text-[var(--z-fg)]">Alt gölge</p>
+              <label className="block">
+                <span className="flex justify-between text-[13px] text-[var(--z-muted)]">
+                  <span>Yükseklik</span>
+                  <span className="tabular-nums text-[var(--z-fg)]">
+                    %{Math.round((draft.shade.height / WELCOME_CANVAS.height) * 100)}
+                  </span>
+                </span>
+                <input
+                  type="range"
+                  min={WELCOME_SHADE_LIMITS.minHeight}
+                  max={WELCOME_SHADE_LIMITS.maxHeight}
+                  step={10}
+                  value={draft.shade.height}
+                  onChange={(event) => updateShade({ height: Number(event.target.value) })}
+                  className="mt-3 w-full accent-[var(--z-fg)]"
                 />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setDraftState({ key: '', adjust: DEFAULT_WELCOME_ADJUST })}
-                  className="z-btn-ghost inline-flex w-full items-center justify-center px-4 py-2.5 text-[13px]"
-                >
-                  Varsayılana dön
-                </button>
-              )}
+              </label>
+              <label className="block">
+                <span className="flex justify-between text-[13px] text-[var(--z-muted)]">
+                  <span>Güç</span>
+                  <span className="tabular-nums text-[var(--z-fg)]">
+                    {draft.shade.strength > 0 ? `%${Math.round(draft.shade.strength * 100)}` : 'Kapalı'}
+                  </span>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={draft.shade.strength}
+                  onChange={(event) => updateShade({ strength: Number(event.target.value) })}
+                  className="mt-3 w-full accent-[var(--z-fg)]"
+                />
+              </label>
             </div>
-          ) : null}
+            {personKey ? (
+              <AdjustSaveActions
+                canSave={canSave}
+                dirty={dirty}
+                hasSaved={Boolean(savedAdjust)}
+                onSave={() => save(personKey, draft)}
+                onResetScreen={() => setDraftState({ key: personKey, adjust: DEFAULT_WELCOME_ADJUST })}
+                onDeleteSaved={async () => {
+                  await remove(personKey);
+                  setDraftState({ key: personKey, adjust: DEFAULT_WELCOME_ADJUST });
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDraftState({ key: '', adjust: DEFAULT_WELCOME_ADJUST })}
+                className="z-btn-ghost inline-flex w-full items-center justify-center px-4 py-2.5 text-[13px]"
+              >
+                Varsayılana dön
+              </button>
+            )}
+          </div>
 
           {downloadButton('flex min-h-[50px] w-full rounded-[18px] lg:hidden')}
         </section>
