@@ -66,11 +66,12 @@ export const CORE_LIVE_TABS = [
   'studio-yil-donumu',
   'studio-giris',
   'studio-vefat',
+  'studio-hos-geldin',
   'users-overview',
   'users-add',
 ] as const;
 
-/** Toplu Üretim, Sıralama, Kullanıcı Yönetimi */
+/** Toplu Üretim, Sıralama, Hoş Geldin Görseli, Kullanıcı Yönetimi */
 export function canSeeNimaOnlyTools(fullName?: string | null): boolean {
   return isNimaTabrizi(fullName);
 }
@@ -104,6 +105,7 @@ function sharedProductModules(options?: {
   includeDogumGunu?: boolean;
   includeGiris?: boolean;
   includeVefat?: boolean;
+  includeHosGeldin?: boolean;
 }): SidebarItem[] {
   const includeMusteri = options?.includeMusteri !== false;
   const includeTopluUretim = options?.includeTopluUretim === true;
@@ -112,6 +114,7 @@ function sharedProductModules(options?: {
   const includeDogumGunu = options?.includeDogumGunu === true;
   const includeGiris = options?.includeGiris === true;
   const includeVefat = options?.includeVefat === true;
+  const includeHosGeldin = options?.includeHosGeldin === true;
   const kurumsalLeaves: SidebarLeaf[] = [
     ...(includeTopluUretim
       ? [{ id: 'studio-toplu', label: 'Toplu Üretim', isEnabled: true }]
@@ -127,6 +130,9 @@ function sharedProductModules(options?: {
       : []),
     ...(includeGiris
       ? [{ id: 'studio-giris', label: 'Giriş Görselleri', isEnabled: true }]
+      : []),
+    ...(includeHosGeldin
+      ? [{ id: 'studio-hos-geldin', label: 'Hoş Geldin Görseli', isEnabled: true }]
       : []),
     ...(includeDogumGunu
       ? [{ id: 'studio-yil-donumu', label: 'Yıl Dönümleri', isEnabled: true }]
@@ -284,6 +290,7 @@ export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
       includeDogumGunu: personelStudios,
       includeGiris: personelStudios,
       includeVefat: personelStudios,
+      includeHosGeldin: nima,
     }),
     {
       id: 'randevu-sistemi',
@@ -325,6 +332,7 @@ export function buildManagerNav(
       includeDogumGunu: personelStudios,
       includeGiris: personelStudios,
       includeVefat: personelStudios,
+      includeHosGeldin: nima,
     }),
     {
       id: 'randevu-sistemi',
@@ -410,7 +418,7 @@ export function isLiveContentTab(
   if (id === 'cekim-raporu' && role === 'broker') return true;
   if (id === 'studio-yeni-portfoy') return true;
   if (id === 'studio-satildi-kiralandi') return true;
-  if (id === 'studio-toplu' || id === 'studio-siralama') {
+  if (id === 'studio-toplu' || id === 'studio-siralama' || id === 'studio-hos-geldin') {
     return canSeeNimaOnlyTools(fullName);
   }
   if (

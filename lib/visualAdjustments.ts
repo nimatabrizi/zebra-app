@@ -11,7 +11,8 @@ export type VisualStudioId =
   | 'giris'
   | 'siralama'
   | 'yaka-karti'
-  | 'toplu';
+  | 'toplu'
+  | 'hos-geldin';
 
 const TABLE = 'visual_adjustments';
 
