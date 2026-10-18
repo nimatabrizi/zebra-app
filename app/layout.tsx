@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { studioFontVariables } from "./fonts";
 import { ThemeProvider } from "../components/ThemeProvider";
+import PageZoomLock from "../components/PageZoomLock";
 import SquareMeterInputs from "../components/SquareMeterInputs";
 import "./globals.css";
 
@@ -25,6 +26,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#f3f3f5",
   colorScheme: "light dark",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 const themeBootScript = `
@@ -55,7 +61,8 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
-      <body className="min-h-full flex flex-col bg-[var(--z-bg)] text-[var(--z-fg)]">
+      <body className="min-h-full flex flex-col bg-[var(--z-bg)] text-[var(--z-fg)] touch-manipulation">
+        <PageZoomLock />
         <ThemeProvider>{children}</ThemeProvider>
         <SquareMeterInputs />
       </body>

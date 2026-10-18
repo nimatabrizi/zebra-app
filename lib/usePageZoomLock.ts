@@ -3,9 +3,9 @@ import { useEffect } from 'react';
 const ZOOM_KEYS = new Set(['+', '-', '=', '_', '0']);
 
 /**
- * Tam ekran önizleme açıkken sayfanın kendisi yakınlaşmasın; yakınlaştırma
- * yalnızca tuval içindeki görsele uygulanır. iOS Safari sayfa pinch'ini
- * `touch-action` ile değil `gesture*` olaylarıyla yönetir.
+ * Sayfanın kendisi yakınlaşmasın (pinch, ctrl+tekerlek, cmd±).
+ * Stüdyo tuvalindeki görsel zoom’u ayrı gesture handler’larla çalışmaya devam eder.
+ * iOS Safari sayfa pinch’ini `touch-action` ile değil `gesture*` olaylarıyla yönetir.
  */
 export function usePageZoomLock(active: boolean) {
   useEffect(() => {
