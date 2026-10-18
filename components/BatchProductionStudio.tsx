@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { toPng } from 'html-to-image';
+import { inlineNodeImages, toPngStable } from '../lib/studioDomExport';
 import JSZip from 'jszip';
 import {
   AlignCenter,
@@ -424,18 +424,6 @@ function bottomGradientOverlayStyle(
   };
 }
 
-async function urlToDataUrl(url: string): Promise<string> {
-  const res = await fetch(url, { mode: 'cors', cache: 'no-store' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const blob = await res.blob();
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error || new Error('FileReader'));
-    reader.readAsDataURL(blob);
-  });
-}
-
 /**
  * requestAnimationFrame arka tarayıcı sekmelerinde askıya alınır.
  * MessageChannel, React'in flushSync güncellemesinden sonra işi arka sekmede de
@@ -451,54 +439,6 @@ function yieldWithoutAnimationFrame(): Promise<void> {
     };
     channel.port2.postMessage(undefined);
   });
-}
-
-async function inlineNodeImages(node: HTMLElement) {
-  const imgs = Array.from(node.querySelectorAll('img'));
-  const backups = imgs.map((img) => ({
-    img,
-    src: img.getAttribute('src'),
-    crossOrigin: img.getAttribute('crossorigin'),
-  }));
-
-  await Promise.all(
-    imgs.map(async (img) => {
-      const src = img.currentSrc || img.src;
-      if (!src || src.startsWith('data:')) return;
-      try {
-        const dataUrl = await urlToDataUrl(src);
-        img.removeAttribute('crossorigin');
-        img.src = dataUrl;
-        await img.decode().catch(() => undefined);
-      } catch (err) {
-        console.warn('Toplu üretim görsel gömme hatası:', src, err);
-      }
-    })
-  );
-
-  const overlays = Array.from(
-    node.querySelectorAll<HTMLElement>('[data-photo-gradient]')
-  );
-  for (const el of overlays) {
-    const img = el.parentElement?.querySelector('img');
-    const src = img?.currentSrc || img?.src;
-    if (!src) continue;
-    el.style.webkitMaskImage = `url("${src}")`;
-    el.style.maskImage = `url("${src}")`;
-  }
-
-  return backups;
-}
-
-function restoreNodeImages(
-  backups: { img: HTMLImageElement; src: string | null; crossOrigin: string | null }[]
-) {
-  for (const { img, src, crossOrigin } of backups) {
-    if (src != null) img.setAttribute('src', src);
-    else img.removeAttribute('src');
-    if (crossOrigin != null) img.setAttribute('crossorigin', crossOrigin);
-    else img.removeAttribute('crossorigin');
-  }
 }
 
 function SettingToggle({
@@ -1586,9 +1526,9 @@ export default function BatchProductionStudio({ canSave = false }: { canSave?: b
     if (!templateSrc) throw new Error('Önce bir şablon yükleyin');
 
     await waitForStudioFonts();
-    const backups = await inlineNodeImages(node);
+    const restore = await inlineNodeImages(node, { label: 'Toplu üretim' });
     try {
-      const dataUrl = await toPng(node, {
+      return await toPngStable(node, {
         cacheBust: true,
         pixelRatio: 1,
         width: canvasW,
@@ -1603,10 +1543,8 @@ export default function BatchProductionStudio({ canSave = false }: { canSave?: b
           return el.dataset.exportHide !== 'true';
         },
       });
-      if (!dataUrl || dataUrl === 'data:,') throw new Error('Görsel üretilemedi');
-      return dataUrl;
     } finally {
-      restoreNodeImages(backups);
+      restore();
     }
   };
 

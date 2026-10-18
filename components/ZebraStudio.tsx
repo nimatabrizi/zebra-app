@@ -10,7 +10,7 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { getFontEmbedCSS, toPng } from 'html-to-image';
+import { getFontEmbedCSS } from 'html-to-image';
 import {
   ChevronDown,
   Download,
@@ -37,6 +37,11 @@ import {
   waitForStudioFonts,
   type StudioFormat,
 } from '../lib/studioAssets';
+import {
+  downscaleImageSrc,
+  inlineNodeImages,
+  toPngStable,
+} from '../lib/studioDomExport';
 import {
   DEFAULT_CONSULTANT_TITLE,
   resolveConsultantTitle,
@@ -155,51 +160,6 @@ function waitForPaint(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
-}
-
-async function inlineNodeImages(node: HTMLElement) {
-  const imgs = Array.from(node.querySelectorAll('img'));
-  const backups = imgs.map((img) => ({
-    img,
-    src: img.getAttribute('src'),
-    crossOrigin: img.getAttribute('crossorigin'),
-  }));
-
-  await Promise.all(
-    imgs.map(async (img) => {
-      const src = img.currentSrc || img.src;
-      if (!src || src.startsWith('data:')) {
-        await img.decode().catch(() => undefined);
-        return;
-      }
-      try {
-        const response = await fetch(src, { mode: 'cors', cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () =>
-            reject(reader.error || new Error('FileReader'));
-          reader.readAsDataURL(blob);
-        });
-        img.removeAttribute('crossorigin');
-        img.src = dataUrl;
-        await img.decode().catch(() => undefined);
-      } catch (error) {
-        console.warn('Zebra Studio görseli gömülemedi:', src, error);
-      }
-    })
-  );
-
-  return () => {
-    for (const { img, src, crossOrigin } of backups) {
-      if (src == null) img.removeAttribute('src');
-      else img.setAttribute('src', src);
-      if (crossOrigin == null) img.removeAttribute('crossorigin');
-      else img.setAttribute('crossorigin', crossOrigin);
-    }
-  };
 }
 
 /** Hedef verilmişse içeriği o konteynere taşır, yoksa yerinde bırakır. */
@@ -385,7 +345,9 @@ function IdentityLayer({
 
         {photoSrc && !failed ? (
           // Gradient yalnızca PNG silüeti üzerinde; kutu boşluğuna taşmasın.
+          // data-photo-gradient: export öncesi mask, gömülü data URL ile senkronlanır.
           <div
+            data-photo-gradient
             className="absolute inset-0 pointer-events-none"
             style={{
               background:
@@ -805,10 +767,16 @@ export default function ZebraStudio({
     }
     const reader = new FileReader();
     reader.onload = () => {
-      setPortfolioPreview(
-        typeof reader.result === 'string' ? reader.result : null
-      );
-      setPortfolioTransform({ x: 0, y: 0, zoom: 1.15 });
+      const raw = typeof reader.result === 'string' ? reader.result : null;
+      if (!raw) {
+        setPortfolioPreview(null);
+        return;
+      }
+      // Telefon kameraları 8–12 MP üretir; Safari export’ta büyük data URL’ler boş kalır.
+      void downscaleImageSrc(raw, 2160).then((src) => {
+        setPortfolioPreview(src);
+        setPortfolioTransform({ x: 0, y: 0, zoom: 1.15 });
+      });
     };
     reader.onerror = () => setPortfolioPreview(null);
     reader.readAsDataURL(file);
@@ -825,11 +793,14 @@ export default function ZebraStudio({
     await waitForStudioFonts();
     await waitForPaint();
     const extraFontCSS = await studioFontEmbedCSS();
-    const restoreImages = await inlineNodeImages(node);
+    const restoreImages = await inlineNodeImages(node, {
+      label: 'Zebra Studio',
+      maxDataUrlEdge: 2160,
+    });
     try {
       const size = SOCIAL_STUDIO_CANVAS[spec.format];
       const baseFontCSS = await getFontEmbedCSS(node);
-      const dataUrl = await toPng(node, {
+      const dataUrl = await toPngStable(node, {
         cacheBust: true,
         pixelRatio: 1,
         width: size.width,
@@ -842,9 +813,6 @@ export default function ZebraStudio({
           height: `${size.height}px`,
         },
       });
-      if (!dataUrl || dataUrl === 'data:,') {
-        throw new Error(`${size.label} görseli üretilemedi`);
-      }
       return await (await fetch(dataUrl)).blob();
     } finally {
       restoreImages();

@@ -2,7 +2,8 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import { getFontEmbedCSS, toPng } from 'html-to-image';
+import { getFontEmbedCSS } from 'html-to-image';
+import { inlineNodeImages, toPngStable } from '../lib/studioDomExport';
 import { jsPDF } from 'jspdf';
 import {
   Check,
@@ -125,51 +126,6 @@ function waitForPaint(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
-}
-
-async function inlineNodeImages(node: HTMLElement) {
-  const imgs = Array.from(node.querySelectorAll('img'));
-  const backups = imgs.map((img) => ({
-    img,
-    src: img.getAttribute('src'),
-    crossOrigin: img.getAttribute('crossorigin'),
-  }));
-
-  await Promise.all(
-    imgs.map(async (img) => {
-      const src = img.currentSrc || img.src;
-      if (!src || src.startsWith('data:')) {
-        await img.decode().catch(() => undefined);
-        return;
-      }
-      try {
-        const response = await fetch(src, { mode: 'cors', cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result));
-          reader.onerror = () =>
-            reject(reader.error || new Error('FileReader'));
-          reader.readAsDataURL(blob);
-        });
-        img.removeAttribute('crossorigin');
-        img.src = dataUrl;
-        await img.decode().catch(() => undefined);
-      } catch (error) {
-        console.warn('Yaka kartı görseli gömülemedi:', src, error);
-      }
-    })
-  );
-
-  return () => {
-    for (const { img, src, crossOrigin } of backups) {
-      if (src == null) img.removeAttribute('src');
-      else img.setAttribute('src', src);
-      if (crossOrigin == null) img.removeAttribute('crossorigin');
-      else img.setAttribute('crossorigin', crossOrigin);
-    }
-  };
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -1181,18 +1137,11 @@ export default function BadgeCardStudio({ canSave = false }: { canSave?: boolean
       await new Promise((resolve) => setTimeout(resolve, 40));
     }
     await waitForPaint();
-    const restore = await inlineNodeImages(node);
-    node.querySelectorAll<HTMLElement>('[data-badge-photo-mask]').forEach((overlay) => {
-      const photo = overlay.parentElement?.querySelector('img');
-      const src = photo?.currentSrc || photo?.src;
-      if (!src) return;
-      overlay.style.webkitMaskImage = `url("${src}")`;
-      overlay.style.maskImage = `url("${src}")`;
-    });
+    const restore = await inlineNodeImages(node, { label: 'Yaka kartı' });
     try {
       const extraFontCSS = await studioFontEmbedCSS();
       const baseFontCSS = await getFontEmbedCSS(node);
-      const dataUrl = await toPng(node, {
+      const dataUrl = await toPngStable(node, {
         cacheBust: true,
         pixelRatio: 1,
         width: BADGE_CARD.widthPx,
@@ -1205,9 +1154,6 @@ export default function BadgeCardStudio({ canSave = false }: { canSave?: boolean
           height: `${BADGE_CARD.heightPx}px`,
         },
       });
-      if (!dataUrl || dataUrl === 'data:,') {
-        throw new Error('Yaka kartı görseli üretilemedi');
-      }
       return await (await fetch(dataUrl)).blob();
     } finally {
       restore();
