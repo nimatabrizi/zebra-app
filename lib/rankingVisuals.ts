@@ -19,12 +19,8 @@ export type RankPeriodId =
   | '2026-10'
   | '2026-q2'
   | '2026-q3';
-/** rank = sıralama görseli; award = sertifika (yalnızca 2.–5.) */
+/** rank = sıralama görseli; award = ayda kişi başına tek “Ödülünüz var” görseli */
 export type RankOutputKind = 'rank' | 'award';
-
-/** Sertifika yalnızca bu sıra aralığında üretilir (1. plaket/kupa basılmaz). */
-export const CERTIFICATE_RANK_MIN = 2;
-export const CERTIFICATE_RANK_MAX = 5;
 
 export const RANK_CATEGORIES: { id: RankCategoryId; label: string; short: string }[] = [
   { id: 'ciro', label: 'Ciro Sıralaması', short: 'Ciro' },
@@ -70,13 +66,14 @@ export const RANK_PERIODS: RankPeriod[] = [
 
 export type PeriodTemplates = {
   rank: Partial<Record<RankCategoryId, string>>;
-  /** 2.–5. sıralar için sertifika şablonu */
+  /** Ayda kişi başına tek “Ödülünüz var” şablonu (sertifika değil). */
   award: string | null;
 };
 
 /**
  * Yeni dönem template'i: public/templates/siralama/{id}/ altına
- * ciro.png, portfoy.png, islem.png, takim.png, sertifika.png koyup buraya yol yazın.
+ * ciro.png, portfoy.png, islem.png, takim.png, odul.png koyup buraya yol yazın.
+ * (Sertifika ayrı bir ürün; bu akışa dahil değil.)
  */
 export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
   '2026-05': {
@@ -85,7 +82,7 @@ export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
       portfoy: '/templates/siralama/2026-05/portfoy.png',
       islem: '/templates/siralama/2026-05/islem.png',
     },
-    award: '/templates/siralama/2026-05/sertifika.png',
+    award: '/templates/siralama/2026-05/odul.png',
   },
   '2026-06': {
     rank: {
@@ -93,7 +90,7 @@ export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
       portfoy: '/templates/siralama/2026-06/portfoy.png',
       islem: '/templates/siralama/2026-06/islem.png',
     },
-    award: '/templates/siralama/2026-06/sertifika.png',
+    award: '/templates/siralama/2026-06/odul.png',
   },
   '2026-07': {
     rank: {
@@ -101,7 +98,7 @@ export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
       portfoy: '/templates/siralama/2026-07/portfoy.png',
       islem: '/templates/siralama/2026-07/islem.png',
     },
-    award: '/templates/siralama/2026-07/sertifika.png',
+    award: '/templates/siralama/2026-07/odul.png',
   },
   '2026-08': {
     rank: {
@@ -117,7 +114,7 @@ export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
       portfoy: '/templates/siralama/2026-09/portfoy.png',
       islem: '/templates/siralama/2026-09/islem.png',
     },
-    award: '/templates/siralama/2026-09/sertifika.png',
+    award: '/templates/siralama/2026-09/odul.png',
   },
   '2026-10': {
     rank: {
@@ -125,7 +122,7 @@ export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
       portfoy: '/templates/siralama/2026-10/portfoy.png',
       islem: '/templates/siralama/2026-10/islem.png',
     },
-    award: '/templates/siralama/2026-10/sertifika.png',
+    award: '/templates/siralama/2026-10/odul.png',
   },
   '2026-q2': { rank: {}, award: null },
   '2026-q3': { rank: {}, award: null },
