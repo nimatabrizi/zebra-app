@@ -79,7 +79,14 @@ export type PeriodTemplates = {
  * ciro.png, portfoy.png, islem.png, takim.png, sertifika.png koyup buraya yol yazın.
  */
 export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
-  '2026-05': { rank: {}, award: null },
+  '2026-05': {
+    rank: {
+      ciro: '/templates/siralama/2026-05/ciro.png',
+      portfoy: '/templates/siralama/2026-05/portfoy.png',
+      islem: '/templates/siralama/2026-05/islem.png',
+    },
+    award: '/templates/siralama/2026-05/sertifika.png',
+  },
   '2026-06': { rank: {}, award: null },
   '2026-07': { rank: {}, award: null },
   '2026-08': {
