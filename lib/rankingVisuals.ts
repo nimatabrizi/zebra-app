@@ -95,7 +95,14 @@ export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
     },
     award: '/templates/siralama/2026-06/sertifika.png',
   },
-  '2026-07': { rank: {}, award: null },
+  '2026-07': {
+    rank: {
+      ciro: '/templates/siralama/2026-07/ciro.png',
+      portfoy: '/templates/siralama/2026-07/portfoy.png',
+      islem: '/templates/siralama/2026-07/islem.png',
+    },
+    award: '/templates/siralama/2026-07/sertifika.png',
+  },
   '2026-08': {
     rank: {
       ciro: '/templates/siralama/2026-08/ciro.png',
