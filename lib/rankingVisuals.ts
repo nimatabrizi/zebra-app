@@ -9,14 +9,28 @@ import { toConsultantPhotoSlug, toTitleCaseName, toTurkishUpper } from './format
 
 export const RANK_CANVAS = { width: 1080, height: 1350 } as const;
 
-export type RankCategoryId = 'ciro' | 'portfoy' | 'islem';
-export type RankPeriodId = '2026-05' | '2026-06' | '2026-07' | '2026-08' | '2026-q2';
+export type RankCategoryId = 'ciro' | 'portfoy' | 'islem' | 'takim';
+export type RankPeriodId =
+  | '2026-05'
+  | '2026-06'
+  | '2026-07'
+  | '2026-08'
+  | '2026-09'
+  | '2026-10'
+  | '2026-q2'
+  | '2026-q3';
+/** rank = sıralama görseli; award = sertifika (yalnızca 2.–5.) */
 export type RankOutputKind = 'rank' | 'award';
+
+/** Sertifika yalnızca bu sıra aralığında üretilir (1. plaket/kupa basılmaz). */
+export const CERTIFICATE_RANK_MIN = 2;
+export const CERTIFICATE_RANK_MAX = 5;
 
 export const RANK_CATEGORIES: { id: RankCategoryId; label: string; short: string }[] = [
   { id: 'ciro', label: 'Ciro Sıralaması', short: 'Ciro' },
   { id: 'portfoy', label: 'Portföy Alma Sıralaması', short: 'Portföy alma' },
   { id: 'islem', label: 'İşlem Sıralaması', short: 'İşlem' },
+  { id: 'takim', label: 'Takım Verimliliği', short: 'Takım' },
 ];
 
 export type RankPeriod = {
@@ -25,7 +39,7 @@ export type RankPeriod = {
   sheetName: string;
   fileSlug: string;
   kind: 'month' | 'quarter';
-  /** Sayfa adı eşleşmesi için normalize edilmiş anahtarlar */
+  /** Sayfa adı eşleşmesi için normalize edilmiş anahtarlar (özelden genele) */
   keys: string[];
 };
 
@@ -34,22 +48,36 @@ export const RANK_PERIODS: RankPeriod[] = [
   { id: '2026-06', label: 'Haziran', sheetName: 'Haziran', fileSlug: '2026-06-haziran', kind: 'month', keys: ['haziran'] },
   { id: '2026-07', label: 'Temmuz', sheetName: 'Temmuz', fileSlug: '2026-07-temmuz', kind: 'month', keys: ['temmuz'] },
   { id: '2026-08', label: 'Ağustos', sheetName: 'Ağustos', fileSlug: '2026-08-agustos', kind: 'month', keys: ['agustos'] },
+  { id: '2026-09', label: 'Eylül', sheetName: 'Eylül', fileSlug: '2026-09-eylul', kind: 'month', keys: ['eylul'] },
+  { id: '2026-10', label: 'Ekim', sheetName: 'Ekim', fileSlug: '2026-10-ekim', kind: 'month', keys: ['ekim'] },
   {
     id: '2026-q2',
     label: '2026 II. Çeyrek',
     sheetName: '2. Çeyrek',
     fileSlug: '2026-q2-ceyrek',
     kind: 'quarter',
-    keys: ['ceyrek', 'q2', 'ii ceyrek', '2 ceyrek'],
+    keys: ['2 ceyrek', 'ii ceyrek', 'q2'],
+  },
+  {
+    id: '2026-q3',
+    label: '2026 III. Çeyrek',
+    sheetName: '3. Çeyrek',
+    fileSlug: '2026-q3-ceyrek',
+    kind: 'quarter',
+    keys: ['3 ceyrek', 'iii ceyrek', 'q3'],
   },
 ];
 
 export type PeriodTemplates = {
   rank: Partial<Record<RankCategoryId, string>>;
+  /** 2.–5. sıralar için sertifika şablonu */
   award: string | null;
 };
 
-/** Yeni ay template'i gelince yalnızca buraya dosya yolu eklenir. */
+/**
+ * Yeni dönem template'i: public/templates/siralama/{id}/ altına
+ * ciro.png, portfoy.png, islem.png, takim.png, sertifika.png koyup buraya yol yazın.
+ */
 export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
   '2026-05': { rank: {}, award: null },
   '2026-06': { rank: {}, award: null },
@@ -62,7 +90,10 @@ export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
     },
     award: '/templates/siralama/2026-08/odul.png',
   },
+  '2026-09': { rank: {}, award: null },
+  '2026-10': { rank: {}, award: null },
   '2026-q2': { rank: {}, award: null },
+  '2026-q3': { rank: {}, award: null },
 };
 
 export function templateFor(
@@ -234,18 +265,23 @@ export function normalizeRankKey(value: unknown): string {
 export function periodFromText(value: unknown): RankPeriodId | null {
   const key = normalizeRankKey(value);
   if (!key) return null;
-  for (const period of RANK_PERIODS) {
-    if (period.keys.some((k) => key === k || key.includes(k))) return period.id;
+  // Önce tam anahtar, sonra includes — q2/q3 çakışmasın diye uzun anahtarlar önce.
+  const ranked = [...RANK_PERIODS].sort(
+    (a, b) => Math.max(...b.keys.map((k) => k.length)) - Math.max(...a.keys.map((k) => k.length))
+  );
+  for (const period of ranked) {
+    if (period.keys.some((k) => key === k)) return period.id;
+  }
+  for (const period of ranked) {
+    if (period.keys.some((k) => key.includes(k))) return period.id;
   }
   return null;
 }
 
-type CategoryMatch = RankCategoryId | 'takim' | null;
-
-function categoryFromText(value: unknown): CategoryMatch {
+function categoryFromText(value: unknown): RankCategoryId | null {
   const key = normalizeRankKey(value);
   if (!key) return null;
-  if (key.includes('verimlil') || key.startsWith('takim')) return 'takim';
+  if (key.includes('verimlil') || key.includes('takim')) return 'takim';
   if (key.includes('portfoy')) return 'portfoy';
   if (key.includes('ciro')) return 'ciro';
   if (key.includes('islem')) return 'islem';
@@ -263,14 +299,14 @@ function toRankNumber(value: unknown): number | null {
 }
 
 /**
- * "Murat Uzunoğlu - Gönül Hanege" → 2 kişi
- * "Serkan / Selin Eskit" → Serkan Eskit + Selin Eskit
+ * Ortak çalışanlar (tek görselde birden fazla isim):
+ * "Murat Uzunoğlu - Gönül Hanege", "Serkan / Selin Eskit", "Özkan & Ecehan Kılıç"
  */
-export function splitRankNames(raw: string): string[] {
+export function splitPartnerNames(raw: string): string[] {
   const cleaned = String(raw || '').normalize('NFC').replace(/\s+/g, ' ').trim();
   if (!cleaned) return [];
   const parts = cleaned
-    .split(/\s+-\s+|\s*&\s*|\s*\/\s*|\s*,\s*|\s+ve\s+|\s*\+\s*/i)
+    .split(/\s+-\s+|\s*&\s*|\s*\/\s*|\s*\+\s*/i)
     .map((part) => part.trim())
     .filter(Boolean);
   if (parts.length <= 1) return [cleaned];
@@ -281,11 +317,38 @@ export function splitRankNames(raw: string): string[] {
   );
 }
 
-function makePeople(raw: string): RankPerson[] {
-  return splitRankNames(raw).map((name) => ({
-    name,
-    key: toConsultantPhotoSlug(name) || normalizeRankKey(name),
-  }));
+/**
+ * @deprecated Virgül berabere ayırıcıdır; ortaklar için splitPartnerNames kullanın.
+ * Geriye dönük: hem berabere hem ortak ayırıcılarını tek listede açar.
+ */
+export function splitRankNames(raw: string): string[] {
+  const cleaned = String(raw || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  const tieGroups = cleaned
+    .split(/\s*,\s*|\s+ve\s+/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (tieGroups.length > 1) {
+    return tieGroups.flatMap((group) => splitPartnerNames(group));
+  }
+  return splitPartnerNames(cleaned);
+}
+
+/** Virgülle ayrılan berabere gruplar; her grup kendi ortaklarını (& / -) tutar. */
+export function makeRankPeopleGroups(raw: string): RankPerson[][] {
+  const cleaned = String(raw || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  const tieGroups = cleaned
+    .split(/\s*,\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const groups = (tieGroups.length ? tieGroups : [cleaned]).map((group) =>
+    splitPartnerNames(group).map((name) => ({
+      name,
+      key: toConsultantPhotoSlug(name) || normalizeRankKey(name).replace(/\s+/g, '-'),
+    }))
+  );
+  return groups.filter((g) => g.length > 0);
 }
 
 /**
@@ -301,7 +364,6 @@ export function parseRankingWorkbook(
   const entries: RankEntry[] = [];
   const warnings: string[] = [];
   const sheets: ParsedRankings['sheets'] = [];
-  const skippedTeam = new Set<string>();
 
   const push = (
     periodId: RankPeriodId,
@@ -309,15 +371,16 @@ export function parseRankingWorkbook(
     rank: number,
     rawName: string
   ) => {
-    // Ekip satırındaki her kişi aynı sırayla kendi görselini alır.
-    for (const person of makePeople(rawName)) {
+    // Virgül → berabere (ayrı görsel); & / - → ortak (aynı görselde birden fazla isim).
+    for (const people of makeRankPeopleGroups(rawName)) {
+      const idKeys = people.map((p) => p.key).join('+');
       entries.push({
-        id: `${periodId}|${category}|${rank}|${person.key}`,
+        id: `${periodId}|${category}|${rank}|${idKeys}`,
         periodId,
         category,
         rank,
         rawName: rawName.normalize('NFC').trim(),
-        people: [person],
+        people,
       });
     }
   };
@@ -347,10 +410,6 @@ export function parseRankingWorkbook(
         const rank = toRankNumber(row[cRank]);
         const name = String(row[cName] ?? '').trim();
         if (!name || !rank) continue;
-        if (category === 'takim') {
-          skippedTeam.add(sheetName);
-          continue;
-        }
         if (!periodId || !category) {
           warnings.push(`"${sheetName}" sayfasında dönem/kategori okunamayan satır: ${name}`);
           continue;
@@ -358,7 +417,7 @@ export function parseRankingWorkbook(
         push(periodId, category, rank, name);
       }
     } else {
-      let category: CategoryMatch = null;
+      let category: RankCategoryId | null = null;
       for (const row of rows) {
         const cells = row.map((cell) => (cell == null ? '' : cell));
         const nonEmpty = cells.filter((cell) => String(cell).trim() !== '');
@@ -381,25 +440,17 @@ export function parseRankingWorkbook(
           .map((cell) => String(cell).trim())
           .find(Boolean);
         if (!name || !category) continue;
-        if (category === 'takim') {
-          skippedTeam.add(sheetName);
-          continue;
-        }
         if (!sheetPeriod) continue;
         push(sheetPeriod, category, toRankNumber(cells[rankIndex])!, name);
       }
       if (!sheetPeriod && rows.some((row) => row.some((cell) => categoryFromText(cell)))) {
         warnings.push(
-          `"${sheetName}" sayfasının adı bir döneme eşleşmedi (Mayıs, Haziran, Temmuz, Ağustos, 2. Çeyrek).`
+          `"${sheetName}" sayfasının adı bir döneme eşleşmedi (Mayıs…Ekim, 2./3. Çeyrek).`
         );
       }
     }
 
     sheets.push({ name: sheetName, periodId: sheetPeriod, count: entries.length - before });
-  }
-
-  for (const sheet of skippedTeam) {
-    warnings.push(`"${sheet}" — Takım Verimliliği bloğu okundu ama bu kategori için görsel yok, atlandı.`);
   }
 
   const seen = new Set<string>();

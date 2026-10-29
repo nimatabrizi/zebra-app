@@ -23,6 +23,8 @@ import PeoplePicker from './PeoplePicker';
 import { AdjustSaveActions, useUnsavedChangesGuard } from './AdjustSaveControls';
 import { sameAdjust, useSavedAdjustments } from '../lib/visualAdjustments';
 import {
+  CERTIFICATE_RANK_MAX,
+  CERTIFICATE_RANK_MIN,
   DEFAULT_PHOTO_ADJUST,
   RANK_CANVAS,
   RANK_CATEGORIES,
@@ -391,8 +393,13 @@ export default function RankingVisualsStudio({
     }
 
     if (kinds.includes('award')) {
+      // Sertifika: yalnızca 2.–5. (1.ler kupa/plaket — uygulamada basılmaz).
+      const certEntries = filtered.filter(
+        (entry) =>
+          entry.rank >= CERTIFICATE_RANK_MIN && entry.rank <= CERTIFICATE_RANK_MAX
+      );
       const groups = new Map<string, RankEntry[]>();
-      for (const entry of filtered) {
+      for (const entry of certEntries) {
         const groupKey = `${entry.periodId}|${entry.people.map((p) => p.key).join('+')}`;
         groups.set(groupKey, [...(groups.get(groupKey) || []), entry]);
       }
@@ -411,10 +418,10 @@ export default function RankingVisualsStudio({
           templateUrl: templateFor(first.periodId, 'award', first.category),
           adjustKey: `award|${groupKey}`,
           label: names,
-          detail: `${period.label} · Ödülünüz var · ${group
+          detail: `${period.label} · Sertifika · ${group
             .map((e) => `${categoryShort(e.category)} ${rankText(e.rank)}`)
             .join(', ')}`,
-          zipPath: `${period.fileSlug}/odulunuz-var/${rankFileSlug(names)}.png`,
+          zipPath: `${period.fileSlug}/sertifika/${rankFileSlug(names)}.png`,
         });
       }
     }
@@ -601,11 +608,11 @@ export default function RankingVisualsStudio({
   return (
     <div className="panel-enter space-y-10">
       <header>
-        <p className="z-page-kicker">Zebra Studio · Ödül ve sıralama</p>
+        <p className="z-page-kicker">Zebra Studio · Sıralama ve sertifika</p>
         <h1 className="z-page-title mt-3">Sıralama Görselleri</h1>
         <p className="z-page-sub">
           Excel&apos;deki sıralamaları yükleyin; ay, çeyrek, kategori ve kişi bazında sıralama ve
-          &quot;Ödülünüz var&quot; görsellerini tek tek ya da toplu indirin.
+          2.–5. sıralar için sertifika görsellerini tek tek ya da toplu indirin.
         </p>
       </header>
 
@@ -639,7 +646,7 @@ export default function RankingVisualsStudio({
                     </li>
                   ))}
                   <li className="flex justify-between gap-2">
-                    <span>Ödülünüz var</span>
+                    <span>Sertifika (2.–5.)</span>
                     <span className={set.award ? 'text-[var(--z-fg)]' : ''}>
                       {set.award ? 'Hazır' : 'Bekleniyor'}
                     </span>
@@ -794,7 +801,7 @@ export default function RankingVisualsStudio({
                   </ToggleChip>
                   <ToggleChip active={kinds.includes('award')} onClick={() => toggle(kinds, 'award', setKinds)}>
                     <Award className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    Ödülünüz var
+                    Sertifika
                   </ToggleChip>
                 </div>
               </div>
@@ -959,7 +966,7 @@ export default function RankingVisualsStudio({
             <div className="flex flex-col">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="z-page-kicker">{editing.kind === 'award' ? 'Ödülünüz var' : 'Sıralama'}</p>
+                  <p className="z-page-kicker">{editing.kind === 'award' ? 'Sertifika' : 'Sıralama'}</p>
                   <p className="mt-2 text-[17px] font-medium text-[var(--z-fg)]">{editing.label}</p>
                   <p className="mt-1 text-[12px] text-[var(--z-muted)]">{editing.detail}</p>
                 </div>
