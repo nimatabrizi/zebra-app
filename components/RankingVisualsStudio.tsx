@@ -5,11 +5,14 @@ import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
 import {
   Award,
-  Check,
+  ChevronLeft,
   Download,
   FileSpreadsheet,
+  FileText,
+  FlipHorizontal2,
   ImageOff,
   Loader2,
+  Search,
   SlidersHorizontal,
   Trophy,
   Upload,
@@ -17,11 +20,19 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { resolveConsultantTitle } from '../lib/consultantTitles';
+import { measureFace } from '../lib/girisVisuals';
 import { resolveConsultantPhotoUrl, toStudioDisplayName } from '../lib/studioAssets';
 import { toConsultantPhotoSlug } from '../lib/formatName';
-import PeoplePicker from './PeoplePicker';
 import { AdjustSaveActions, useUnsavedChangesGuard } from './AdjustSaveControls';
+import { loadRankingWorkbook, saveRankingWorkbook } from '../lib/rankingWorkbook';
 import { sameAdjust, useSavedAdjustments } from '../lib/visualAdjustments';
+import {
+  CERTIFICATE_CATEGORIES,
+  certificateTemplateFor,
+  certificateToPdfBlob,
+  isCertificateEligible,
+  renderCertificate,
+} from '../lib/rankingCertificate';
 import {
   DEFAULT_PHOTO_ADJUST,
   RANK_CANVAS,
@@ -30,8 +41,11 @@ import {
   RANK_TEMPLATES,
   buildRankingTemplateRows,
   canvasToBlob,
+  defaultRankAdjust,
   loadRankImage,
   measureOpaqueBox,
+  mergeParsedRankings,
+  normalizeRankAdjust,
   parseRankingWorkbook,
   rankFileSlug,
   renderRankVisual,
@@ -39,6 +53,7 @@ import {
   turkishRankSuffix,
   type ParsedRankings,
   type PhotoAdjust,
+  type RankAdjust,
   type RankCategoryId,
   type RankEntry,
   type RankOutputKind,
@@ -67,6 +82,18 @@ type OutputItem = {
   label: string;
   detail: string;
   zipPath: string;
+};
+
+type CertItem = {
+  key: string;
+  periodId: RankPeriodId;
+  category: RankCategoryId;
+  rank: number;
+  people: ResolvedPerson[];
+  templateUrl: string;
+  label: string;
+  detail: string;
+  pdfPath: string;
 };
 
 const ADJUST_STORAGE_KEY = 'zebra-siralama-photo-adjust-v2';
@@ -110,35 +137,44 @@ async function toRenderPeople(people: ResolvedPerson[]): Promise<RenderPerson[]>
   return Promise.all(
     people.map(async (person) => {
       const photo = await loadRankImage(person.photoUrl);
+      if (!photo) {
+        return {
+          displayName: person.displayName,
+          title: person.title,
+          photo: null,
+          bounds: null,
+          face: null,
+        };
+      }
+      const [bounds, face] = await Promise.all([
+        Promise.resolve(measureOpaqueBox(photo)),
+        measureFace(photo),
+      ]);
       return {
         displayName: person.displayName,
         title: person.title,
         photo,
-        bounds: photo ? measureOpaqueBox(photo) : null,
+        bounds,
+        face,
       };
     })
   );
 }
 
-async function renderItem(item: OutputItem, adjust: PhotoAdjust) {
+async function renderItem(item: OutputItem, adjust: RankAdjust) {
   if (!item.templateUrl) throw new Error('Template bekleniyor');
   return renderRankVisual({
     kind: item.kind,
     templateUrl: item.templateUrl,
     rank: item.rank,
+    periodId: item.periodId,
     people: await toRenderPeople(item.people),
     adjust,
   });
 }
 
-function thumbnailBlob(canvas: HTMLCanvasElement): Promise<Blob> {
-  const thumb = document.createElement('canvas');
-  thumb.width = 432;
-  thumb.height = 540;
-  thumb.getContext('2d')?.drawImage(canvas, 0, 0, thumb.width, thumb.height);
-  return new Promise((resolve, reject) =>
-    thumb.toBlob((b) => (b ? resolve(b) : reject(new Error('thumb'))), 'image/jpeg', 0.86)
-  );
+function personShortLabel(person: ResolvedPerson) {
+  return person.displayName.split(/\s+/)[0] || person.displayName;
 }
 
 function downloadBlob(blob: Blob, fileName: string) {
@@ -152,33 +188,19 @@ function downloadBlob(blob: Blob, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-function ToggleChip({
-  active,
-  onClick,
-  children,
-  muted,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] font-medium transition-all duration-300 ${
-        active
-          ? 'border-transparent bg-[var(--z-inverse)] text-[var(--z-inverse-fg)] shadow-[var(--z-shadow-soft)]'
-          : `border-[var(--z-border)] bg-[color-mix(in_srgb,var(--z-elevated)_65%,transparent)] hover:border-[var(--z-border-strong)] ${
-              muted ? 'text-[var(--z-muted-2)]' : 'text-[var(--z-fg)]'
-            }`
-      }`}
-    >
-      {active ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : null}
-      {children}
-    </button>
-  );
+function periodReadyCount(periodId: RankPeriodId) {
+  const set = RANK_TEMPLATES[periodId];
+  return RANK_CATEGORIES.filter((c) => set.rank[c.id]).length + (set.award ? 1 : 0);
+}
+
+/** Çeyrek: ciro+portföy+işlem (+ödül varsa). Ay: 3 dal + ödül. */
+function periodReadyTarget(periodId: RankPeriodId) {
+  const set = RANK_TEMPLATES[periodId];
+  const period = RANK_PERIODS.find((p) => p.id === periodId);
+  if (period?.kind === 'quarter') {
+    return 3 + (set.award ? 1 : 0);
+  }
+  return 4;
 }
 
 export default function RankingVisualsStudio({
@@ -192,40 +214,39 @@ export default function RankingVisualsStudio({
   const [photoSlugs, setPhotoSlugs] = useState<string[]>([]);
   const [fileName, setFileName] = useState('');
   const [parsed, setParsed] = useState<ParsedRankings | null>(null);
+  const [excelHydrated, setExcelHydrated] = useState(false);
   const [parseError, setParseError] = useState('');
   const [parsing, setParsing] = useState(false);
+  const persistSkipRef = useRef(true);
 
-  const [periods, setPeriods] = useState<RankPeriodId[]>(RANK_PERIODS.map((p) => p.id));
-  const [categories, setCategories] = useState<RankCategoryId[]>(RANK_CATEGORIES.map((c) => c.id));
-  const [kinds, setKinds] = useState<RankOutputKind[]>(['rank', 'award']);
-  const [personKeys, setPersonKeys] = useState<string[]>([]);
+  /** null = dönem listesi; dolu = o dönemin tabelası */
+  const [activePeriod, setActivePeriod] = useState<RankPeriodId | null>(null);
   const [personQuery, setPersonQuery] = useState('');
 
   const {
     saved: adjustments,
     save: saveAdjust,
     remove: removeAdjust,
-  } = useSavedAdjustments<PhotoAdjust>('siralama', {
+  } = useSavedAdjustments<RankAdjust | PhotoAdjust>('siralama', {
     legacyStorageKey: ADJUST_STORAGE_KEY,
     canSave,
   });
-  const [thumbs, setThumbs] = useState<Record<string, string>>({});
-  const [thumbErrors, setThumbErrors] = useState<Record<string, string>>({});
   const [editing, setEditing] = useState<OutputItem | null>(null);
-  const [draft, setDraft] = useState<PhotoAdjust>(DEFAULT_PHOTO_ADJUST);
+  const [draft, setDraft] = useState<RankAdjust>(defaultRankAdjust(1));
+  const [editPersonIndex, setEditPersonIndex] = useState(0);
   const [previewReady, setPreviewReady] = useState(false);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
     startY: number;
+    personIndex: number;
     origin: PhotoAdjust;
   } | null>(null);
   const [exporting, setExporting] = useState<{ current: number; total: number } | null>(null);
   const [downloadingKey, setDownloadingKey] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const thumbUrlsRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -264,12 +285,35 @@ export default function RankingVisualsStudio({
     };
   }, []);
 
-  useEffect(
-    () => () => {
-      Object.values(thumbUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
-    },
-    []
-  );
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const stored = await loadRankingWorkbook();
+      if (cancelled) return;
+      if (stored?.parsed.entries.length) {
+        setParsed(stored.parsed);
+        setFileName(stored.fileName || 'Kayıtlı Excel');
+      }
+      setExcelHydrated(true);
+      persistSkipRef.current = false;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!excelHydrated || persistSkipRef.current) return;
+    if (!parsed?.entries.length || !fileName) return;
+    let cancelled = false;
+    (async () => {
+      await saveRankingWorkbook(fileName, parsed);
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [excelHydrated, parsed, fileName]);
 
   const resolvePerson = useCallback(
     (name: string, key: string): ResolvedPerson => {
@@ -298,10 +342,12 @@ export default function RankingVisualsStudio({
           blankrows: false,
         })
       );
-      setParsed(result);
+      const merged = mergeParsedRankings(parsed, result);
+      setParsed(merged);
       setFileName(file.name);
-      setPersonKeys([]);
-      if (!result.entries.length) {
+      setActivePeriod(null);
+      setPersonQuery('');
+      if (!merged.entries.length) {
         setParseError('Dosyada okunabilir sıralama bulunamadı. "Excel nasıl hazırlanır?" bölümüne göz atın.');
       }
     } catch (error) {
@@ -328,154 +374,168 @@ export default function RankingVisualsStudio({
 
   const entries = useMemo(() => parsed?.entries || [], [parsed]);
 
-  const scopedEntries = useMemo(
-    () =>
-      entries.filter(
-        (entry) => periods.includes(entry.periodId) && categories.includes(entry.category)
-      ),
-    [entries, periods, categories]
+  const periodCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const entry of entries) counts[entry.periodId] = (counts[entry.periodId] || 0) + 1;
+    return counts;
+  }, [entries]);
+
+  const periodEntries = useMemo(
+    () => (activePeriod ? entries.filter((e) => e.periodId === activePeriod) : []),
+    [entries, activePeriod]
   );
 
-  const peopleIndex = useMemo(() => {
-    const map = new Map<string, { key: string; name: string; count: number }>();
-    for (const entry of scopedEntries) {
-      for (const person of entry.people) {
-        const current = map.get(person.key);
-        if (current) current.count += 1;
-        else
-          map.set(person.key, {
-            key: person.key,
-            name: resolvePerson(person.name, person.key).displayName,
-            count: 1,
-          });
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'tr'));
-  }, [scopedEntries, resolvePerson]);
+  const needle = personQuery.trim().toLocaleLowerCase('tr-TR');
 
-  const visiblePeople = useMemo(() => {
-    const needle = personQuery.trim().toLocaleLowerCase('tr-TR');
-    if (!needle) return peopleIndex;
-    return peopleIndex.filter((p) => p.name.toLocaleLowerCase('tr-TR').includes(needle));
-  }, [peopleIndex, personQuery]);
-
-  const items = useMemo(() => {
-    const out: OutputItem[] = [];
-    const personFilter = personKeys.length ? new Set(personKeys) : null;
-    const filtered = scopedEntries.filter(
-      (entry) => !personFilter || entry.people.some((p) => personFilter.has(p.key))
-    );
-
-    const resolveAll = (entry: RankEntry) =>
-      entry.people.map((person) => resolvePerson(person.name, person.key));
-
-    if (kinds.includes('rank')) {
-      for (const entry of filtered) {
-        const people = resolveAll(entry);
-        const period = RANK_PERIODS.find((p) => p.id === entry.periodId)!;
-        const names = people.map((p) => p.displayName).join(' & ');
-        out.push({
-          key: `rank|${entry.id}`,
-          kind: 'rank',
-          periodId: entry.periodId,
-          category: entry.category,
-          rank: entry.rank,
-          people,
-          templateUrl: templateFor(entry.periodId, 'rank', entry.category),
-          adjustKey: `rank|${entry.id}`,
-          label: names,
-          detail: `${period.label} · ${categoryShort(entry.category)} · ${rankText(entry.rank)}`,
-          zipPath: `${period.fileSlug}/${entry.category}/${String(entry.rank).padStart(2, '0')}-${rankFileSlug(names)}.png`,
-        });
-      }
-    }
-
-    if (kinds.includes('award')) {
-      // Aynı dönemde birden fazla dalda ödül alan kişi → tek “Ödülünüz var” görseli.
-      const groups = new Map<string, RankEntry[]>();
-      for (const entry of filtered) {
-        const groupKey = `${entry.periodId}|${entry.people.map((p) => p.key).join('+')}`;
-        groups.set(groupKey, [...(groups.get(groupKey) || []), entry]);
-      }
-      for (const [groupKey, group] of groups) {
-        const first = group[0]!;
-        const people = resolveAll(first);
-        const period = RANK_PERIODS.find((p) => p.id === first.periodId)!;
-        const names = people.map((p) => p.displayName).join(' & ');
-        out.push({
-          key: `award|${groupKey}`,
-          kind: 'award',
-          periodId: first.periodId,
-          category: first.category,
-          rank: first.rank,
-          people,
-          templateUrl: templateFor(first.periodId, 'award', first.category),
-          adjustKey: `award|${groupKey}`,
-          label: names,
-          detail: `${period.label} · Ödülünüz var · ${group
-            .map((e) => `${categoryShort(e.category)} ${rankText(e.rank)}`)
-            .join(', ')}`,
-          zipPath: `${period.fileSlug}/odulunuz-var/${rankFileSlug(names)}.png`,
-        });
-      }
-    }
-    return out;
-  }, [scopedEntries, personKeys, kinds, resolvePerson]);
-
-  const readyItems = useMemo(() => items.filter((item) => item.templateUrl), [items]);
-  const waitingCount = items.length - readyItems.length;
-
-  const adjustFor = useCallback(
-    (item: OutputItem) => adjustments[item.adjustKey] || DEFAULT_PHOTO_ADJUST,
-    [adjustments]
-  );
-
-  const thumbKey = useCallback(
-    (item: OutputItem) => {
-      const a = adjustFor(item);
-      return `${item.key}|${a.scale}|${a.dx}|${a.dy}|${item.people.map((p) => p.photoUrl).join(',')}`;
+  const matchesPersonQuery = useCallback(
+    (entry: RankEntry) => {
+      if (!needle) return true;
+      return entry.people.some((p) => {
+        const display = resolvePerson(p.name, p.key).displayName.toLocaleLowerCase('tr-TR');
+        return display.includes(needle) || p.name.toLocaleLowerCase('tr-TR').includes(needle);
+      });
     },
-    [adjustFor]
+    [needle, resolvePerson]
   );
 
-  useEffect(() => {
-    if (!isActive) return;
-    let cancelled = false;
-    (async () => {
-      for (const item of readyItems) {
-        if (cancelled) return;
-        const key = thumbKey(item);
-        if (thumbUrlsRef.current[key]) continue;
-        try {
-          const canvas = await renderItem(item, adjustFor(item));
-          const blob = await thumbnailBlob(canvas);
-          if (cancelled) return;
-          const url = URL.createObjectURL(blob);
-          thumbUrlsRef.current[key] = url;
-          setThumbs((current) => ({ ...current, [key]: url }));
-        } catch (error) {
-          if (cancelled) return;
-          setThumbErrors((current) => ({
-            ...current,
-            [key]: error instanceof Error ? error.message : 'Çizilemedi',
-          }));
+  const filteredPeriodEntries = useMemo(
+    () => periodEntries.filter(matchesPersonQuery),
+    [periodEntries, matchesPersonQuery]
+  );
+
+  const buildItems = useCallback(
+    (source: RankEntry[], kinds: RankOutputKind[]): OutputItem[] => {
+      const out: OutputItem[] = [];
+      const resolveAll = (entry: RankEntry) =>
+        entry.people.map((person) => resolvePerson(person.name, person.key));
+
+      if (kinds.includes('rank')) {
+        for (const entry of source) {
+          const people = resolveAll(entry);
+          const period = RANK_PERIODS.find((p) => p.id === entry.periodId)!;
+          const names = people.map((p) => p.displayName).join(' & ');
+          out.push({
+            key: `rank|${entry.id}`,
+            kind: 'rank',
+            periodId: entry.periodId,
+            category: entry.category,
+            rank: entry.rank,
+            people,
+            templateUrl: templateFor(entry.periodId, 'rank', entry.category),
+            adjustKey: `period|${entry.periodId}|${entry.people.map((p) => p.key).join('+')}`,
+            label: names,
+            detail: `${period.label} · ${categoryShort(entry.category)} · ${rankText(entry.rank)}`,
+            zipPath: `${period.fileSlug}/${entry.category}/${String(entry.rank).padStart(2, '0')}-${rankFileSlug(names)}.png`,
+          });
         }
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [readyItems, thumbKey, adjustFor, isActive]);
+
+      if (kinds.includes('award')) {
+        const groups = new Map<string, RankEntry[]>();
+        for (const entry of source) {
+          const groupKey = `${entry.periodId}|${entry.people.map((p) => p.key).join('+')}`;
+          groups.set(groupKey, [...(groups.get(groupKey) || []), entry]);
+        }
+        for (const [groupKey, group] of groups) {
+          const first = group[0]!;
+          const people = resolveAll(first);
+          const period = RANK_PERIODS.find((p) => p.id === first.periodId)!;
+          const names = people.map((p) => p.displayName).join(' & ');
+          out.push({
+            key: `award|${groupKey}`,
+            kind: 'award',
+            periodId: first.periodId,
+            category: first.category,
+            rank: first.rank,
+            people,
+            templateUrl: templateFor(first.periodId, 'award', first.category),
+            adjustKey: `period|${first.periodId}|${first.people.map((p) => p.key).join('+')}`,
+            label: names,
+            detail: `${period.label} · Ödülünüz var · ${group
+              .map((e) => `${categoryShort(e.category)} ${rankText(e.rank)}`)
+              .join(', ')}`,
+            zipPath: `${period.fileSlug}/odulunuz-var/${rankFileSlug(names)}.png`,
+          });
+        }
+      }
+      return out;
+    },
+    [resolvePerson]
+  );
+
+  const rankItems = useMemo(
+    () => buildItems(filteredPeriodEntries, ['rank']),
+    [buildItems, filteredPeriodEntries]
+  );
+  const awardItems = useMemo(
+    () => buildItems(filteredPeriodEntries, ['award']),
+    [buildItems, filteredPeriodEntries]
+  );
+  const certItems = useMemo((): CertItem[] => {
+    if (!activePeriod || !certificateTemplateFor(activePeriod)) return [];
+    const templateUrl = certificateTemplateFor(activePeriod)!;
+    const period = RANK_PERIODS.find((p) => p.id === activePeriod)!;
+    const out: CertItem[] = [];
+    for (const entry of filteredPeriodEntries) {
+      if (!isCertificateEligible(entry.periodId, entry.category, entry.rank)) continue;
+      const people = entry.people.map((p) => resolvePerson(p.name, p.key));
+      const names = people.map((p) => p.displayName).join(' & ');
+      out.push({
+        key: `cert|${entry.id}`,
+        periodId: entry.periodId,
+        category: entry.category,
+        rank: entry.rank,
+        people,
+        templateUrl,
+        label: names,
+        detail: `${period.label} · ${categoryShort(entry.category)} · ${rankText(entry.rank)} · sertifika`,
+        pdfPath: `${period.fileSlug}/sertifika/${entry.category}/${String(entry.rank).padStart(2, '0')}-${rankFileSlug(names)}.pdf`,
+      });
+    }
+    return out.sort(
+      (a, b) =>
+        CERTIFICATE_CATEGORIES.indexOf(a.category) - CERTIFICATE_CATEGORIES.indexOf(b.category) ||
+        a.rank - b.rank ||
+        a.label.localeCompare(b.label, 'tr')
+    );
+  }, [activePeriod, filteredPeriodEntries, resolvePerson]);
+  const items = useMemo(() => [...rankItems, ...awardItems], [rankItems, awardItems]);
+  const readyItems = useMemo(() => items.filter((item) => item.templateUrl), [items]);
+  const readyRankItems = useMemo(() => rankItems.filter((i) => i.templateUrl), [rankItems]);
+  const readyAwardItems = useMemo(() => awardItems.filter((i) => i.templateUrl), [awardItems]);
+
+  const activePeriodMeta = activePeriod
+    ? RANK_PERIODS.find((p) => p.id === activePeriod) || null
+    : null;
+
+  const adjustFor = useCallback(
+    (item: OutputItem) => normalizeRankAdjust(adjustments[item.adjustKey], item.people.length),
+    [adjustments]
+  );
 
   // Sürükleme sırasında kare kaçırmamak için: çizim sürerken gelen istek
   // biriktirilir, çizim bitince en güncel ayarla bir kez daha çizilir.
   const editingRef = useRef<OutputItem | null>(null);
-  const draftRef = useRef<PhotoAdjust>(DEFAULT_PHOTO_ADJUST);
+  const draftRef = useRef<RankAdjust>(defaultRankAdjust(1));
+  const editPersonIndexRef = useRef(0);
   const previewRenderRef = useRef({ busy: false, pending: false });
   useEffect(() => {
     editingRef.current = editing;
     draftRef.current = draft;
-  }, [editing, draft]);
+    editPersonIndexRef.current = editPersonIndex;
+  }, [editing, draft, editPersonIndex]);
+
+  const activePersonAdjust =
+    draft.people[editPersonIndex] || DEFAULT_PHOTO_ADJUST;
+
+  const updateActivePerson = (patch: Partial<PhotoAdjust>) => {
+    setDraft((current) => {
+      const people = current.people.map((entry, index) =>
+        index === editPersonIndexRef.current ? { ...entry, ...patch } : entry
+      );
+      return { people };
+    });
+  };
 
   const paintPreview = useCallback(async () => {
     const state = previewRenderRef.current;
@@ -510,6 +570,7 @@ export default function RankingVisualsStudio({
 
   const openEditor = (item: OutputItem) => {
     setPreviewReady(false);
+    setEditPersonIndex(0);
     setDraft(adjustFor(item));
     setEditing(item);
   };
@@ -531,11 +592,14 @@ export default function RankingVisualsStudio({
 
   const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
+    const personIndex = editPersonIndexRef.current;
+    const origin = draftRef.current.people[personIndex] || DEFAULT_PHOTO_ADJUST;
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      origin: draftRef.current,
+      personIndex,
+      origin: { ...origin },
     };
   };
 
@@ -544,18 +608,23 @@ export default function RankingVisualsStudio({
     if (!drag || drag.pointerId !== event.pointerId) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const ratio = RANK_CANVAS.width / Math.max(1, rect.width);
-    setDraft({
+    const next: PhotoAdjust = {
       ...drag.origin,
       dx: clampOffset(drag.origin.dx + (event.clientX - drag.startX) * ratio),
       dy: clampOffset(drag.origin.dy + (event.clientY - drag.startY) * ratio),
-    });
+    };
+    setDraft((current) => ({
+      people: current.people.map((entry, index) =>
+        index === drag.personIndex ? next : entry
+      ),
+    }));
   };
 
   const handlePreviewPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
   };
 
-  const downloadOne = async (item: OutputItem, adjustOverride?: PhotoAdjust) => {
+  const downloadOne = async (item: OutputItem, adjustOverride?: RankAdjust) => {
     setDownloadingKey(item.key);
     try {
       const canvas = await renderItem(item, adjustOverride || adjustFor(item));
@@ -568,20 +637,23 @@ export default function RankingVisualsStudio({
     }
   };
 
-  const downloadZip = async () => {
-    if (!readyItems.length) return;
+  const downloadZipOf = async (list: OutputItem[], fileNameZip: string) => {
+    const ready = list.filter((item) => item.templateUrl);
+    if (!ready.length) {
+      window.alert('İndirilecek hazır görsel yok (template eksik olabilir).');
+      return;
+    }
     const zip = new JSZip();
     const root = zip.folder('Siralama-Gorselleri')!;
-    setExporting({ current: 0, total: readyItems.length });
+    setExporting({ current: 0, total: ready.length });
     try {
-      for (let i = 0; i < readyItems.length; i += 1) {
-        const item = readyItems[i]!;
+      for (let i = 0; i < ready.length; i += 1) {
+        const item = ready[i]!;
         const canvas = await renderItem(item, adjustFor(item));
         root.file(item.zipPath, await canvasToBlob(canvas));
-        setExporting({ current: i + 1, total: readyItems.length });
+        setExporting({ current: i + 1, total: ready.length });
       }
-      const blob = await zip.generateAsync({ type: 'blob' });
-      downloadBlob(blob, 'siralama-gorselleri.zip');
+      downloadBlob(await zip.generateAsync({ type: 'blob' }), fileNameZip);
     } catch (error) {
       alert(error instanceof Error ? error.message : 'ZIP oluşturulamadı');
     } finally {
@@ -589,15 +661,57 @@ export default function RankingVisualsStudio({
     }
   };
 
-  const toggle = <T,>(list: T[], value: T, setter: (next: T[]) => void) => {
-    setter(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+  const downloadCertPdf = async (item: CertItem) => {
+    setDownloadingKey(item.key);
+    try {
+      const canvas = await renderCertificate({
+        periodId: item.periodId,
+        category: item.category,
+        rank: item.rank,
+        displayName: item.label,
+        templateUrl: item.templateUrl,
+      });
+      downloadBlob(await certificateToPdfBlob(canvas), item.pdfPath.split('/').join('_'));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Sertifika PDF oluşturulamadı');
+    } finally {
+      setDownloadingKey('');
+    }
   };
 
-  const periodCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const entry of entries) counts[entry.periodId] = (counts[entry.periodId] || 0) + 1;
-    return counts;
-  }, [entries]);
+  const downloadCertZip = async () => {
+    if (!certItems.length || !activePeriodMeta) return;
+    const zip = new JSZip();
+    const root = zip.folder('Siralama-Sertifikalari')!;
+    setExporting({ current: 0, total: certItems.length });
+    try {
+      for (let i = 0; i < certItems.length; i += 1) {
+        const item = certItems[i]!;
+        const canvas = await renderCertificate({
+          periodId: item.periodId,
+          category: item.category,
+          rank: item.rank,
+          displayName: item.label,
+          templateUrl: item.templateUrl,
+        });
+        root.file(item.pdfPath, await certificateToPdfBlob(canvas));
+        setExporting({ current: i + 1, total: certItems.length });
+      }
+      downloadBlob(
+        await zip.generateAsync({ type: 'blob' }),
+        `sertifika-${activePeriodMeta.fileSlug}.zip`
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Sertifika ZIP oluşturulamadı');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const rankItemForEntry = useCallback(
+    (entry: RankEntry) => rankItems.find((item) => item.key === `rank|${entry.id}`) || null,
+    [rankItems]
+  );
 
   return (
     <div className="panel-enter space-y-10">
@@ -605,78 +719,29 @@ export default function RankingVisualsStudio({
         <p className="z-page-kicker">Zebra Studio · Ödül ve sıralama</p>
         <h1 className="z-page-title mt-3">Sıralama Görselleri</h1>
         <p className="z-page-sub">
-          Excel&apos;deki sıralamaları yükleyin; ay, çeyrek, kategori ve kişi bazında sıralama ve
-          Sıralama ve ayda kişi başına tek &quot;Ödülünüz var&quot; görsellerini indirin.
+          Excel yükleyin, döneme girin, tabeladan kontrol edin; sıralama görselleri ve ayda kişi
+          başına tek &quot;Ödülünüz var&quot; görsellerini ayrı veya birlikte indirin.
         </p>
       </header>
 
-      {/* Template durumu */}
       <section className="z-card p-6 sm:p-8">
-        <p className="z-label">Template durumu</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {RANK_PERIODS.map((period) => {
-            const set = RANK_TEMPLATES[period.id];
-            const ready = RANK_CATEGORIES.filter((c) => set.rank[c.id]).length + (set.award ? 1 : 0);
-            return (
-              <div
-                key={period.id}
-                className="rounded-2xl border border-[var(--z-border)] bg-[color-mix(in_srgb,var(--z-elevated)_60%,transparent)] p-4"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[15px] font-medium text-[var(--z-fg)]">{period.label}</p>
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      ready === 4 ? 'bg-emerald-400' : ready ? 'bg-amber-400' : 'bg-[var(--z-muted-2)]'
-                    }`}
-                  />
-                </div>
-                <ul className="mt-3 space-y-1.5 text-[12px] text-[var(--z-muted)]">
-                  {RANK_CATEGORIES.map((c) => (
-                    <li key={c.id} className="flex justify-between gap-2">
-                      <span>{c.short}</span>
-                      <span className={set.rank[c.id] ? 'text-[var(--z-fg)]' : ''}>
-                        {set.rank[c.id] ? 'Hazır' : 'Bekleniyor'}
-                      </span>
-                    </li>
-                  ))}
-                  <li className="flex justify-between gap-2">
-                    <span>Ödülünüz var</span>
-                    <span className={set.award ? 'text-[var(--z-fg)]' : ''}>
-                      {set.award ? 'Hazır' : 'Bekleniyor'}
-                    </span>
-                  </li>
-                </ul>
-                {parsed ? (
-                  <p className="mt-3 border-t border-[var(--z-border)] pt-3 text-[12px] text-[var(--z-muted)]">
-                    Excel: {periodCounts[period.id] || 0} satır
-                  </p>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Excel */}
-      <section className="z-card p-6 sm:p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+          <div className="flex min-w-0 items-start gap-4">
             <span className="z-btn-icon h-12 w-12 shrink-0">
               <FileSpreadsheet className="h-5 w-5" strokeWidth={1.6} />
             </span>
-            <div>
+            <div className="min-w-0">
               <p className="text-[17px] font-medium text-[var(--z-fg)]">Sıralama Excel&apos;i</p>
-              <p className="mt-1 text-[13px] text-[var(--z-muted)]">
-                {fileName
-                  ? `${fileName} · ${entries.length} sıralama satırı okundu`
-                  : 'Her dönem ayrı sayfa: Mayıs, Haziran, Temmuz, Ağustos, 2. Çeyrek'}
-              </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={downloadSampleExcel} className="z-btn-ghost inline-flex items-center gap-2 px-5 py-3 text-[13px]">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 sm:justify-end">
+            <button
+              type="button"
+              onClick={downloadSampleExcel}
+              className="z-btn-ghost inline-flex items-center gap-2 px-5 py-3 text-[13px]"
+            >
               <Download className="h-4 w-4" strokeWidth={1.8} />
-              {parsed ? 'Excel\u2019i şablon biçiminde indir' : 'Boş Excel şablonu indir'}
+              {parsed ? 'Şablon olarak indir' : 'Boş şablon indir'}
             </button>
             <button
               type="button"
@@ -684,8 +749,12 @@ export default function RankingVisualsStudio({
               disabled={parsing}
               className="z-btn-primary inline-flex items-center gap-2 px-6 py-3 text-[13px] disabled:opacity-50"
             >
-              {parsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" strokeWidth={1.8} />}
-              {fileName ? 'Başka Excel yükle' : 'Excel yükle'}
+              {parsing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" strokeWidth={1.8} />
+              )}
+              {fileName ? 'Excel güncelle' : 'Excel yükle'}
             </button>
             <input
               ref={fileInputRef}
@@ -706,226 +775,429 @@ export default function RankingVisualsStudio({
           </p>
         ) : null}
 
-        {parsed ? (
-          <div className="mt-6 flex flex-wrap gap-2">
-            {parsed.sheets.map((sheet) => (
-              <span key={sheet.name} className="z-chip">
-                {sheet.name} → {sheet.periodId ? periodLabel(sheet.periodId) : 'eşleşmedi'} · {sheet.count}
-              </span>
-            ))}
-          </div>
-        ) : null}
         {parsed?.warnings.length ? (
-          <ul className="mt-4 space-y-1 text-[12px] text-amber-400/90">
+          <ul className="mt-5 space-y-1 border-t border-[var(--z-border)] pt-4 text-[12px] text-amber-400/90">
             {parsed.warnings.map((warning) => (
               <li key={warning}>• {warning}</li>
             ))}
           </ul>
         ) : null}
-
-        <details className="group mt-6 rounded-2xl border border-[var(--z-border)] bg-[color-mix(in_srgb,var(--z-elevated)_50%,transparent)] px-5 py-4">
-          <summary className="cursor-pointer list-none text-[13px] font-medium text-[var(--z-fg)]">
-            Excel nasıl hazırlanır?
-          </summary>
-          <ul className="mt-4 space-y-2 text-[13px] leading-relaxed text-[var(--z-muted)]">
-            <li>• Her dönem ayrı sayfa: <b className="text-[var(--z-fg)]">Mayıs, Haziran, Temmuz, Ağustos, 2. Çeyrek</b>.</li>
-            <li>• Sayfada her kategori için bir başlık satırı: <b className="text-[var(--z-fg)]">Ciro Sıralaması</b>, <b className="text-[var(--z-fg)]">Portföy Alma Sıralaması</b>, <b className="text-[var(--z-fg)]">İşlem Sıralaması</b>.</li>
-            <li>• Başlığın altında <b className="text-[var(--z-fg)]">Sıra | İsim / Takım</b> satırı, ardından her kişi bir satır: A sütununa sıra (1, 2, 3…), B sütununa ad soyad.</li>
-            <li>• Aynı sırayı paylaşanlar aynı numarayla ayrı satırlara yazılır (ör. iki tane 2).</li>
-            <li>• Ortak çalışan ekip tek satır yazılabilir: &quot;Murat Uzunoğlu - Gönül Hanege&quot; ya da aynı soyadlıysa &quot;Serkan / Selin Eskit&quot;. Her kişi için ayrı görsel hazırlanır.</li>
-            <li>• İsimler sistemdeki kullanıcı adlarıyla aynı yazılmalı; fotoğraf ve ünvan oradan gelir.</li>
-            <li>• &quot;Takım Verimliliği&quot; bloğu kalabilir, görseli olmadığı için atlanır.</li>
-          </ul>
-        </details>
       </section>
 
-      {parsed && entries.length ? (
+      {!parsed || !entries.length ? null : activePeriod && activePeriodMeta ? (
         <>
-          {/* Seçenekler */}
-          <section className="z-card space-y-8 p-6 sm:p-8">
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <p className="z-label mb-0">Dönem</p>
-                <button
-                  type="button"
-                  className="text-[12px] text-[var(--z-muted)] hover:text-[var(--z-fg)]"
-                  onClick={() =>
-                    setPeriods(periods.length === RANK_PERIODS.length ? [] : RANK_PERIODS.map((p) => p.id))
-                  }
-                >
-                  {periods.length === RANK_PERIODS.length ? 'Hiçbiri' : 'Tümü'}
-                </button>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {RANK_PERIODS.map((period) => (
-                  <ToggleChip
-                    key={period.id}
-                    active={periods.includes(period.id)}
-                    muted={!periodCounts[period.id]}
-                    onClick={() => toggle(periods, period.id, setPeriods)}
-                  >
-                    {period.label}
-                    <span className="opacity-60">{periodCounts[period.id] || 0}</span>
-                  </ToggleChip>
-                ))}
-              </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                setActivePeriod(null);
+                setPersonQuery('');
+              }}
+              className="z-btn-ghost inline-flex w-fit items-center gap-2 px-4 py-2.5 text-[13px]"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={1.8} />
+              Tüm dönemler
+            </button>
+            <div className="sm:text-right">
+              <p className="z-page-kicker">{activePeriodMeta.kind === 'quarter' ? 'Çeyrek' : 'Ay'}</p>
+              <h2 className="mt-1 text-[28px] font-semibold tracking-tight text-[var(--z-fg)]">
+                {activePeriodMeta.label}
+              </h2>
             </div>
+          </div>
 
-            <div className="grid gap-8 lg:grid-cols-2">
-              <div>
-                <p className="z-label">Kategori</p>
-                <div className="flex flex-wrap gap-2">
-                  {RANK_CATEGORIES.map((category) => (
-                    <ToggleChip
-                      key={category.id}
-                      active={categories.includes(category.id)}
-                      onClick={() => toggle(categories, category.id, setCategories)}
-                    >
-                      {category.short}
-                    </ToggleChip>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="z-label">Çıktı türü</p>
-                <div className="flex flex-wrap gap-2">
-                  <ToggleChip active={kinds.includes('rank')} onClick={() => toggle(kinds, 'rank', setKinds)}>
-                    <Trophy className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    Sıralama görseli
-                  </ToggleChip>
-                  <ToggleChip active={kinds.includes('award')} onClick={() => toggle(kinds, 'award', setKinds)}>
-                    <Award className="h-3.5 w-3.5" strokeWidth={1.8} />
-                    Ödülünüz var
-                  </ToggleChip>
-                </div>
-              </div>
+          <section className="z-card space-y-4 p-5 sm:p-6">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--z-muted)]" />
+              <input
+                value={personQuery}
+                onChange={(e) => setPersonQuery(e.target.value)}
+                placeholder="Tabloda kişi ara…"
+                className="z-field w-full pl-11 pr-4 text-[15px]"
+              />
             </div>
-
-            <PeoplePicker
-              label="Kişiler"
-              noun="kişi"
-              items={visiblePeople.map((person) => ({
-                key: person.key,
-                label: person.name,
-                count: person.count,
-              }))}
-              selectedItems={personKeys.map((key) => {
-                const person = peopleIndex.find((p) => p.key === key);
-                return { key, label: person?.name ?? key };
-              })}
-              query={personQuery}
-              onQueryChange={setPersonQuery}
-              onToggle={(key) => toggle(personKeys, key, setPersonKeys)}
-              onClear={() => setPersonKeys([])}
-              searchPlaceholder="Kişi ara"
-              emptySelectionText="Tümü (kişi seçilmedi)"
-              emptyResultsText="Eşleşen kişi yok."
-            />
-          </section>
-
-          {/* Önizleme */}
-          <section className="space-y-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="z-page-kicker">Önizleme</p>
-                <p className="mt-2 text-[15px] text-[var(--z-fg)]">
-                  {readyItems.length} görsel hazır
-                  {waitingCount ? (
-                    <span className="text-[var(--z-muted)]"> · {waitingCount} görsel template bekliyor</span>
-                  ) : null}
-                </p>
-              </div>
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={downloadZip}
+                disabled={!readyRankItems.length || Boolean(exporting)}
+                onClick={() =>
+                  void downloadZipOf(readyRankItems, `siralama-${activePeriodMeta.fileSlug}.zip`)
+                }
+                className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
+              >
+                <Trophy className="h-3.5 w-3.5" strokeWidth={1.8} />
+                Sıralama ZIP ({readyRankItems.length})
+              </button>
+              <button
+                type="button"
+                disabled={!readyAwardItems.length || Boolean(exporting)}
+                onClick={() =>
+                  void downloadZipOf(
+                    readyAwardItems,
+                    `odulunuz-var-${activePeriodMeta.fileSlug}.zip`
+                  )
+                }
+                className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
+              >
+                <Award className="h-3.5 w-3.5" strokeWidth={1.8} />
+                Ödülünüz var ZIP ({readyAwardItems.length})
+              </button>
+              {certificateTemplateFor(activePeriod) ? (
+                <button
+                  type="button"
+                  disabled={!certItems.length || Boolean(exporting)}
+                  onClick={() => void downloadCertZip()}
+                  className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
+                >
+                  <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  Sertifika PDF ZIP ({certItems.length})
+                </button>
+              ) : null}
+              <button
+                type="button"
                 disabled={!readyItems.length || Boolean(exporting)}
-                className="z-btn-primary inline-flex items-center justify-center gap-2 px-6 py-3 text-[13px] disabled:opacity-40"
+                onClick={() =>
+                  void downloadZipOf(readyItems, `siralama-hepsi-${activePeriodMeta.fileSlug}.zip`)
+                }
+                className="z-btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-[13px] disabled:opacity-40"
               >
                 {exporting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    {exporting.current}/{exporting.total} hazırlanıyor
+                    {exporting.current}/{exporting.total}
                   </>
                 ) : (
                   <>
                     <Download className="h-4 w-4" strokeWidth={1.8} />
-                    Tümünü ZIP indir ({readyItems.length})
+                    Hepsi ({readyItems.length})
                   </>
                 )}
               </button>
             </div>
+          </section>
 
-            {readyItems.length ? (
-              <div className="grid grid-cols-2 gap-4 sm:gap-5 md:grid-cols-3 xl:grid-cols-4">
-                {readyItems.map((item) => {
-                  const key = thumbKey(item);
-                  const src = thumbs[key];
-                  const missingPhoto = item.people.some((p) => !p.photoUrl);
-                  return (
-                    <article key={item.key} className="z-list-card overflow-hidden p-2.5">
-                      <div className="relative aspect-[4/5] overflow-hidden rounded-[1.1rem] bg-[var(--z-elevated)]">
-                        {src ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={src} alt={item.label} className="h-full w-full object-cover" />
-                        ) : thumbErrors[key] ? (
-                          <div className="flex h-full items-center justify-center p-4 text-center text-[12px] text-[var(--z-muted)]">
-                            {thumbErrors[key]}
-                          </div>
-                        ) : (
-                          <div className="flex h-full items-center justify-center">
-                            <Loader2 className="h-5 w-5 animate-spin text-[var(--z-muted)]" />
-                          </div>
-                        )}
-                        {missingPhoto ? (
-                          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/70 px-2 py-1 text-[10px] font-medium text-amber-300">
-                            <ImageOff className="h-3 w-3" /> Fotoğraf yok
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="px-1.5 pb-1 pt-3">
-                        <p className="truncate text-[13px] font-medium text-[var(--z-fg)]">{item.label}</p>
-                        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--z-muted)]">
-                          {item.detail}
-                        </p>
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => downloadOne(item)}
-                            disabled={downloadingKey === item.key}
-                            className="z-btn-ghost inline-flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-[12px]"
-                          >
-                            {downloadingKey === item.key ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Download className="h-3.5 w-3.5" strokeWidth={1.8} />
-                            )}
-                            PNG
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEditor(item)}
-                            className="z-btn-icon h-9 w-9"
-                            aria-label="Fotoğrafı ayarla"
-                          >
-                            <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.8} />
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
+          {RANK_CATEGORIES.map((category) => {
+            const rows = filteredPeriodEntries
+              .filter((e) => e.category === category.id)
+              .sort((a, b) => a.rank - b.rank || a.rawName.localeCompare(b.rawName, 'tr'));
+            const tpl = templateFor(activePeriod, 'rank', category.id);
+            const catReady = rankItems.filter((i) => i.category === category.id && i.templateUrl);
+            return (
+              <section key={category.id} className="z-card overflow-hidden p-0">
+                <div className="flex flex-col gap-3 border-b border-[var(--z-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                  <div>
+                    <p className="text-[16px] font-semibold text-[var(--z-fg)]">{category.label}</p>
+                    <p className="mt-0.5 text-[12px] text-[var(--z-muted)]">
+                      {rows.length} satır
+                      {!tpl ? ' · template bekleniyor (indirme kapalı)' : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!catReady.length || Boolean(exporting)}
+                    onClick={() =>
+                      void downloadZipOf(catReady, `${activePeriodMeta.fileSlug}-${category.id}.zip`)
+                    }
+                    className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2 text-[12px] disabled:opacity-40"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Bu dalı ZIP indir ({catReady.length})
+                  </button>
+                </div>
+                {rows.length === 0 ? (
+                  <p className="px-5 py-8 text-center text-[13px] text-[var(--z-muted)] sm:px-6">
+                    {personQuery ? 'Aramayla eşleşen satır yok.' : 'Bu kategoride satır yok.'}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-left text-[14px]">
+                      <thead>
+                        <tr className="border-b border-[var(--z-border)] text-[12px] uppercase tracking-wide text-[var(--z-muted)]">
+                          <th className="px-5 py-3 font-medium sm:px-6">Sıra</th>
+                          <th className="px-3 py-3 font-medium">İsim / Takım</th>
+                          <th className="px-3 py-3 font-medium">Foto</th>
+                          <th className="px-5 py-3 text-right font-medium sm:px-6">İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((entry) => {
+                          const item = rankItemForEntry(entry);
+                          const people = entry.people.map((p) => resolvePerson(p.name, p.key));
+                          const names = people.map((p) => p.displayName).join(' & ');
+                          const missingPhoto = people.some((p) => !p.photoUrl);
+                          const canDownload = Boolean(item?.templateUrl);
+                          return (
+                            <tr
+                              key={entry.id}
+                              className="border-b border-[var(--z-border)] last:border-0 hover:bg-[color-mix(in_srgb,var(--z-elevated)_55%,transparent)]"
+                            >
+                              <td className="px-5 py-3 tabular-nums text-[var(--z-fg)] sm:px-6">
+                                {rankText(entry.rank)}
+                              </td>
+                              <td className="px-3 py-3 font-medium text-[var(--z-fg)]">{names}</td>
+                              <td className="px-3 py-3 text-[12px] text-[var(--z-muted)]">
+                                {missingPhoto ? (
+                                  <span className="inline-flex items-center gap-1 text-amber-500">
+                                    <ImageOff className="h-3.5 w-3.5" /> Eksik
+                                  </span>
+                                ) : (
+                                  'Tamam'
+                                )}
+                              </td>
+                              <td className="px-5 py-3 sm:px-6">
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={!canDownload || !item || downloadingKey === item.key}
+                                    onClick={() => item && void downloadOne(item)}
+                                    className="z-btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] disabled:opacity-40"
+                                  >
+                                    {item && downloadingKey === item.key ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Download className="h-3.5 w-3.5" />
+                                    )}
+                                    PNG
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={!canDownload || !item}
+                                    onClick={() => item && openEditor(item)}
+                                    className="z-btn-icon h-9 w-9 disabled:opacity-40"
+                                    aria-label="Fotoğrafı ayarla"
+                                  >
+                                    <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.8} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
+          {certificateTemplateFor(activePeriod) ? (
+            <section className="z-card overflow-hidden p-0">
+              <div className="flex flex-col gap-3 border-b border-[var(--z-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div>
+                  <p className="text-[16px] font-semibold text-[var(--z-fg)]">Sertifika</p>
+                  <p className="mt-0.5 text-[12px] text-[var(--z-muted)]">
+                    2.–5. sıra · Ciro / İşlem / Portföy Alma · baskı PDF (A4 yatay, 300 DPI)
+                    {` · ${certItems.length} adet`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!certItems.length || Boolean(exporting)}
+                  onClick={() => void downloadCertZip()}
+                  className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2 text-[12px] disabled:opacity-40"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Tüm sertifikalar PDF ZIP ({certItems.length})
+                </button>
               </div>
-            ) : (
-              <div className="z-empty">
-                <p className="text-[15px] font-medium text-[var(--z-fg)]">Seçime uygun hazır görsel yok</p>
-                <p className="mt-2 max-w-md text-[13px] text-[var(--z-muted)]">
-                  Seçtiğiniz dönemlerin template&apos;leri henüz eklenmedi ya da filtreler boş. Şu an
-                  Ağustos template&apos;leri hazır.
+              {!certItems.length ? (
+                <p className="px-5 py-8 text-center text-[13px] text-[var(--z-muted)] sm:px-6">
+                  {personQuery
+                    ? 'Aramayla eşleşen sertifika yok.'
+                    : 'Bu dönemde 2.–5. sırada sertifika satırı yok.'}
                 </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-left text-[14px]">
+                    <thead>
+                      <tr className="border-b border-[var(--z-border)] text-[12px] uppercase tracking-wide text-[var(--z-muted)]">
+                        <th className="px-5 py-3 font-medium sm:px-6">Dal</th>
+                        <th className="px-3 py-3 font-medium">Sıra</th>
+                        <th className="px-3 py-3 font-medium">İsim</th>
+                        <th className="px-5 py-3 text-right font-medium sm:px-6">İşlem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {certItems.map((item) => (
+                        <tr
+                          key={item.key}
+                          className="border-b border-[var(--z-border)] last:border-0 hover:bg-[color-mix(in_srgb,var(--z-elevated)_55%,transparent)]"
+                        >
+                          <td className="px-5 py-3 text-[var(--z-fg)] sm:px-6">
+                            {categoryShort(item.category)}
+                          </td>
+                          <td className="px-3 py-3 tabular-nums text-[var(--z-fg)]">
+                            {rankText(item.rank)}
+                          </td>
+                          <td className="px-3 py-3 font-medium text-[var(--z-fg)]">{item.label}</td>
+                          <td className="px-5 py-3 sm:px-6">
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                disabled={downloadingKey === item.key || Boolean(exporting)}
+                                onClick={() => void downloadCertPdf(item)}
+                                className="z-btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] disabled:opacity-40"
+                              >
+                                {downloadingKey === item.key ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <FileText className="h-3.5 w-3.5" />
+                                )}
+                                PDF
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          <section className="z-card overflow-hidden p-0">
+            <div className="border-b border-[var(--z-border)] px-5 py-4 sm:px-6">
+              <p className="text-[16px] font-semibold text-[var(--z-fg)]">Ödülünüz var</p>
+              <p className="mt-0.5 text-[12px] text-[var(--z-muted)]">
+                Bu dönemde ödül alan her kişi için tek görsel
+                {!RANK_TEMPLATES[activePeriod].award
+                  ? ' · template bekleniyor (indirme kapalı)'
+                  : ` · ${awardItems.length} kişi`}
+              </p>
+            </div>
+            {!awardItems.length ? (
+              <p className="px-5 py-8 text-center text-[13px] text-[var(--z-muted)] sm:px-6">
+                {personQuery ? 'Aramayla eşleşen ödül yok.' : 'Bu dönemde ödül satırı yok.'}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-left text-[14px]">
+                  <thead>
+                    <tr className="border-b border-[var(--z-border)] text-[12px] uppercase tracking-wide text-[var(--z-muted)]">
+                      <th className="px-5 py-3 font-medium sm:px-6">Kişi</th>
+                      <th className="px-3 py-3 font-medium">Dallar</th>
+                      <th className="px-5 py-3 text-right font-medium sm:px-6">İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {awardItems.map((item) => {
+                      const missingPhoto = item.people.some((p) => !p.photoUrl);
+                      const canDownload = Boolean(item.templateUrl);
+                      return (
+                        <tr
+                          key={item.key}
+                          className="border-b border-[var(--z-border)] last:border-0 hover:bg-[color-mix(in_srgb,var(--z-elevated)_55%,transparent)]"
+                        >
+                          <td className="px-5 py-3 font-medium text-[var(--z-fg)] sm:px-6">
+                            {item.label}
+                            {missingPhoto ? (
+                              <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-amber-500">
+                                <ImageOff className="h-3 w-3" /> Foto eksik
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-3 text-[13px] text-[var(--z-muted)]">
+                            {item.detail.replace(/^.*?· Ödülünüz var · /, '')}
+                          </td>
+                          <td className="px-5 py-3 sm:px-6">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                disabled={!canDownload || downloadingKey === item.key}
+                                onClick={() => void downloadOne(item)}
+                                className="z-btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] disabled:opacity-40"
+                              >
+                                {downloadingKey === item.key ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Download className="h-3.5 w-3.5" />
+                                )}
+                                PNG
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!canDownload}
+                                onClick={() => openEditor(item)}
+                                className="z-btn-icon h-9 w-9 disabled:opacity-40"
+                                aria-label="Fotoğrafı ayarla"
+                              >
+                                <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.8} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
         </>
+      ) : parsed && entries.length ? (
+        <section className="space-y-4">
+          <div>
+            <p className="z-label">Dönem seçin</p>
+            <p className="mt-1 text-[13px] text-[var(--z-muted)]">
+              Bir aya veya çeyreğe girerek tabelayı görün ve görselleri indirin.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {RANK_PERIODS.map((period) => {
+              const set = RANK_TEMPLATES[period.id];
+              const ready = periodReadyCount(period.id);
+              const excelRows = periodCounts[period.id] || 0;
+              const muted = excelRows === 0;
+              return (
+                <button
+                  key={period.id}
+                  type="button"
+                  onClick={() => {
+                    setActivePeriod(period.id);
+                    setPersonQuery('');
+                  }}
+                  className={`cursor-pointer rounded-2xl border p-5 text-left transition-all duration-300 hover:border-[var(--z-border-strong)] hover:shadow-[var(--z-shadow-soft)] ${
+                    muted
+                      ? 'border-[var(--z-border)] opacity-55'
+                      : 'border-[var(--z-border)] bg-[color-mix(in_srgb,var(--z-elevated)_60%,transparent)]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[16px] font-semibold text-[var(--z-fg)]">{period.label}</p>
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        ready >= periodReadyTarget(period.id)
+                          ? 'bg-emerald-400'
+                          : ready
+                            ? 'bg-amber-400'
+                            : 'bg-[var(--z-muted-2)]'
+                      }`}
+                    />
+                  </div>
+                  <p className="mt-2 text-[12px] text-[var(--z-muted)]">Excel: {excelRows} satır</p>
+                  <ul className="mt-3 space-y-1 text-[11px] text-[var(--z-muted)]">
+                    {RANK_CATEGORIES.map((c) => (
+                      <li key={c.id} className="flex justify-between gap-2">
+                        <span>{c.short}</span>
+                        <span className={set.rank[c.id] ? 'text-[var(--z-fg)]' : ''}>
+                          {set.rank[c.id] ? 'Hazır' : 'Bekleniyor'}
+                        </span>
+                      </li>
+                    ))}
+                    <li className="flex justify-between gap-2">
+                      <span>Ödülünüz var</span>
+                      <span className={set.award ? 'text-[var(--z-fg)]' : ''}>
+                        {set.award ? 'Hazır' : 'Bekleniyor'}
+                      </span>
+                    </li>
+                  </ul>
+                </button>
+              );
+            })}
+          </div>
+        </section>
       ) : null}
 
       {editing && typeof document !== 'undefined' ? createPortal(
@@ -970,8 +1242,29 @@ export default function RankingVisualsStudio({
               </div>
 
               <p className="mt-6 text-[12px] leading-relaxed text-[var(--z-muted)]">
-                Fotoğrafı önizlemede sürükleyerek kaydırın. Kaydedilen ayar bu görselde hep kullanılır.
+                {editing.people.length > 1
+                  ? 'Kişi seçip önizlemede sürükleyin. Kaydedilen ayar bu ikili/grup yan yanayken (sıralama + ödül) kullanılır.'
+                  : 'Fotoğrafı önizlemede sürükleyerek kaydırın. Kaydedilen ayar bu görselde hep kullanılır.'}
               </p>
+
+              {editing.people.length > 1 ? (
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {editing.people.map((person, index) => (
+                    <button
+                      key={person.key}
+                      type="button"
+                      onClick={() => setEditPersonIndex(index)}
+                      className={`rounded-full border px-3.5 py-1.5 text-[12px] transition-colors ${
+                        editPersonIndex === index
+                          ? 'border-[var(--z-fg)] bg-[var(--z-fg)] text-[var(--z-bg)]'
+                          : 'border-[var(--z-border)] text-[var(--z-muted)] hover:border-[var(--z-fg)]/40 hover:text-[var(--z-fg)]'
+                      }`}
+                    >
+                      {personShortLabel(person)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               {(
                 [
@@ -984,7 +1277,7 @@ export default function RankingVisualsStudio({
                   <span className="flex justify-between text-[12px] text-[var(--z-muted)]">
                     <span>{control.label}</span>
                     <span className="tabular-nums text-[var(--z-fg)]">
-                      {control.format(draft[control.id])}
+                      {control.format(activePersonAdjust[control.id])}
                     </span>
                   </span>
                   <input
@@ -992,14 +1285,40 @@ export default function RankingVisualsStudio({
                     min={control.min}
                     max={control.max}
                     step={control.step}
-                    value={draft[control.id]}
+                    value={activePersonAdjust[control.id]}
                     onChange={(event) =>
-                      setDraft((current) => ({ ...current, [control.id]: Number(event.target.value) }))
+                      updateActivePerson({ [control.id]: Number(event.target.value) })
                     }
                     className="mt-2 w-full accent-[var(--z-fg)]"
                   />
                 </label>
               ))}
+
+              {RANK_PERIODS.find((p) => p.id === editing.periodId)?.kind === 'quarter' ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateActivePerson({ flipH: !activePersonAdjust.flipH })
+                  }
+                  className={`mt-5 inline-flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-3 text-left text-[13px] transition-colors ${
+                    activePersonAdjust.flipH
+                      ? 'border-[var(--z-fg)] bg-[var(--z-fg)]/5 text-[var(--z-fg)]'
+                      : 'border-[var(--z-border)] text-[var(--z-muted)] hover:border-[var(--z-fg)]/40 hover:text-[var(--z-fg)]'
+                  }`}
+                  aria-pressed={Boolean(activePersonAdjust.flipH)}
+                >
+                  <span className="inline-flex items-center gap-2.5">
+                    <FlipHorizontal2 className="h-4 w-4 shrink-0" />
+                    Yatay çevir
+                    {editing.people.length > 1
+                      ? ` (${personShortLabel(editing.people[editPersonIndex]!)})`
+                      : ''}
+                  </span>
+                  <span className="text-[12px] tabular-nums">
+                    {activePersonAdjust.flipH ? 'Açık' : 'Kapalı'}
+                  </span>
+                </button>
+              ) : null}
 
               <div className="mt-auto flex flex-col gap-2 pt-8">
                 <AdjustSaveActions
@@ -1007,10 +1326,10 @@ export default function RankingVisualsStudio({
                   dirty={dirty}
                   hasSaved={Boolean(adjustments[editing.adjustKey])}
                   onSave={saveDraft}
-                  onResetScreen={() => setDraft(DEFAULT_PHOTO_ADJUST)}
+                  onResetScreen={() => setDraft(defaultRankAdjust(editing.people.length))}
                   onDeleteSaved={async () => {
                     await removeAdjust(editing.adjustKey);
-                    setDraft(DEFAULT_PHOTO_ADJUST);
+                    setDraft(defaultRankAdjust(editing.people.length));
                   }}
                 />
                 <button

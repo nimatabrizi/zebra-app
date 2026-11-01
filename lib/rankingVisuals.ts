@@ -124,9 +124,30 @@ export const RANK_TEMPLATES: Record<RankPeriodId, PeriodTemplates> = {
     },
     award: '/templates/siralama/2026-10/odul.png',
   },
-  '2026-q2': { rank: {}, award: null },
-  '2026-q3': { rank: {}, award: null },
+  '2026-q2': {
+    rank: {
+      ciro: '/templates/siralama/2026-q2/ciro.png',
+      portfoy: '/templates/siralama/2026-q2/portfoy.png',
+      islem: '/templates/siralama/2026-q2/islem.png',
+    },
+    award: '/templates/siralama/2026-q2/odul.png',
+  },
+  '2026-q3': {
+    rank: {
+      ciro: '/templates/siralama/2026-q3/ciro.png',
+      portfoy: '/templates/siralama/2026-q3/portfoy.png',
+      islem: '/templates/siralama/2026-q3/islem.png',
+    },
+    award: '/templates/siralama/2026-q3/odul.png',
+  },
 };
+
+/** Çeyrek madalyaları (sıra 1–5). II altın, III mavi — dönem klasöründen. */
+export function quarterMedalUrl(periodId: RankPeriodId | undefined, rank: number): string | null {
+  if (rank < 1 || rank > 5) return null;
+  const folder = periodId === '2026-q3' ? '2026-q3' : '2026-q2';
+  return `/templates/siralama/${folder}/medals/${rank}.png`;
+}
 
 export function templateFor(
   periodId: RankPeriodId,
@@ -165,8 +186,33 @@ type PhotoLayout = {
   top: number;
 };
 
+/** MediaPipe yüz ölçüleri (kaynak piksel). */
+export type RankFaceMetrics = {
+  eyeMidX: number;
+  eyeMidY: number;
+  eyeDistance: number;
+  noseX?: number;
+  foreheadY?: number;
+  chinY?: number;
+};
+
+/** Çeyrek: burun dikeyi + kafa üstü / çene yatayları (gridler.png → 1080×1350). */
+export type QuarterFaceGuide = {
+  noseX: number;
+  headTop: number;
+  chinY: number;
+};
+
 export type RankVisualLayout = {
   photo: PhotoLayout;
+  /** Aylık: göz hizası hedefi. */
+  face?: RankFaceMetrics;
+  /** Çeyrek: burun / kafa / çene grid’i. */
+  quarterFace?: QuarterFaceGuide;
+  /** Çeyrek madalya kutusu (opak içerik genişliği). */
+  medal?: { centerX: number; top: number; targetWidth: number };
+  grayscalePhoto?: boolean;
+  nameColor?: string;
   text: TextBlockLayout;
   fade: { start: number; end: number; max: number; clipBottom: number };
   number?: {
@@ -189,6 +235,8 @@ const SHARED_FADE = { start: 955, end: 1150, max: 0.82, clipBottom: 1252 };
 
 export const RANK_LAYOUT: RankVisualLayout = {
   photo: { width: 440, centerX: 257, top: 783 },
+  /** Mayıs örnek (Meltem) kırpısından MediaPipe ölçümü. */
+  face: { eyeMidX: 241, eyeMidY: 875, eyeDistance: 50.3 },
   text: {
     align: 'left',
     x: 55,
@@ -210,7 +258,8 @@ export const RANK_LAYOUT: RankVisualLayout = {
     color: '#EEEEEE',
     dotGap: 17,
     dotDiameter: 49,
-    dotColor: '#B89800',
+    /** Fallback; gerçek renk dönem footer barından (`RANK_PERIOD_DOT_COLOR`). */
+    dotColor: '#29790d',
     suffixGap: 13,
     suffixSize: 142,
     glowColor: '#151515',
@@ -219,8 +268,26 @@ export const RANK_LAYOUT: RankVisualLayout = {
   },
 };
 
+/** Sıra noktasının rengi = o ayın template alt bar rengi (örnek PNG’den örneklenmiş). */
+export const RANK_PERIOD_DOT_COLOR: Record<RankPeriodId, string> = {
+  '2026-05': '#29790d',
+  '2026-06': '#a73222',
+  '2026-07': '#2357ac',
+  '2026-08': '#856f08',
+  '2026-09': '#37a2a1',
+  '2026-10': '#6a4327',
+  '2026-q2': '#bbab8b',
+  '2026-q3': '#bbab8b',
+};
+
 export const AWARD_LAYOUT: RankVisualLayout = {
-  photo: { width: 665, centerX: 544, top: 555 },
+  /** Fallback silüet; yatay merkez yüz hedefiyle aynı. */
+  photo: { width: 665, centerX: 521, top: 555 },
+  /**
+   * Ödülünüz var yüz slotu — Eylül Meltem kırmızı grid + örnek PNG
+   * (MediaPipe). Dikey kolon ortası ~521; göz hizası ~693; tüm aylar ortak.
+   */
+  face: { eyeMidX: 521, eyeMidY: 693, eyeDistance: 73.8 },
   text: {
     align: 'center',
     x: 541,
@@ -235,6 +302,58 @@ export const AWARD_LAYOUT: RankVisualLayout = {
     titleTracking: 0.26,
   },
   fade: SHARED_FADE,
+};
+
+/**
+ * II./III. Çeyrek sıralama — gridler.png (burun dikeyi, kafa üstü, çene) +
+ * madalya sabit kutu. Foto siyah-beyaz; isim altın.
+ */
+export const QUARTER_LAYOUT: RankVisualLayout = {
+  // Meltem örnek: burun kesimi canvas sol kenarında (yarı yüz sola açılmaz).
+  photo: { width: 520, centerX: 200, top: 270 },
+  quarterFace: { noseX: 0, headTop: 270, chinY: 776 },
+  medal: { centerX: 774, top: 776, targetWidth: 252 },
+  grayscalePhoto: true,
+  nameColor: '#b58b3d',
+  text: {
+    align: 'left',
+    x: 55,
+    nameBaseline: 1168,
+    nameSize: 36.9,
+    nameTracking: 0.04,
+    nameMaxWidth: 520,
+    ruleOffset: 17,
+    ruleThickness: 3,
+    titleOffset: 46,
+    titleSize: 17,
+    titleTracking: 0.26,
+  },
+  fade: { start: 980, end: 1180, max: 0.78, clipBottom: 1252 },
+};
+
+/**
+ * II./III. Çeyrek Ödülünüz var — ortalı yüz; grid: kafa üstü + çene,
+ * burun canvas merkezi. Foto B/W; isim altın.
+ */
+export const QUARTER_AWARD_LAYOUT: RankVisualLayout = {
+  photo: { width: 620, centerX: 540, top: 563 },
+  quarterFace: { noseX: 540, headTop: 563, chinY: 832 },
+  grayscalePhoto: true,
+  nameColor: '#b58b3d',
+  text: {
+    align: 'center',
+    x: 540,
+    nameBaseline: 1145,
+    nameSize: 45.4,
+    nameTracking: 0.04,
+    nameMaxWidth: 940,
+    ruleOffset: 20,
+    ruleThickness: 3,
+    titleOffset: 56,
+    titleSize: 21,
+    titleTracking: 0.26,
+  },
+  fade: { start: 980, end: 1160, max: 0.8, clipBottom: 1252 },
 };
 
 /** 2.si, 3.sü, 6.sı, 9.su … (sıra sayısının iyelik eki) */
@@ -485,6 +604,10 @@ export function parseRankingWorkbook(
     sheets.push({ name: sheetName, periodId: sheetPeriod, count: entries.length - before });
   }
 
+  return { entries: dedupeAndSortRankEntries(entries), sheets, warnings };
+}
+
+function dedupeAndSortRankEntries(entries: RankEntry[]): RankEntry[] {
   const seen = new Set<string>();
   const unique = entries.filter((entry) => {
     if (seen.has(entry.id)) return false;
@@ -499,7 +622,61 @@ export function parseRankingWorkbook(
         RANK_CATEGORIES.findIndex((c) => c.id === b.category) ||
       a.rank - b.rank
   );
-  return { entries: unique, sheets, warnings };
+  return unique;
+}
+
+function sheetsSummaryFromEntries(entries: RankEntry[]): ParsedRankings['sheets'] {
+  return RANK_PERIODS.map((period) => ({
+    name: period.sheetName,
+    periodId: period.id,
+    count: entries.filter((e) => e.periodId === period.id).length,
+  })).filter((sheet) => sheet.count > 0);
+}
+
+/**
+ * Yeni Excel’deki dönem+kategori bloklarını günceller; dosyada olmayan
+ * blokları önceki kayıttan korur (eksik aylar silinmez).
+ */
+export function mergeParsedRankings(
+  previous: ParsedRankings | null,
+  incoming: ParsedRankings
+): ParsedRankings {
+  if (!previous?.entries.length) {
+    return {
+      ...incoming,
+      entries: dedupeAndSortRankEntries(incoming.entries),
+      sheets: sheetsSummaryFromEntries(incoming.entries),
+    };
+  }
+  if (!incoming.entries.length) {
+    return {
+      entries: previous.entries,
+      sheets: sheetsSummaryFromEntries(previous.entries),
+      warnings: [
+        ...incoming.warnings,
+        'Yeni dosyada satır yok; önceki kayıt aynen bırakıldı.',
+      ],
+    };
+  }
+
+  const replaced = new Set(
+    incoming.entries.map((entry) => `${entry.periodId}|${entry.category}`)
+  );
+  const kept = previous.entries.filter(
+    (entry) => !replaced.has(`${entry.periodId}|${entry.category}`)
+  );
+  const entries = dedupeAndSortRankEntries([...kept, ...incoming.entries]);
+  const warnings = [...incoming.warnings];
+  if (kept.length) {
+    warnings.push(
+      `Önceki kayıtla birleştirildi: ${kept.length} satır korundu, ${incoming.entries.length} satır güncellendi/eklendi.`
+    );
+  }
+  return {
+    entries,
+    sheets: sheetsSummaryFromEntries(entries),
+    warnings,
+  };
 }
 
 /** Önerilen Excel biçimi — her dönem için ayrı sayfa, 3 blok. */
@@ -529,14 +706,78 @@ export function buildRankingTemplateRows(
 // Çizim
 // ---------------------------------------------------------------------------
 
-export type PhotoAdjust = { scale: number; dx: number; dy: number };
-export const DEFAULT_PHOTO_ADJUST: PhotoAdjust = { scale: 1, dx: 0, dy: 0 };
+export type PhotoAdjust = { scale: number; dx: number; dy: number; flipH?: boolean };
+export const DEFAULT_PHOTO_ADJUST: PhotoAdjust = { scale: 1, dx: 0, dy: 0, flipH: false };
+
+/** Sıralama / ödül: ikili-üçlü grupta kişi başına konum-boyut. */
+export type RankAdjust = { people: PhotoAdjust[] };
+
+export function defaultRankAdjust(personCount: number): RankAdjust {
+  const n = Math.max(1, personCount);
+  return {
+    people: Array.from({ length: n }, () => ({ ...DEFAULT_PHOTO_ADJUST })),
+  };
+}
+
+/** Eski tek PhotoAdjust kaydı → herkese aynı; { people } → kişi sayısıyla hizala. */
+export function normalizeRankAdjust(raw: unknown, personCount: number): RankAdjust {
+  const n = Math.max(1, personCount);
+  if (!raw || typeof raw !== 'object') return defaultRankAdjust(n);
+  const obj = raw as Record<string, unknown>;
+  if (Array.isArray(obj.people)) {
+    const list = obj.people.map((entry) => ({
+      ...DEFAULT_PHOTO_ADJUST,
+      ...(entry && typeof entry === 'object' ? (entry as Partial<PhotoAdjust>) : {}),
+    }));
+    while (list.length < n) list.push({ ...DEFAULT_PHOTO_ADJUST });
+    return { people: list.slice(0, n) };
+  }
+  if ('scale' in obj || 'dx' in obj || 'dy' in obj || 'flipH' in obj) {
+    const one: PhotoAdjust = { ...DEFAULT_PHOTO_ADJUST, ...(obj as Partial<PhotoAdjust>) };
+    return { people: Array.from({ length: n }, () => ({ ...one })) };
+  }
+  return defaultRankAdjust(n);
+}
+
+function flipFaceMetrics(face: RankFaceMetrics, imgW: number): RankFaceMetrics {
+  return {
+    ...face,
+    eyeMidX: imgW - face.eyeMidX,
+    noseX: face.noseX != null ? imgW - face.noseX : undefined,
+  };
+}
+
+function flipOpaqueBox(box: OpaqueBox, imgW: number): OpaqueBox {
+  return { ...box, x: imgW - box.x - box.w };
+}
+
+function drawPersonPhoto(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  drawX: number,
+  drawY: number,
+  scale: number,
+  flipH: boolean
+) {
+  const w = img.naturalWidth * scale;
+  const h = img.naturalHeight * scale;
+  if (!flipH) {
+    ctx.drawImage(img, drawX, drawY, w, h);
+    return;
+  }
+  ctx.save();
+  ctx.translate(drawX + w, drawY);
+  ctx.scale(-1, 1);
+  ctx.drawImage(img, 0, 0, w, h);
+  ctx.restore();
+}
 
 export type RenderPerson = {
   displayName: string;
   title: string;
   photo: HTMLImageElement | null;
   bounds: OpaqueBox | null;
+  face?: RankFaceMetrics | null;
 };
 
 export type OpaqueBox = { x: number; y: number; w: number; h: number };
@@ -706,10 +947,16 @@ function drawPhotos(
   ctx: CanvasRenderingContext2D,
   people: RenderPerson[],
   layout: RankVisualLayout,
-  adjust: PhotoAdjust
+  adjust: RankAdjust | PhotoAdjust
 ) {
-  const withPhoto = people.filter((p) => p.photo && p.bounds);
-  if (!withPhoto.length) return;
+  // withPhoto indeksleri → orijinal people indeksi (kişi ayarı için)
+  const withPhotoIdx: number[] = [];
+  for (let i = 0; i < people.length; i += 1) {
+    const p = people[i]!;
+    if (p.photo && (p.face || p.bounds)) withPhotoIdx.push(i);
+  }
+  if (!withPhotoIdx.length) return;
+  const rankAdjust = normalizeRankAdjust(adjust, people.length);
   const { width: W, height: H } = RANK_CANVAS;
   const layer = document.createElement('canvas');
   layer.width = W;
@@ -717,25 +964,99 @@ function drawPhotos(
   const lctx = layer.getContext('2d');
   if (!lctx) return;
 
-  const count = withPhoto.length;
+  if (layout.grayscalePhoto) lctx.filter = 'grayscale(1)';
+
+  const count = withPhotoIdx.length;
   const groupScale = count === 1 ? 1 : count === 2 ? 0.8 : 0.66;
-  const targetW = layout.photo.width * groupScale * adjust.scale;
-  const spacing = targetW * 0.62;
+  const qGuide = layout.quarterFace;
+  const withPhoto = withPhotoIdx.map((i) => people[i]!);
+  const useQuarter =
+    Boolean(qGuide) &&
+    withPhoto.every(
+      (p) =>
+        p.face &&
+        p.face.noseX != null &&
+        p.face.chinY != null &&
+        (p.bounds || p.face.foreheadY != null)
+    );
+  const useFace =
+    !useQuarter &&
+    Boolean(layout.face) &&
+    withPhoto.every((p) => p.face && p.face.eyeDistance > 4);
+  // Aralık kişi ölçeğinden bağımsız (slot düzeni bozulmasın)
+  const baseTargetW = layout.photo.width * groupScale;
+  const baseTargetEye = layout.face ? layout.face.eyeDistance * groupScale : 0;
+  const baseTargetHeadH = qGuide ? (qGuide.chinY - qGuide.headTop) * groupScale : 0;
+  const spacing = useFace
+    ? baseTargetEye * 5.2
+    : useQuarter
+      ? baseTargetHeadH * 0.85
+      : baseTargetW * 0.62;
   const alignShift = layout.text.align === 'left' ? ((count - 1) / 2) * spacing * 0.55 : 0;
+  const faceAnchor = layout.face;
 
   // Sağdakiler önce, soldaki en üstte kalsın.
   for (let i = count - 1; i >= 0; i -= 1) {
     const person = withPhoto[i]!;
+    const personAdj = rankAdjust.people[withPhotoIdx[i]!] || DEFAULT_PHOTO_ADJUST;
+    const flipH = Boolean(personAdj.flipH);
+    const targetW = baseTargetW * personAdj.scale;
+    const targetEye = baseTargetEye * personAdj.scale;
+    const targetHeadH = baseTargetHeadH * personAdj.scale;
     const img = person.photo!;
-    const box = person.bounds!;
+    const imgW = img.naturalWidth;
+    const face = person.face && flipH ? flipFaceMetrics(person.face, imgW) : person.face;
+    const bounds = person.bounds && flipH ? flipOpaqueBox(person.bounds, imgW) : person.bounds;
+
+    if (useQuarter && qGuide && face) {
+      // Saç üstü = opak kutu üstü (alın landmark’ı değil) → üst grid’e oturur; burun dikeyde.
+      // flipH: landmark X aynalanır + çizimde mirror → burun slot’ta kalır, yüz içeri açılır.
+      const hairTop =
+        bounds?.y ??
+        Math.max(0, (face.foreheadY ?? face.chinY! * 0.55) - 20);
+      const srcH = Math.max(8, face.chinY! - hairTop);
+      const scale = targetHeadH / srcH;
+      const slotNoseX =
+        qGuide.noseX + alignShift + (i - (count - 1) / 2) * spacing + personAdj.dx;
+      const drawX = slotNoseX - face.noseX! * scale;
+      const drawY = qGuide.headTop + personAdj.dy - hairTop * scale;
+      drawPersonPhoto(lctx, img, drawX, drawY, scale, flipH);
+      continue;
+    }
+
+    const slotX =
+      (useFace && faceAnchor ? faceAnchor.eyeMidX : layout.photo.centerX) +
+      alignShift +
+      (i - (count - 1) / 2) * spacing +
+      personAdj.dx;
+
+    if (useFace && faceAnchor && face) {
+      const scale = targetEye / face.eyeDistance;
+      const drawX = slotX - face.eyeMidX * scale;
+      const drawY = faceAnchor.eyeMidY + personAdj.dy - face.eyeMidY * scale;
+      drawPersonPhoto(lctx, img, drawX, drawY, scale, flipH);
+      continue;
+    }
+
+    const box = bounds!;
+    if (qGuide) {
+      const scale = (targetHeadH || qGuide.chinY - qGuide.headTop) / Math.max(8, box.h);
+      // Bounds yolunda burun ≈ yüz kutusunun ~%42’si (MediaPipe yokken yarı yüz).
+      const noseFrac = flipH ? 0.58 : 0.42;
+      const drawX = qGuide.noseX + personAdj.dx - (box.x + box.w * noseFrac) * scale;
+      const drawY = qGuide.headTop + personAdj.dy - box.y * scale;
+      drawPersonPhoto(lctx, img, drawX, drawY, scale, flipH);
+      continue;
+    }
+
     const scale = targetW / Math.max(8, box.w);
-    const centerX =
-      layout.photo.centerX + alignShift + (i - (count - 1) / 2) * spacing + adjust.dx;
-    const drawX = centerX - (box.x + box.w / 2) * scale;
+    const drawX = slotX - (box.x + box.w / 2) * scale;
     const top = layout.photo.top + (count > 1 ? layout.photo.width * (1 - groupScale) * 0.35 : 0);
-    const drawY = top + adjust.dy - box.y * scale;
-    lctx.drawImage(img, drawX, drawY, img.naturalWidth * scale, img.naturalHeight * scale);
+    const drawY = top + personAdj.dy - box.y * scale;
+    drawPersonPhoto(lctx, img, drawX, drawY, scale, flipH);
   }
+
+  lctx.filter = 'none';
 
   const { start, end, max, clipBottom } = layout.fade;
   lctx.globalCompositeOperation = 'source-atop';
@@ -813,8 +1134,9 @@ function drawNameBlock(
   layout: RankVisualLayout
 ) {
   const t = layout.text;
+  const nameColor = layout.nameColor || '#FFFFFF';
   ctx.save();
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = nameColor;
   ctx.textBaseline = 'alphabetic';
   // PSD örneğinde çift kerning uygulanmamış (L–T arası açık).
   ctx.fontKerning = 'none';
@@ -849,12 +1171,34 @@ function drawNameBlock(
     fillTracked(ctx, line, x, baseline, nameTrack);
   });
 
+  ctx.fillStyle = nameColor;
   ctx.fillRect(Math.round(ruleLeft), ruleTop, Math.round(ruleWidth + (t.align === 'left' ? 2 : 0)), t.ruleThickness);
 
+  ctx.fillStyle = '#FFFFFF';
   ctx.font = `${t.titleSize}px "${RANK_FONTS.title.family}"`;
   const titleX = t.align === 'left' ? t.x - 4 + titleInk : t.x - titleWidth / 2;
   fillTracked(ctx, title, titleX, t.nameBaseline + t.titleOffset, titleTrack);
   ctx.restore();
+}
+
+async function drawQuarterMedal(
+  ctx: CanvasRenderingContext2D,
+  rank: number,
+  layout: RankVisualLayout,
+  periodId?: RankPeriodId
+) {
+  const slot = layout.medal;
+  if (!slot) return;
+  const url = quarterMedalUrl(periodId, rank);
+  if (!url) return;
+  const img = await loadRankImage(url);
+  if (!img) return;
+  const box = measureOpaqueBox(img);
+  if (!box) return;
+  const scale = slot.targetWidth / Math.max(8, box.w);
+  const drawX = slot.centerX - (box.x + box.w / 2) * scale;
+  const drawY = slot.top - box.y * scale;
+  ctx.drawImage(img, drawX, drawY, img.naturalWidth * scale, img.naturalHeight * scale);
 }
 
 export type RenderJob = {
@@ -862,8 +1206,31 @@ export type RenderJob = {
   templateUrl: string;
   rank: number;
   people: RenderPerson[];
-  adjust?: PhotoAdjust;
+  periodId?: RankPeriodId;
+  /** RankAdjust veya eski tek PhotoAdjust */
+  adjust?: RankAdjust | PhotoAdjust;
 };
+
+function isQuarterPeriod(periodId?: RankPeriodId): boolean {
+  if (!periodId) return false;
+  return RANK_PERIODS.find((p) => p.id === periodId)?.kind === 'quarter';
+}
+
+function layoutForJob(job: RenderJob): RankVisualLayout {
+  if (job.kind === 'award') {
+    return isQuarterPeriod(job.periodId) ? QUARTER_AWARD_LAYOUT : AWARD_LAYOUT;
+  }
+  if (isQuarterPeriod(job.periodId)) return QUARTER_LAYOUT;
+  const base = RANK_LAYOUT;
+  if (!base.number || !job.periodId) return base;
+  return {
+    ...base,
+    number: {
+      ...base.number,
+      dotColor: RANK_PERIOD_DOT_COLOR[job.periodId] || base.number.dotColor,
+    },
+  };
+}
 
 export async function renderRankVisual(job: RenderJob): Promise<HTMLCanvasElement> {
   await loadRankFonts();
@@ -876,9 +1243,17 @@ export async function renderRankVisual(job: RenderJob): Promise<HTMLCanvasElemen
   if (!ctx) throw new Error('Canvas desteklenmiyor');
   ctx.drawImage(template, 0, 0, RANK_CANVAS.width, RANK_CANVAS.height);
 
-  const layout = job.kind === 'award' ? AWARD_LAYOUT : RANK_LAYOUT;
-  drawPhotos(ctx, job.people, layout, job.adjust || DEFAULT_PHOTO_ADJUST);
-  if (job.kind === 'rank') drawRankNumber(ctx, job.rank, layout);
+  const layout = layoutForJob(job);
+  drawPhotos(
+    ctx,
+    job.people,
+    layout,
+    job.adjust || defaultRankAdjust(job.people.length)
+  );
+  if (job.kind === 'rank') {
+    if (isQuarterPeriod(job.periodId)) await drawQuarterMedal(ctx, job.rank, layout, job.periodId);
+    else drawRankNumber(ctx, job.rank, layout);
+  }
   drawNameBlock(ctx, rankDisplayName(job.people), rankTitle(job.people), layout);
   return canvas;
 }

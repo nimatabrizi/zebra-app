@@ -215,7 +215,17 @@ export async function refreshGirisPhoto(photoUrl: string | null): Promise<void> 
 // Yüz ölçümü
 // ---------------------------------------------------------------------------
 
-export type FaceMetrics = { eyeMidX: number; eyeMidY: number; eyeDistance: number };
+export type FaceMetrics = {
+  eyeMidX: number;
+  eyeMidY: number;
+  eyeDistance: number;
+  /** Burun ucu X (çeyrek grid dikeyi). */
+  noseX: number;
+  /** Alın landmark Y — saç üstü değil. */
+  foreheadY: number;
+  /** Çene landmark Y. */
+  chinY: number;
+};
 
 type Landmarker = {
   detect: (image: HTMLCanvasElement) => {
@@ -261,6 +271,10 @@ function getLandmarker(): Promise<Landmarker> {
 
 const LEFT_EYE = [33, 133, 159, 145];
 const RIGHT_EYE = [362, 263, 386, 374];
+/** MediaPipe: burun ucu, alın, çene. */
+const NOSE_TIP = 1;
+const FOREHEAD = 10;
+const CHIN = 152;
 const faceCache = new WeakMap<HTMLImageElement, Promise<FaceMetrics | null>>();
 
 /** Göz merkezleri kaynak görsel pikseli cinsinden döner; yüz yoksa null. */
@@ -293,10 +307,16 @@ export function measureFace(img: HTMLImageElement): Promise<FaceMetrics | null> 
       };
       const left = center(LEFT_EYE);
       const right = center(RIGHT_EYE);
+      const nose = points[NOSE_TIP]!;
+      const forehead = points[FOREHEAD]!;
+      const chin = points[CHIN]!;
       return {
         eyeMidX: (left.x + right.x) / 2 / ratio,
         eyeMidY: (left.y + right.y) / 2 / ratio,
         eyeDistance: Math.hypot(right.x - left.x, right.y - left.y) / ratio,
+        noseX: (nose.x * canvas.width) / ratio,
+        foreheadY: (forehead.y * canvas.height) / ratio,
+        chinY: (chin.y * canvas.height) / ratio,
       };
     } catch (error) {
       console.error('Yüz ölçümü başarısız:', error);
