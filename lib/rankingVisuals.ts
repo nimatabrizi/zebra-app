@@ -5,6 +5,7 @@
  */
 
 import type { WorkBook } from 'xlsx';
+import { photoDrawOrder } from './consultantGender';
 import { toConsultantPhotoSlug, toTitleCaseName, toTurkishUpper } from './formatName';
 
 export const RANK_CANVAS = { width: 1080, height: 1350 } as const;
@@ -995,8 +996,10 @@ function drawPhotos(
   const alignShift = layout.text.align === 'left' ? ((count - 1) / 2) * spacing * 0.55 : 0;
   const faceAnchor = layout.face;
 
-  // Sağdakiler önce, soldaki en üstte kalsın.
-  for (let i = count - 1; i >= 0; i -= 1) {
+  // Z-sıra: ikilide kadın önde; değilse sağdakiler önce / soldaki üstte.
+  // Slot konumları hâlâ orijinal i ile (Excel sırası).
+  const drawOrder = photoDrawOrder(withPhoto.map((p) => p.displayName));
+  for (const i of drawOrder) {
     const person = withPhoto[i]!;
     const personAdj = rankAdjust.people[withPhotoIdx[i]!] || DEFAULT_PHOTO_ADJUST;
     const flipH = Boolean(personAdj.flipH);

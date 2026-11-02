@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { isNimaTabrizi, isPersonelRole } from './authIdentity';
 
@@ -49,68 +49,138 @@ async function currentUserId(): Promise<string | null> {
   return data.session?.user.id ?? null;
 }
 
+type StudioBucket = {
+  saved: Record<string, unknown>;
+  ready: boolean;
+  localOnly: boolean;
+  /** Fetch bitene kadar / eski cevap gelince ezilmesin diye yerel yazmalar */
+  overlaySet: Record<string, unknown>;
+  overlayDel: Set<string>;
+  listeners: Set<() => void>;
+  loadGen: number;
+  loading: boolean;
+};
+
+const buckets = new Map<string, StudioBucket>();
+
+function getBucket(studio: VisualStudioId): StudioBucket {
+  let bucket = buckets.get(studio);
+  if (!bucket) {
+    bucket = {
+      saved: {},
+      ready: false,
+      localOnly: false,
+      overlaySet: {},
+      overlayDel: new Set(),
+      listeners: new Set(),
+      loadGen: 0,
+      loading: false,
+    };
+    buckets.set(studio, bucket);
+  }
+  return bucket;
+}
+
+function notifyBucket(bucket: StudioBucket) {
+  for (const listener of bucket.listeners) listener();
+}
+
+function mergeRemoteWithOverlays(
+  remote: Record<string, unknown>,
+  bucket: StudioBucket
+): Record<string, unknown> {
+  const next = { ...remote };
+  for (const key of bucket.overlayDel) delete next[key];
+  Object.assign(next, bucket.overlaySet);
+  return next;
+}
+
+async function loadStudio(
+  studio: VisualStudioId,
+  legacyStorageKey: string | undefined,
+  canSave: boolean
+) {
+  const bucket = getBucket(studio);
+  const gen = ++bucket.loadGen;
+  bucket.loading = true;
+  const legacy = readLegacy<unknown>(legacyStorageKey);
+
+  const { data, error } = await supabase.from(TABLE).select('item_key, adjust').eq('studio', studio);
+  if (gen !== bucket.loadGen) return;
+
+  if (error) {
+    bucket.localOnly = true;
+    bucket.saved = mergeRemoteWithOverlays(legacy, bucket);
+    bucket.ready = true;
+    bucket.loading = false;
+    notifyBucket(bucket);
+    return;
+  }
+
+  bucket.localOnly = false;
+  const remote: Record<string, unknown> = {};
+  for (const row of data || []) remote[String(row.item_key)] = row.adjust;
+
+  const pending = Object.entries(legacy).filter(([key]) => !(key in remote));
+  if (canSave && legacyStorageKey) {
+    let migrated = true;
+    if (pending.length) {
+      const userId = await currentUserId();
+      if (gen !== bucket.loadGen) return;
+      const { error: upsertError } = await supabase.from(TABLE).upsert(
+        pending.map(([item_key, adjust]) => ({ studio, item_key, adjust, updated_by: userId })),
+        { onConflict: 'studio,item_key', ignoreDuplicates: true }
+      );
+      migrated = !upsertError;
+      if (migrated) for (const [key, value] of pending) remote[key] = value;
+    }
+    if (migrated) {
+      try {
+        localStorage.removeItem(legacyStorageKey);
+      } catch {
+        /* yok sayılır */
+      }
+    }
+  }
+
+  if (gen !== bucket.loadGen) return;
+  bucket.saved = mergeRemoteWithOverlays(remote, bucket);
+  bucket.ready = true;
+  bucket.loading = false;
+  notifyBucket(bucket);
+}
+
 /**
  * Stüdyo bazında kayıtlı konum/boyut ayarları (Supabase `visual_adjustments`).
- * Tablo yoksa ya da okunamazsa tarayıcıdaki eski localStorage kaydıyla çalışır.
- * Yetkili kullanıcıda eski localStorage kayıtları ilk açılışta veritabanına taşınır.
+ * Aynı studio için tüm hook örnekleri ortak state paylaşır (ör. sıralama + takım şeridi).
+ * Yerel kayıtlar, gecikmeli fetch cevabıyla ezilmez (overlay).
  */
 export function useSavedAdjustments<T>(
   studio: VisualStudioId,
   options: { legacyStorageKey?: string; canSave: boolean }
 ) {
   const { legacyStorageKey, canSave } = options;
-  const [saved, setSaved] = useState<Record<string, T>>({});
-  const [ready, setReady] = useState(false);
-  const localOnlyRef = useRef(false);
+  const bucket = getBucket(studio);
+  const [saved, setSaved] = useState<Record<string, T>>(() => bucket.saved as Record<string, T>);
+  const [ready, setReady] = useState(bucket.ready);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const legacy = readLegacy<T>(legacyStorageKey);
-      const { data, error } = await supabase.from(TABLE).select('item_key, adjust').eq('studio', studio);
-      if (cancelled) return;
-      if (error) {
-        localOnlyRef.current = true;
-        setSaved(legacy);
-        setReady(true);
-        return;
-      }
-      localOnlyRef.current = false;
-      const remote: Record<string, T> = {};
-      for (const row of data || []) remote[String(row.item_key)] = row.adjust as T;
-
-      const pending = Object.entries(legacy).filter(([key]) => !(key in remote));
-      if (canSave && legacyStorageKey) {
-        let migrated = true;
-        if (pending.length) {
-          const userId = await currentUserId();
-          const { error: upsertError } = await supabase.from(TABLE).upsert(
-            pending.map(([item_key, adjust]) => ({ studio, item_key, adjust, updated_by: userId })),
-            { onConflict: 'studio,item_key', ignoreDuplicates: true }
-          );
-          migrated = !upsertError;
-          if (migrated) for (const [key, value] of pending) remote[key] = value;
-        }
-        if (migrated) {
-          try {
-            localStorage.removeItem(legacyStorageKey);
-          } catch {
-            /* yok sayılır */
-          }
-        }
-      }
-      if (cancelled) return;
-      setSaved(remote);
-      setReady(true);
-    })();
-    return () => {
-      cancelled = true;
+    const sync = () => {
+      setSaved(bucket.saved as Record<string, T>);
+      setReady(bucket.ready);
     };
-  }, [studio, legacyStorageKey, canSave]);
+    bucket.listeners.add(sync);
+    sync();
+    void loadStudio(studio, legacyStorageKey, canSave);
+    return () => {
+      bucket.listeners.delete(sync);
+    };
+  }, [studio, legacyStorageKey, canSave, bucket]);
 
   const save = useCallback(
     async (key: string, value: T) => {
-      if (!localOnlyRef.current) {
+      const b = getBucket(studio);
+      if (!b.localOnly) {
         const { error } = await supabase.from(TABLE).upsert(
           {
             studio,
@@ -123,27 +193,29 @@ export function useSavedAdjustments<T>(
         );
         if (error) throw new Error(`Kaydedilemedi: ${error.message}`);
       }
-      setSaved((current) => {
-        const next = { ...current, [key]: value };
-        if (localOnlyRef.current) writeLegacy(legacyStorageKey, next);
-        return next;
-      });
+      b.overlayDel.delete(key);
+      b.overlaySet[key] = value;
+      b.saved = { ...b.saved, [key]: value };
+      if (b.localOnly) writeLegacy(legacyStorageKey, b.saved);
+      notifyBucket(b);
     },
     [studio, legacyStorageKey]
   );
 
   const remove = useCallback(
     async (key: string) => {
-      if (!localOnlyRef.current) {
+      const b = getBucket(studio);
+      if (!b.localOnly) {
         const { error } = await supabase.from(TABLE).delete().eq('studio', studio).eq('item_key', key);
         if (error) throw new Error(`Silinemedi: ${error.message}`);
       }
-      setSaved((current) => {
-        const next = { ...current };
-        delete next[key];
-        if (localOnlyRef.current) writeLegacy(legacyStorageKey, next);
-        return next;
-      });
+      delete b.overlaySet[key];
+      b.overlayDel.add(key);
+      const next = { ...b.saved };
+      delete next[key];
+      b.saved = next;
+      if (b.localOnly) writeLegacy(legacyStorageKey, b.saved);
+      notifyBucket(b);
     },
     [studio, legacyStorageKey]
   );

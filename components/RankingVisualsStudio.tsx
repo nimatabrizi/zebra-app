@@ -16,8 +16,11 @@ import {
   SlidersHorizontal,
   Trophy,
   Upload,
+  Users,
   X,
 } from 'lucide-react';
+import RankingTeamStripStudio from './RankingTeamStripStudio';
+import { AlignGridControls, AlignGridOverlay } from './RankingAlignGrid';
 import { supabase } from '../supabaseClient';
 import { resolveConsultantTitle } from '../lib/consultantTitles';
 import { measureFace } from '../lib/girisVisuals';
@@ -26,6 +29,15 @@ import { toConsultantPhotoSlug } from '../lib/formatName';
 import { AdjustSaveActions, useUnsavedChangesGuard } from './AdjustSaveControls';
 import { loadRankingWorkbook, saveRankingWorkbook } from '../lib/rankingWorkbook';
 import { sameAdjust, useSavedAdjustments } from '../lib/visualAdjustments';
+import {
+  DEFAULT_ALIGN_GRID,
+  alignGridKey,
+  normalizeAlignGrid,
+  resolveAlignGridKind,
+  sameAlignGrid,
+  type AlignGrid,
+  type AlignGridKind,
+} from '../lib/rankingAlignGrid';
 import {
   CERTIFICATE_CATEGORIES,
   certificateTemplateFor,
@@ -60,8 +72,24 @@ import {
   type RankPeriodId,
   type RenderPerson,
 } from '../lib/rankingVisuals';
+import {
+  TEAM_DEFS,
+  matchTeamDef,
+  orderTeamMembers,
+  renderTeamStrip,
+  teamFileSlug,
+  teamSettingsFromSaved,
+  type TeamDef,
+  type TeamMemberInput,
+} from '../lib/rankingTeamVisuals';
 
-type ProfileLite = { name: string; title: string; slug: string; tokens: string[] };
+type ProfileLite = {
+  name: string;
+  title: string;
+  slug: string;
+  tokens: string[];
+  takim: string | null;
+};
 
 type ResolvedPerson = {
   key: string;
@@ -82,6 +110,9 @@ type OutputItem = {
   label: string;
   detail: string;
   zipPath: string;
+  /** Ödülünüz var · takım şeridi */
+  teamId?: string;
+  teamDef?: TeamDef;
 };
 
 type CertItem = {
@@ -177,6 +208,25 @@ function personShortLabel(person: ResolvedPerson) {
   return person.displayName.split(/\s+/)[0] || person.displayName;
 }
 
+/** Tüm aylarda ortak kişi foto ayarı (ödül / sıralama ayrı; takım person| ile çakışmaz) */
+function sharedPeopleAdjustKey(kind: 'award' | 'rank', peopleKeys: string[]) {
+  return `shared|${kind}|${peopleKeys.join('+')}`;
+}
+
+/** Yeni anahtar yoksa eski period|ay|kişiler kaydına düş */
+function lookupPeopleAdjust(
+  saved: Record<string, unknown>,
+  adjustKey: string,
+  peopleKeys: string[]
+): unknown {
+  if (saved[adjustKey] != null) return saved[adjustKey];
+  const suffix = `|${peopleKeys.join('+')}`;
+  for (const [key, value] of Object.entries(saved)) {
+    if (key.startsWith('period|') && key.endsWith(suffix)) return value;
+  }
+  return undefined;
+}
+
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -221,13 +271,16 @@ export default function RankingVisualsStudio({
 
   /** null = dönem listesi; dolu = o dönemin tabelası */
   const [activePeriod, setActivePeriod] = useState<RankPeriodId | null>(null);
+  /** Dönem içinden Takım Verimliliği şerit editörü */
+  const [teamStripEdit, setTeamStripEdit] = useState<string | null>(null);
   const [personQuery, setPersonQuery] = useState('');
 
   const {
     saved: adjustments,
+    ready: adjustmentsReady,
     save: saveAdjust,
     remove: removeAdjust,
-  } = useSavedAdjustments<RankAdjust | PhotoAdjust>('siralama', {
+  } = useSavedAdjustments<RankAdjust | PhotoAdjust | Record<string, unknown>>('siralama', {
     legacyStorageKey: ADJUST_STORAGE_KEY,
     canSave,
   });
@@ -235,6 +288,9 @@ export default function RankingVisualsStudio({
   const [draft, setDraft] = useState<RankAdjust>(defaultRankAdjust(1));
   const [editPersonIndex, setEditPersonIndex] = useState(0);
   const [previewReady, setPreviewReady] = useState(false);
+  const [gridKind, setGridKind] = useState<AlignGridKind | null>(null);
+  const [gridDraft, setGridDraft] = useState<AlignGrid>({ ...DEFAULT_ALIGN_GRID });
+  const editorHydratedKey = useRef<string | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{
     pointerId: number;
@@ -255,7 +311,7 @@ export default function RankingVisualsStudio({
         supabase.storage
           .from('consultant-photos')
           .list('', { limit: 1000, sortBy: { column: 'name', order: 'asc' } }),
-        supabase.from('profiles').select('tam_isim, unvan'),
+        supabase.from('profiles').select('tam_isim, unvan, takim_ekip'),
       ]);
       if (cancelled) return;
       setPhotoSlugs(
@@ -270,11 +326,13 @@ export default function RankingVisualsStudio({
             const name = String(record.tam_isim || '').normalize('NFC').trim();
             if (!name) return null;
             const slug = toConsultantPhotoSlug(name);
+            const takimRaw = String(record.takim_ekip || '').normalize('NFC').trim();
             return {
               name,
               title: resolveConsultantTitle(name, String(record.unvan || '')),
               slug,
               tokens: significantTokens(slug),
+              takim: takimRaw || null,
             };
           })
           .filter(Boolean) as ProfileLite[]
@@ -403,6 +461,24 @@ export default function RankingVisualsStudio({
     [periodEntries, matchesPersonQuery]
   );
 
+  /** Takım id → sıralı üye listesi (şerit render için) */
+  const teamRosterById = useMemo(() => {
+    const map = new Map<string, ResolvedPerson[]>();
+    for (const def of TEAM_DEFS) {
+      const raw = profiles
+        .filter((p) => matchTeamDef(p.takim)?.id === def.id)
+        .map((p) => ({
+          key: p.slug,
+          displayName: toStudioDisplayName(p.name),
+          title: p.title,
+          photoUrl: resolveConsultantPhotoUrl(p.name, photoSlugs),
+        }));
+      if (!raw.length) continue;
+      map.set(def.id, orderTeamMembers(raw, def));
+    }
+    return map;
+  }, [profiles, photoSlugs]);
+
   const buildItems = useCallback(
     (source: RankEntry[], kinds: RankOutputKind[]): OutputItem[] => {
       const out: OutputItem[] = [];
@@ -411,6 +487,8 @@ export default function RankingVisualsStudio({
 
       if (kinds.includes('rank')) {
         for (const entry of source) {
+          /** Takım Verimliliği sıralama görseli henüz yok — indirme listesine alma */
+          if (entry.category === 'takim') continue;
           const people = resolveAll(entry);
           const period = RANK_PERIODS.find((p) => p.id === entry.periodId)!;
           const names = people.map((p) => p.displayName).join(' & ');
@@ -422,7 +500,10 @@ export default function RankingVisualsStudio({
             rank: entry.rank,
             people,
             templateUrl: templateFor(entry.periodId, 'rank', entry.category),
-            adjustKey: `period|${entry.periodId}|${entry.people.map((p) => p.key).join('+')}`,
+            adjustKey: sharedPeopleAdjustKey(
+              'rank',
+              entry.people.map((p) => p.key)
+            ),
             label: names,
             detail: `${period.label} · ${categoryShort(entry.category)} · ${rankText(entry.rank)}`,
             zipPath: `${period.fileSlug}/${entry.category}/${String(entry.rank).padStart(2, '0')}-${rankFileSlug(names)}.png`,
@@ -433,6 +514,7 @@ export default function RankingVisualsStudio({
       if (kinds.includes('award')) {
         const groups = new Map<string, RankEntry[]>();
         for (const entry of source) {
+          if (entry.category === 'takim') continue;
           const groupKey = `${entry.periodId}|${entry.people.map((p) => p.key).join('+')}`;
           groups.set(groupKey, [...(groups.get(groupKey) || []), entry]);
         }
@@ -449,7 +531,10 @@ export default function RankingVisualsStudio({
             rank: first.rank,
             people,
             templateUrl: templateFor(first.periodId, 'award', first.category),
-            adjustKey: `period|${first.periodId}|${first.people.map((p) => p.key).join('+')}`,
+            adjustKey: sharedPeopleAdjustKey(
+              'award',
+              first.people.map((p) => p.key)
+            ),
             label: names,
             detail: `${period.label} · Ödülünüz var · ${group
               .map((e) => `${categoryShort(e.category)} ${rankText(e.rank)}`)
@@ -457,10 +542,45 @@ export default function RankingVisualsStudio({
             zipPath: `${period.fileSlug}/odulunuz-var/${rankFileSlug(names)}.png`,
           });
         }
+
+        /** Takım Verimliliği sıralamasındaki takımlar → Ödülünüz var şeridi */
+        const seenTeams = new Set<string>();
+        for (const entry of source) {
+          if (entry.category !== 'takim') continue;
+          let def = matchTeamDef(entry.rawName);
+          if (!def) {
+            const first = entry.people[0];
+            if (first) {
+              const resolved = resolvePerson(first.name, first.key);
+              const prof = profiles.find((p) => p.slug === resolved.key);
+              def = matchTeamDef(prof?.takim) || null;
+            }
+          }
+          if (!def || seenTeams.has(`${entry.periodId}|${def.id}`)) continue;
+          const roster = teamRosterById.get(def.id);
+          if (!roster?.length) continue;
+          seenTeams.add(`${entry.periodId}|${def.id}`);
+          const period = RANK_PERIODS.find((p) => p.id === entry.periodId)!;
+          out.push({
+            key: `award-team|${entry.periodId}|${def.id}`,
+            kind: 'award',
+            periodId: entry.periodId,
+            category: 'takim',
+            rank: entry.rank,
+            people: roster,
+            templateUrl: RANK_TEMPLATES[entry.periodId].award,
+            adjustKey: `team|${def.id}`,
+            label: def.displayName,
+            detail: `${period.label} · Ödülünüz var · Takım · ${rankText(entry.rank)}`,
+            zipPath: `${period.fileSlug}/odulunuz-var/takim-${teamFileSlug(def.displayName)}.png`,
+            teamId: def.id,
+            teamDef: def,
+          });
+        }
       }
       return out;
     },
-    [resolvePerson]
+    [resolvePerson, teamRosterById, profiles]
   );
 
   const rankItems = useMemo(
@@ -509,8 +629,53 @@ export default function RankingVisualsStudio({
     : null;
 
   const adjustFor = useCallback(
-    (item: OutputItem) => normalizeRankAdjust(adjustments[item.adjustKey], item.people.length),
+    (item: OutputItem) => {
+      if (item.teamId) {
+        return normalizeRankAdjust(adjustments[item.adjustKey], item.people.length);
+      }
+      const peopleKeys = item.people.map((p) => p.key);
+      const raw = lookupPeopleAdjust(
+        adjustments as Record<string, unknown>,
+        item.adjustKey,
+        peopleKeys
+      );
+      return normalizeRankAdjust(raw, item.people.length);
+    },
     [adjustments]
+  );
+
+  const renderOutputCanvas = useCallback(
+    async (item: OutputItem, adjustOverride?: RankAdjust) => {
+      if (item.teamId && item.teamDef) {
+        if (!item.templateUrl) throw new Error('Template bekleniyor');
+        const members: TeamMemberInput[] = item.people.map((p) => ({
+          key: p.key,
+          displayName: p.displayName,
+          title: p.title,
+          photoUrl: p.photoUrl,
+        }));
+        const settings = teamSettingsFromSaved(
+          item.teamDef,
+          members,
+          adjustments as Record<string, unknown>
+        );
+        return renderTeamStrip({
+          periodId: item.periodId,
+          people: await toRenderPeople(item.people),
+          personAdjusts: settings.personAdjusts,
+          teamAdjust: settings.teamAdjust,
+          personGlow: settings.personGlow,
+          personInnerGlow: settings.personInnerGlow,
+          personEdgeClean: settings.personEdgeClean,
+          personPeriodTint: settings.personPeriodTint,
+          logoGlow: settings.logoGlow,
+          logoUrl: item.teamDef.logoUrl,
+          grayscale: true,
+        });
+      }
+      return renderItem(item, adjustOverride || adjustFor(item));
+    },
+    [adjustments, adjustFor]
   );
 
   // Sürükleme sırasında kare kaçırmamak için: çizim sürerken gelen istek
@@ -569,15 +734,55 @@ export default function RankingVisualsStudio({
   }, [editing, draft, paintPreview]);
 
   const openEditor = (item: OutputItem) => {
+    if (item.teamId) {
+      setTeamStripEdit(item.teamId);
+      return;
+    }
+    editorHydratedKey.current = null;
     setPreviewReady(false);
     setEditPersonIndex(0);
     setDraft(adjustFor(item));
+    const periodKind = RANK_PERIODS.find((p) => p.id === item.periodId)?.kind;
+    const kind = resolveAlignGridKind({
+      periodKind,
+      outputKind: item.kind,
+      isTeam: false,
+      peopleCount: item.people.length,
+    });
+    setGridKind(kind);
+    setGridDraft(
+      kind
+        ? normalizeAlignGrid(adjustments[alignGridKey(kind)])
+        : { ...DEFAULT_ALIGN_GRID }
+    );
     setEditing(item);
   };
 
   const closeEditor = () => {
     setEditing(null);
     setPreviewReady(false);
+    setGridKind(null);
+    editorHydratedKey.current = null;
+  };
+
+  /** Ayarlar geç gelirse editör draft’ını bir kez senkronla (boş/default kalmasın) */
+  useEffect(() => {
+    if (!editing || !adjustmentsReady) return;
+    if (editorHydratedKey.current === editing.key) return;
+    editorHydratedKey.current = editing.key;
+    setDraft(adjustFor(editing));
+    if (gridKind) {
+      setGridDraft(normalizeAlignGrid(adjustments[alignGridKey(gridKind)]));
+    }
+  }, [editing, adjustmentsReady, adjustFor, gridKind, adjustments]);
+
+  const savedGrid = gridKind
+    ? normalizeAlignGrid(adjustments[alignGridKey(gridKind)])
+    : DEFAULT_ALIGN_GRID;
+  const gridDirty = Boolean(gridKind && !sameAlignGrid(gridDraft, savedGrid));
+  const saveGridDraft = async () => {
+    if (!gridKind) return;
+    await saveAdjust(alignGridKey(gridKind), gridDraft);
   };
 
   const dirty = Boolean(canSave && editing && !sameAdjust(draft, adjustFor(editing)));
@@ -627,7 +832,7 @@ export default function RankingVisualsStudio({
   const downloadOne = async (item: OutputItem, adjustOverride?: RankAdjust) => {
     setDownloadingKey(item.key);
     try {
-      const canvas = await renderItem(item, adjustOverride || adjustFor(item));
+      const canvas = await renderOutputCanvas(item, adjustOverride);
       const blob = await canvasToBlob(canvas);
       downloadBlob(blob, item.zipPath.split('/').join('_'));
     } catch (error) {
@@ -649,7 +854,7 @@ export default function RankingVisualsStudio({
     try {
       for (let i = 0; i < ready.length; i += 1) {
         const item = ready[i]!;
-        const canvas = await renderItem(item, adjustFor(item));
+        const canvas = await renderOutputCanvas(item);
         root.file(item.zipPath, await canvasToBlob(canvas));
         setExporting({ current: i + 1, total: ready.length });
       }
@@ -719,8 +924,8 @@ export default function RankingVisualsStudio({
         <p className="z-page-kicker">Zebra Studio · Ödül ve sıralama</p>
         <h1 className="z-page-title mt-3">Sıralama Görselleri</h1>
         <p className="z-page-sub">
-          Excel yükleyin, döneme girin, tabeladan kontrol edin; sıralama görselleri ve ayda kişi
-          başına tek &quot;Ödülünüz var&quot; görsellerini ayrı veya birlikte indirin.
+          Excel yükleyin, döneme girin, tabeladan kontrol edin; sıralama görselleri ile kişi ve
+          takım &quot;Ödülünüz var&quot; görsellerini indirin.
         </p>
       </header>
 
@@ -880,8 +1085,69 @@ export default function RankingVisualsStudio({
             const rows = filteredPeriodEntries
               .filter((e) => e.category === category.id)
               .sort((a, b) => a.rank - b.rank || a.rawName.localeCompare(b.rawName, 'tr'));
+            const isTeamCat = category.id === 'takim';
             const tpl = templateFor(activePeriod, 'rank', category.id);
             const catReady = rankItems.filter((i) => i.category === category.id && i.templateUrl);
+
+            /** Takım Verimliliği: şimdilik sadece Excel tablosu; sıralama görseli sonra */
+            if (isTeamCat) {
+              return (
+                <section key={category.id} className="z-card overflow-hidden p-0 opacity-80">
+                  <div className="border-b border-[var(--z-border)] px-5 py-4 sm:px-6">
+                    <p className="text-[16px] font-semibold text-[var(--z-fg)]">{category.label}</p>
+                    <p className="mt-0.5 text-[12px] text-[var(--z-muted)]">
+                      Sıralama görseli henüz yok · {rows.length} satır (ödül şeridi altta Ödülünüz var’da)
+                    </p>
+                  </div>
+                  {rows.length === 0 ? (
+                    <p className="px-5 py-8 text-center text-[13px] text-[var(--z-muted)] sm:px-6">
+                      {personQuery ? 'Aramayla eşleşen satır yok.' : 'Bu kategoride satır yok.'}
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[420px] text-left text-[14px]">
+                        <thead>
+                          <tr className="border-b border-[var(--z-border)] text-[12px] uppercase tracking-wide text-[var(--z-muted)]">
+                            <th className="px-5 py-3 font-medium sm:px-6">Sıra</th>
+                            <th className="px-3 py-3 font-medium">Takım</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((entry) => {
+                            const def =
+                              matchTeamDef(entry.rawName) ||
+                              (() => {
+                                const first = entry.people[0];
+                                if (!first) return null;
+                                const resolved = resolvePerson(first.name, first.key);
+                                const prof = profiles.find((p) => p.slug === resolved.key);
+                                return matchTeamDef(prof?.takim);
+                              })();
+                            const label =
+                              def?.displayName ||
+                              entry.people
+                                .map((p) => resolvePerson(p.name, p.key).displayName)
+                                .join(' & ');
+                            return (
+                              <tr
+                                key={entry.id}
+                                className="border-b border-[var(--z-border)] last:border-0"
+                              >
+                                <td className="px-5 py-3 tabular-nums text-[var(--z-fg)] sm:px-6">
+                                  {rankText(entry.rank)}
+                                </td>
+                                <td className="px-3 py-3 font-medium text-[var(--z-fg)]">{label}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              );
+            }
+
             return (
               <section key={category.id} className="z-card overflow-hidden p-0">
                 <div className="flex flex-col gap-3 border-b border-[var(--z-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -1061,10 +1327,10 @@ export default function RankingVisualsStudio({
             <div className="border-b border-[var(--z-border)] px-5 py-4 sm:px-6">
               <p className="text-[16px] font-semibold text-[var(--z-fg)]">Ödülünüz var</p>
               <p className="mt-0.5 text-[12px] text-[var(--z-muted)]">
-                Bu dönemde ödül alan her kişi için tek görsel
+                Kişi görselleri + Takım Verimliliği’ndeki takımların şeritleri
                 {!RANK_TEMPLATES[activePeriod].award
                   ? ' · template bekleniyor (indirme kapalı)'
-                  : ` · ${awardItems.length} kişi`}
+                  : ` · ${awardItems.length} görsel`}
               </p>
             </div>
             {!awardItems.length ? (
@@ -1076,7 +1342,7 @@ export default function RankingVisualsStudio({
                 <table className="w-full min-w-[560px] text-left text-[14px]">
                   <thead>
                     <tr className="border-b border-[var(--z-border)] text-[12px] uppercase tracking-wide text-[var(--z-muted)]">
-                      <th className="px-5 py-3 font-medium sm:px-6">Kişi</th>
+                      <th className="px-5 py-3 font-medium sm:px-6">Kişi / Takım</th>
                       <th className="px-3 py-3 font-medium">Dallar</th>
                       <th className="px-5 py-3 text-right font-medium sm:px-6">İşlem</th>
                     </tr>
@@ -1085,6 +1351,7 @@ export default function RankingVisualsStudio({
                     {awardItems.map((item) => {
                       const missingPhoto = item.people.some((p) => !p.photoUrl);
                       const canDownload = Boolean(item.templateUrl);
+                      const isTeam = Boolean(item.teamId);
                       return (
                         <tr
                           key={item.key}
@@ -1092,6 +1359,11 @@ export default function RankingVisualsStudio({
                         >
                           <td className="px-5 py-3 font-medium text-[var(--z-fg)] sm:px-6">
                             {item.label}
+                            {isTeam ? (
+                              <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-[var(--z-border)] px-2 py-0.5 text-[10px] font-normal text-[var(--z-muted)]">
+                                <Users className="h-3 w-3" /> Takım şeridi
+                              </span>
+                            ) : null}
                             {missingPhoto ? (
                               <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-amber-500">
                                 <ImageOff className="h-3 w-3" /> Foto eksik
@@ -1121,7 +1393,9 @@ export default function RankingVisualsStudio({
                                 disabled={!canDownload}
                                 onClick={() => openEditor(item)}
                                 className="z-btn-icon h-9 w-9 disabled:opacity-40"
-                                aria-label="Fotoğrafı ayarla"
+                                aria-label={
+                                  isTeam ? 'Takım şeridini ayarla' : 'Fotoğrafı ayarla'
+                                }
                               >
                                 <SlidersHorizontal className="h-3.5 w-3.5" strokeWidth={1.8} />
                               </button>
@@ -1181,8 +1455,20 @@ export default function RankingVisualsStudio({
                     {RANK_CATEGORIES.map((c) => (
                       <li key={c.id} className="flex justify-between gap-2">
                         <span>{c.short}</span>
-                        <span className={set.rank[c.id] ? 'text-[var(--z-fg)]' : ''}>
-                          {set.rank[c.id] ? 'Hazır' : 'Bekleniyor'}
+                        <span
+                          className={
+                            c.id === 'takim'
+                              ? 'text-[var(--z-muted)]'
+                              : set.rank[c.id]
+                                ? 'text-[var(--z-fg)]'
+                                : ''
+                          }
+                        >
+                          {c.id === 'takim'
+                            ? 'Sonra'
+                            : set.rank[c.id]
+                              ? 'Hazır'
+                              : 'Bekleniyor'}
                         </span>
                       </li>
                     ))}
@@ -1198,6 +1484,17 @@ export default function RankingVisualsStudio({
             })}
           </div>
         </section>
+      ) : null}
+
+      {teamStripEdit && activePeriod ? (
+        <RankingTeamStripStudio
+          canSave={canSave}
+          embed={{
+            periodId: activePeriod,
+            teamId: teamStripEdit,
+            onClose: () => setTeamStripEdit(null),
+          }}
+        />
       ) : null}
 
       {editing && typeof document !== 'undefined' ? createPortal(
@@ -1223,6 +1520,7 @@ export default function RankingVisualsStudio({
                 className="h-full w-full"
                 aria-label={editing.label}
               />
+              {gridKind ? <AlignGridOverlay grid={gridDraft} /> : null}
               {!previewReady ? (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <Loader2 className="h-6 w-6 animate-spin text-[var(--z-muted)]" />
@@ -1243,8 +1541,8 @@ export default function RankingVisualsStudio({
 
               <p className="mt-6 text-[12px] leading-relaxed text-[var(--z-muted)]">
                 {editing.people.length > 1
-                  ? 'Kişi seçip önizlemede sürükleyin. Kaydedilen ayar bu ikili/grup yan yanayken (sıralama + ödül) kullanılır.'
-                  : 'Fotoğrafı önizlemede sürükleyerek kaydırın. Kaydedilen ayar bu görselde hep kullanılır.'}
+                  ? 'Kişi seçip önizlemede sürükleyin. Kayıt tüm aylarda bu ikili/grup için geçerli (ödül ve sıralama ayrı).'
+                  : 'Fotoğrafı önizlemede sürükleyerek kaydırın. Kayıt tüm aylarda bu kişi için geçerli (ödül ve sıralama ayrı).'}
               </p>
 
               {editing.people.length > 1 ? (
@@ -1320,15 +1618,43 @@ export default function RankingVisualsStudio({
                 </button>
               ) : null}
 
+              {gridKind ? (
+                <AlignGridControls
+                  kind={gridKind}
+                  grid={gridDraft}
+                  canSave={canSave}
+                  dirty={gridDirty}
+                  hasSaved={Boolean(adjustments[alignGridKey(gridKind)])}
+                  onChange={(patch) =>
+                    setGridDraft((g) => normalizeAlignGrid({ ...g, ...patch }))
+                  }
+                  onSave={() => void saveGridDraft()}
+                  onReset={() => setGridDraft({ ...DEFAULT_ALIGN_GRID })}
+                />
+              ) : null}
+
               <div className="mt-auto flex flex-col gap-2 pt-8">
                 <AdjustSaveActions
                   canSave={canSave}
                   dirty={dirty}
-                  hasSaved={Boolean(adjustments[editing.adjustKey])}
+                  hasSaved={Boolean(
+                    lookupPeopleAdjust(
+                      adjustments as Record<string, unknown>,
+                      editing.adjustKey,
+                      editing.people.map((p) => p.key)
+                    )
+                  )}
                   onSave={saveDraft}
                   onResetScreen={() => setDraft(defaultRankAdjust(editing.people.length))}
                   onDeleteSaved={async () => {
                     await removeAdjust(editing.adjustKey);
+                    const peopleKeys = editing.people.map((p) => p.key);
+                    const suffix = `|${peopleKeys.join('+')}`;
+                    for (const key of Object.keys(adjustments)) {
+                      if (key.startsWith('period|') && key.endsWith(suffix)) {
+                        await removeAdjust(key);
+                      }
+                    }
                     setDraft(defaultRankAdjust(editing.people.length));
                   }}
                 />
