@@ -5,6 +5,7 @@
  */
 
 import {
+  canSeeIslemKapatma,
   isNimaTabrizi,
   isUserAdmin,
   isPilotRole,
@@ -44,7 +45,8 @@ export type SidebarItem = {
     | 'LineChart'
     | 'Building2'
     | 'Newspaper'
-    | 'BarChart3';
+    | 'BarChart3'
+    | 'ClipboardCheck';
   isEnabled: boolean;
   children?: SidebarChild[];
 };
@@ -68,9 +70,24 @@ export const CORE_LIVE_TABS = [
   'studio-giris',
   'studio-vefat',
   'studio-hos-geldin',
+  'islem-kapatma',
+  'islemler',
   'users-overview',
   'users-add',
 ] as const;
+
+function islemNavItem(): SidebarItem {
+  return {
+    id: 'islem',
+    label: 'İşlem',
+    icon: 'ClipboardCheck',
+    isEnabled: true,
+    children: [
+      { id: 'islem-kapatma', label: 'İşlem Kapatma', isEnabled: true },
+      { id: 'islemler', label: 'İşlemler', isEnabled: true },
+    ],
+  };
+}
 
 /** Toplu Üretim, Sıralama, Hoş Geldin Görseli, Kullanıcı Yönetimi */
 export function canSeeNimaOnlyTools(fullName?: string | null): boolean {
@@ -309,6 +326,7 @@ export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
         { id: 'randevu', label: 'Randevu Talebi', isEnabled: true },
       ],
     },
+    ...(canSeeIslemKapatma(options?.fullName) ? [islemNavItem()] : []),
     ...(includeUserAdmin ? [userAdminNavItem] : []),
     ...productTreeTail(),
   ];
@@ -358,6 +376,7 @@ export function buildManagerNav(
           : []),
       ],
     },
+    ...(canSeeIslemKapatma(options?.fullName) ? [islemNavItem()] : []),
     ...(includeUserAdmin ? [userAdminNavItem] : []),
     ...productTreeTail({ includeMarketingAnalytics: false }),
   ];
@@ -442,6 +461,9 @@ export function isLiveContentTab(
     id === 'studio-vefat'
   ) {
     return canSeePersonelStudios(role, fullName);
+  }
+  if (id === 'islem-kapatma' || id === 'islemler') {
+    return canSeeIslemKapatma(fullName);
   }
   if (id === 'users-overview' || id === 'users-add') {
     return isUserAdmin(fullName, role);

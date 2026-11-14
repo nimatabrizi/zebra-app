@@ -32,6 +32,7 @@ import {
   canCreateManualAppointment,
   manualEntryDisplayName,
   isUserAdmin,
+  canSeeIslemKapatma,
   isPilotRole,
   isPilotAccount,
   isUuid,
@@ -89,6 +90,7 @@ import BatchProductionStudio from '../components/BatchProductionStudio';
 import BadgeCardStudio from '../components/BadgeCardStudio';
 import RankingVisualsStudio from '../components/RankingVisualsStudio';
 import TeamVisualsStudio from '../components/TeamVisualsStudio';
+import IslemKapatmaStudio from '../components/IslemKapatmaStudio';
 import BirthdayStudio from '../components/BirthdayStudio';
 import AnniversaryStudio from '../components/AnniversaryStudio';
 import EntryVisualsStudio from '../components/EntryVisualsStudio';
@@ -123,6 +125,7 @@ const [username, setUsername] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const closeMobileMenu = useCallback(() => setIsMobileMenuOpen(false), []);
   const [activeTab, setActiveTab] = useState('genel');
+  const [dealEditId, setDealEditId] = useState(null);
   const [fullName, setFullName] = useState(''); // Gerçek isim veritabanından çekilip buraya yazılacak
   const [currentUserId, setCurrentUserId] = useState(''); // Auth / profiles UUID
   const [isPilot, setIsPilot] = useState(false); // YENİ: Pilot yetkisi
@@ -4007,6 +4010,30 @@ const [username, setUsername] = useState('');
                   onNavigate={navigateToTab}
                 />
               )}
+
+            {activeTab === 'islem-kapatma' && canSeeIslemKapatma(fullName) && (
+              <IslemKapatmaStudio
+                mode="form"
+                userId={currentUserId}
+                fullName={fullName}
+                onNavigate={navigateToTab}
+                editId={dealEditId}
+                onEditIdConsumed={() => setDealEditId(null)}
+              />
+            )}
+
+            {activeTab === 'islemler' && canSeeIslemKapatma(fullName) && (
+              <IslemKapatmaStudio
+                mode="list"
+                userId={currentUserId}
+                fullName={fullName}
+                onNavigate={navigateToTab}
+                onRequestEdit={(id) => {
+                  setDealEditId(id);
+                  navigateToTab('islem-kapatma');
+                }}
+              />
+            )}
 
             {/* --- ZEBRA STUDIO: Yeni Portföy (sekme değişince state korunur) --- */}
             <div

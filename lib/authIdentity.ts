@@ -233,6 +233,19 @@ export function isNimaTabrizi(
   return normalizePersonKey(fullName) === 'nima tabrizi';
 }
 
+/** İşlem Kapatma menüsü — yalnızca Bektaş Önal ve Çiğdem Yurtman */
+const ISLEM_KAPATMA_NAMES = ['bektas onal', 'cigdem yurtman'] as const;
+
+export function canSeeIslemKapatma(
+  fullName: string | null | undefined
+): boolean {
+  if (!fullName || typeof fullName !== 'string') return false;
+  const normalized = normalizePersonKey(fullName);
+  return ISLEM_KAPATMA_NAMES.some(
+    (name) => normalized === name || normalized.startsWith(`${name} `)
+  );
+}
+
 /** Korunan hesaplar (silinemez) — Nima, Cansu Koç, Elizaveta */
 const PROTECTED_USER_NAMES = [
   'nima tabrizi',

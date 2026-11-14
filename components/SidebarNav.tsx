@@ -9,6 +9,7 @@ import {
   CalendarCheck,
   CalendarDays,
   ChevronDown,
+  ClipboardCheck,
   LayoutGrid,
   LineChart,
   Megaphone,
@@ -37,6 +38,7 @@ export const SIDEBAR_ICONS: Record<SidebarItem['icon'], LucideIcon> = {
   Building2,
   Newspaper,
   BarChart3,
+  ClipboardCheck,
 };
 
 type SidebarNavProps = {
