@@ -1,0 +1,28 @@
+export type IvoListingRow = {
+  id: string;
+  source: string;
+  listing_no: string;
+  url: string;
+  title: string | null;
+  price_tl: number | null;
+  price_m2: number | null;
+  area_m2: number | null;
+  rooms: string | null;
+  city: string | null;
+  district: string | null;
+  neighborhood: string | null;
+  whom: string | null;
+  kind: string | null;
+  listing_type: string | null;
+  is_fsbo: boolean;
+  status: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  last_price_tl: number | null;
+  lat?: number | null;
+  lng?: number | null;
+  image_url?: string | null;
+  feeds?: string[] | null;
+  ivo_updated_at?: string | null;
+  raw?: Record<string, unknown> | null;
+};

@@ -91,6 +91,8 @@ import BadgeCardStudio from '../components/BadgeCardStudio';
 import RankingVisualsStudio from '../components/RankingVisualsStudio';
 import TeamVisualsStudio from '../components/TeamVisualsStudio';
 import IslemKapatmaStudio from '../components/IslemKapatmaStudio';
+import IvoListingsStudio from '../components/IvoListingsStudio';
+import IvoMapStudio from '../components/IvoMapStudio';
 import BirthdayStudio from '../components/BirthdayStudio';
 import AnniversaryStudio from '../components/AnniversaryStudio';
 import EntryVisualsStudio from '../components/EntryVisualsStudio';
@@ -4033,6 +4035,22 @@ const [username, setUsername] = useState('');
                   navigateToTab('islem-kapatma');
                 }}
               />
+            )}
+
+            {activeTab === 'ivo-ofis' && (
+              <IvoListingsStudio mode="office" onNavigate={navigateToTab} />
+            )}
+            {activeTab === 'ivo-harita' && (
+              <IvoMapStudio onNavigate={navigateToTab} />
+            )}
+            {activeTab === 'ivo-ilan-takibi' && (
+              <IvoListingsStudio mode="tracked" onNavigate={navigateToTab} />
+            )}
+            {activeTab === 'ivo-fsbo' && (
+              <IvoListingsStudio mode="fsbo" onNavigate={navigateToTab} />
+            )}
+            {activeTab === 'ivo-ilanlar' && (
+              <IvoListingsStudio mode="recent" onNavigate={navigateToTab} />
             )}
 
             {/* --- ZEBRA STUDIO: Yeni Portföy (sekme değişince state korunur) --- */}

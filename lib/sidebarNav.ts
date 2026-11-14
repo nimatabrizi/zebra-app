@@ -46,7 +46,8 @@ export type SidebarItem = {
     | 'Building2'
     | 'Newspaper'
     | 'BarChart3'
-    | 'ClipboardCheck';
+    | 'ClipboardCheck'
+    | 'Radar';
   isEnabled: boolean;
   children?: SidebarChild[];
 };
@@ -72,6 +73,11 @@ export const CORE_LIVE_TABS = [
   'studio-hos-geldin',
   'islem-kapatma',
   'islemler',
+  'ivo-ofis',
+  'ivo-harita',
+  'ivo-ilan-takibi',
+  'ivo-fsbo',
+  'ivo-ilanlar',
   'users-overview',
   'users-add',
 ] as const;
@@ -85,6 +91,23 @@ function islemNavItem(): SidebarItem {
     children: [
       { id: 'islem-kapatma', label: 'İşlem Kapatma', isEnabled: true },
       { id: 'islemler', label: 'İşlemler', isEnabled: true },
+    ],
+  };
+}
+
+/** Canlı ilan radar modülü (tab id’leri geriye dönük uyumluluk için ivo-* kalır) */
+function ivoNavItem(): SidebarItem {
+  return {
+    id: 'ivo',
+    label: 'Radar',
+    icon: 'Radar',
+    isEnabled: true,
+    children: [
+      { id: 'ivo-ofis', label: 'Ofis ilanları', isEnabled: true },
+      { id: 'ivo-harita', label: 'Harita', isEnabled: true },
+      { id: 'ivo-ilan-takibi', label: 'İlan takibi', isEnabled: true },
+      { id: 'ivo-fsbo', label: 'FSBO', isEnabled: true },
+      { id: 'ivo-ilanlar', label: 'Son ilanlar', isEnabled: true },
     ],
   };
 }
@@ -327,6 +350,7 @@ export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
       ],
     },
     ...(canSeeIslemKapatma(options?.fullName) ? [islemNavItem()] : []),
+    ivoNavItem(),
     ...(includeUserAdmin ? [userAdminNavItem] : []),
     ...productTreeTail(),
   ];
@@ -377,6 +401,7 @@ export function buildManagerNav(
       ],
     },
     ...(canSeeIslemKapatma(options?.fullName) ? [islemNavItem()] : []),
+    ivoNavItem(),
     ...(includeUserAdmin ? [userAdminNavItem] : []),
     ...productTreeTail({ includeMarketingAnalytics: false }),
   ];
@@ -464,6 +489,15 @@ export function isLiveContentTab(
   }
   if (id === 'islem-kapatma' || id === 'islemler') {
     return canSeeIslemKapatma(fullName);
+  }
+  if (
+    id === 'ivo-ofis' ||
+    id === 'ivo-harita' ||
+    id === 'ivo-ilan-takibi' ||
+    id === 'ivo-fsbo' ||
+    id === 'ivo-ilanlar'
+  ) {
+    return true;
   }
   if (id === 'users-overview' || id === 'users-add') {
     return isUserAdmin(fullName, role);

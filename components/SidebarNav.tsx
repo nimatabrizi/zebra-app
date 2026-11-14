@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   LayoutGrid,
+  Radar,
   LineChart,
   Megaphone,
   Newspaper,
@@ -39,6 +40,7 @@ export const SIDEBAR_ICONS: Record<SidebarItem['icon'], LucideIcon> = {
   Newspaper,
   BarChart3,
   ClipboardCheck,
+  Radar,
 };
 
 type SidebarNavProps = {
