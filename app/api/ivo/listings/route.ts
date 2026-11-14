@@ -8,6 +8,7 @@ import {
   syncSahibindenListing,
   syncSahibindenListingFromHtml,
   trackListingForUser,
+  type OfficeListFilters,
 } from '../../../../lib/ivoListingsDb';
 import { listComparableListings } from '../../../../lib/ivoComps';
 import { listOfficeListingsLive } from '../../../../lib/ivoOfficeLive';
@@ -209,20 +210,20 @@ export async function GET(request: Request) {
       const typeParam = url.searchParams.get('listingType') || 'all';
       const sortParam = url.searchParams.get('sort') || 'seen';
       const preferDb = url.searchParams.get('source') === 'db';
-      const officeFilters = {
+      const officeFilters: OfficeListFilters = {
         status:
           statusParam === 'inactive' || statusParam === 'all'
             ? statusParam
-            : ('active' as const),
+            : 'active',
         listingType:
           typeParam === 'satilik' || typeParam === 'kiralik'
             ? typeParam
-            : ('all' as const),
+            : 'all',
         q: url.searchParams.get('q') || undefined,
         sort:
           sortParam === 'price_asc' || sortParam === 'price_desc'
             ? sortParam
-            : ('seen' as const),
+            : 'seen',
         limit: Number(url.searchParams.get('limit') || 48) || 48,
         offset: Number(url.searchParams.get('offset') || 0) || 0,
       };
