@@ -17,7 +17,8 @@ export type IvoMapArea =
     }
   | {
       type: 'polygon';
-      coordinates: number[][]; // ring [lng,lat][]
+      /** IVO alanı: `polygon` (coordinates değil) — [lng, lat][] */
+      polygon: number[][];
     };
 
 export type IvoMapPoint = {

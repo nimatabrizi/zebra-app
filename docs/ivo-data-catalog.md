@@ -77,7 +77,7 @@ Kart alanları: `id, no, title, price, city, district, neighborhood, type, kind,
 ### Harita (UI Zebra; veri IVO)
 | Endpoint | Not |
 |---|---|
-| `POST /map/search` | `area.type`: `bbox` \| `radius` \| `polygon`; max ~25 km². `view`: `points` \| `list`. Points: `lat,lng,no,price,…` |
+| `POST /map/search` | `area.type`: `bbox` \| `radius` \| `polygon`; max ~25 km². Polygon alanı: `{ type:'polygon', polygon:[[lng,lat],…] }` (≥3 köşe; `coordinates` değil). `view`: `points` \| `list`. |
 | `POST /map/search?facets=1` | Facet sayıları |
 | `POST /map/summary` | Bölge özeti / nüfus (aynı area gövdesi) |
 

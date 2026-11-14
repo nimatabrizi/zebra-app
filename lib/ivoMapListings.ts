@@ -121,15 +121,14 @@ function resolveArea(opts?: {
   bbox?: MapBbox;
 } {
   if (opts?.mode === 'polygon' && opts.polygon && opts.polygon.length >= 3) {
-    const ring = [...opts.polygon];
-    const first = ring[0];
-    const last = ring[ring.length - 1];
-    if (first[0] !== last[0] || first[1] !== last[1]) {
-      ring.push([first[0], first[1]]);
-    }
+    // IVO: area.polygon = [lng,lat][] (kapalı ring şart değil; en az 3 köşe)
+    const ring = opts.polygon.map(([lng, lat]) => [
+      Number(lng),
+      Number(lat),
+    ]);
     const center = polygonCenter(ring);
     return {
-      area: { type: 'polygon', coordinates: ring },
+      area: { type: 'polygon', polygon: ring },
       center,
       radiusM: DEFAULT_RADIUS,
       mode: 'polygon',
