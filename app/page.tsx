@@ -88,6 +88,7 @@ import SoldRentedStudio from '../components/SoldRentedStudio';
 import BatchProductionStudio from '../components/BatchProductionStudio';
 import BadgeCardStudio from '../components/BadgeCardStudio';
 import RankingVisualsStudio from '../components/RankingVisualsStudio';
+import TeamVisualsStudio from '../components/TeamVisualsStudio';
 import BirthdayStudio from '../components/BirthdayStudio';
 import AnniversaryStudio from '../components/AnniversaryStudio';
 import EntryVisualsStudio from '../components/EntryVisualsStudio';
@@ -4077,6 +4078,22 @@ const [username, setUsername] = useState('');
               >
                 <RankingVisualsStudio
                   isActive={activeTab === 'studio-siralama'}
+                  canSave={canSaveVisualAdjustments(role, fullName)}
+                />
+              </div>
+            )}
+
+            {canSeeNimaOnlyTools(fullName) && (
+              <div
+                aria-hidden={activeTab !== 'studio-team-gorselleri'}
+                className={
+                  activeTab === 'studio-team-gorselleri'
+                    ? ''
+                    : 'z-offscreen fixed left-[-100000px] top-0 w-[1280px] pointer-events-none'
+                }
+              >
+                <TeamVisualsStudio
+                  isActive={activeTab === 'studio-team-gorselleri'}
                   canSave={canSaveVisualAdjustments(role, fullName)}
                 />
               </div>

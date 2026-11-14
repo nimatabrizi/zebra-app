@@ -295,7 +295,8 @@ export const AWARD_LAYOUT: RankVisualLayout = {
     nameBaseline: 1148,
     nameSize: 45.4,
     nameTracking: 0.04,
-    nameMaxWidth: 940,
+    /** Sağ alt 360 Group logosuna (~893+) binmesin */
+    nameMaxWidth: 680,
     ruleOffset: 20,
     ruleThickness: 3,
     titleOffset: 56,
@@ -333,13 +334,13 @@ export const QUARTER_LAYOUT: RankVisualLayout = {
 };
 
 /**
- * II./III. Çeyrek Ödülünüz var — ortalı yüz; grid: kafa üstü + çene,
- * burun canvas merkezi. Foto B/W; isim altın.
+ * II./III. Çeyrek Ödülünüz var (tekli) — ortalı yüz; renkli foto.
+ * Takım şeritleri ayrı render’da B/W kalır.
  */
 export const QUARTER_AWARD_LAYOUT: RankVisualLayout = {
   photo: { width: 620, centerX: 540, top: 563 },
   quarterFace: { noseX: 540, headTop: 563, chinY: 832 },
-  grayscalePhoto: true,
+  grayscalePhoto: false,
   nameColor: '#b58b3d',
   text: {
     align: 'center',
@@ -347,7 +348,8 @@ export const QUARTER_AWARD_LAYOUT: RankVisualLayout = {
     nameBaseline: 1145,
     nameSize: 45.4,
     nameTracking: 0.04,
-    nameMaxWidth: 940,
+    /** Sağ alt 360 Group logosuna binmesin */
+    nameMaxWidth: 680,
     ruleOffset: 20,
     ruleThickness: 3,
     titleOffset: 56,
@@ -680,6 +682,83 @@ export function mergeParsedRankings(
   };
 }
 
+/** rawName → berabere/ortak kurallarıyla RankEntry listesi */
+export function entriesFromRawName(
+  periodId: RankPeriodId,
+  category: RankCategoryId,
+  rank: number,
+  rawName: string
+): RankEntry[] {
+  const cleaned = rawName.normalize('NFC').trim();
+  if (!cleaned || !rank) return [];
+  return makeRankPeopleGroups(cleaned).map((people) => ({
+    id: `${periodId}|${category}|${rank}|${people.map((p) => p.key).join('+')}`,
+    periodId,
+    category,
+    rank,
+    rawName: cleaned,
+    people,
+  }));
+}
+
+/**
+ * Aynı dönem+kategori+sıra+rawName satırını değiştir (veya ekle).
+ * prevRawName null ise yeni satır.
+ */
+export function replaceRankLine(
+  entries: RankEntry[],
+  periodId: RankPeriodId,
+  category: RankCategoryId,
+  rank: number,
+  prevRawName: string | null,
+  nextRawName: string
+): RankEntry[] {
+  const prev = (prevRawName || '').normalize('NFC').trim();
+  const next = nextRawName.normalize('NFC').trim();
+  const kept = entries.filter((entry) => {
+    if (entry.periodId !== periodId || entry.category !== category || entry.rank !== rank) {
+      return true;
+    }
+    if (!prev) return true;
+    return entry.rawName.normalize('NFC').trim() !== prev;
+  });
+  const added = next ? entriesFromRawName(periodId, category, rank, next) : [];
+  return dedupeAndSortRankEntries([...kept, ...added]);
+}
+
+/** Tabela satırları: aynı sıra+rawName tek satır */
+export function listRankLines(
+  entries: RankEntry[],
+  periodId: RankPeriodId,
+  category: RankCategoryId
+): { rank: number; rawName: string; peopleCount: number }[] {
+  const map = new Map<string, { rank: number; rawName: string; peopleCount: number }>();
+  for (const entry of entries) {
+    if (entry.periodId !== periodId || entry.category !== category) continue;
+    const key = `${entry.rank}|${entry.rawName}`;
+    const hit = map.get(key);
+    if (hit) hit.peopleCount += entry.people.length;
+    else {
+      map.set(key, {
+        rank: entry.rank,
+        rawName: entry.rawName,
+        peopleCount: entry.people.length,
+      });
+    }
+  }
+  return [...map.values()].sort(
+    (a, b) => a.rank - b.rank || a.rawName.localeCompare(b.rawName, 'tr')
+  );
+}
+
+export function withRebuiltSheets(entries: RankEntry[], warnings: string[] = []): ParsedRankings {
+  return {
+    entries: dedupeAndSortRankEntries(entries),
+    sheets: sheetsSummaryFromEntries(entries),
+    warnings,
+  };
+}
+
 /** Önerilen Excel biçimi — her dönem için ayrı sayfa, 3 blok. */
 export function buildRankingTemplateRows(
   periodId: RankPeriodId,
@@ -701,6 +780,52 @@ export function buildRankingTemplateRows(
     rows.push(['', '']);
   }
   return rows;
+}
+
+/** Tüm dönemler tek tabloda — kapsamlı dışa aktarım. */
+export function buildRankingFlatRows(entries: RankEntry[]): (string | number)[][] {
+  const rows: (string | number)[][] = [['Dönem', 'Kategori', 'Sıra', 'İsim / Takım']];
+  const written = new Set<string>();
+  const sorted = dedupeAndSortRankEntries(entries);
+  for (const entry of sorted) {
+    const rowKey = `${entry.periodId}|${entry.category}|${entry.rank}|${entry.rawName}`;
+    if (written.has(rowKey)) continue;
+    written.add(rowKey);
+    const period = RANK_PERIODS.find((p) => p.id === entry.periodId);
+    const category = RANK_CATEGORIES.find((c) => c.id === entry.category);
+    rows.push([
+      period?.label || entry.periodId,
+      category?.label || entry.category,
+      entry.rank,
+      entry.rawName,
+    ]);
+  }
+  return rows;
+}
+
+export type RankingExportSheet = {
+  name: string;
+  rows: (string | number)[][];
+  cols: { wch: number }[];
+};
+
+/** Dönem sayfaları + “Tümü” özet sayfası. */
+export function buildRankingExportSheets(entries: RankEntry[]): RankingExportSheet[] {
+  const sheets: RankingExportSheet[] = [
+    {
+      name: 'Tümü',
+      rows: buildRankingFlatRows(entries),
+      cols: [{ wch: 18 }, { wch: 28 }, { wch: 8 }, { wch: 42 }],
+    },
+  ];
+  for (const period of RANK_PERIODS) {
+    sheets.push({
+      name: period.sheetName,
+      rows: buildRankingTemplateRows(period.id, entries),
+      cols: [{ wch: 8 }, { wch: 38 }],
+    });
+  }
+  return sheets;
 }
 
 // ---------------------------------------------------------------------------
@@ -1130,11 +1255,32 @@ function drawRankNumber(ctx: CanvasRenderingContext2D, rank: number, layout: Ran
   ctx.restore();
 }
 
+function applyNameGlow(ctx: CanvasRenderingContext2D, glow: NameGlowAdjust | undefined) {
+  if (!glow || glow.blur <= 0 || glow.opacity <= 0) {
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    return;
+  }
+  const hex = glow.color.trim();
+  const m = hex.match(/^#([0-9a-f]{6})$/i);
+  const n = m ? parseInt(m[1]!, 16) : 0;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  ctx.shadowColor = `rgba(${r},${g},${b},${glow.opacity})`;
+  ctx.shadowBlur = Math.max(0, glow.blur);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+}
+
 function drawNameBlock(
   ctx: CanvasRenderingContext2D,
   name: string,
   title: string,
-  layout: RankVisualLayout
+  layout: RankVisualLayout,
+  nameGlow?: NameGlowAdjust
 ) {
   const t = layout.text;
   const nameColor = layout.nameColor || '#FFFFFF';
@@ -1166,13 +1312,21 @@ function drawNameBlock(
   const ruleLeft = t.align === 'left' ? t.x - 2 : t.x - ruleWidth / 2;
   const ruleTop = t.nameBaseline + t.ruleOffset;
 
+  // İsim: outer glow (çeyrek ödül); çizgi + unvan glow’suz
+  applyNameGlow(ctx, nameGlow);
+  ctx.fillStyle = nameColor;
   ctx.font = `${nameSize}px "${RANK_FONTS.name.family}"`;
   lines.forEach((line, index) => {
     const baseline = t.nameBaseline - (lines.length - 1 - index) * lineHeight;
     const width = nameWidths[index]!;
     const x = t.align === 'left' ? t.x + inkLeft(ctx, line) : t.x - width / 2;
-    fillTracked(ctx, line, x, baseline, nameTrack);
+    // Birkaç pass — canvas shadow zayıf kalmasın
+    const passes = nameGlow && nameGlow.blur >= 24 ? 3 : nameGlow && nameGlow.blur > 0 ? 2 : 1;
+    for (let p = 0; p < passes; p += 1) {
+      fillTracked(ctx, line, x, baseline, nameTrack);
+    }
   });
+  applyNameGlow(ctx, undefined);
 
   ctx.fillStyle = nameColor;
   ctx.fillRect(Math.round(ruleLeft), ruleTop, Math.round(ruleWidth + (t.align === 'left' ? 2 : 0)), t.ruleThickness);
@@ -1204,6 +1358,40 @@ async function drawQuarterMedal(
   ctx.drawImage(img, drawX, drawY, img.naturalWidth * scale, img.naturalHeight * scale);
 }
 
+/** Çeyrek Ödülünüz var — isim outer glow (II + III global) */
+export type NameGlowAdjust = {
+  blur: number;
+  opacity: number;
+  color: string;
+};
+
+export const QUARTER_AWARD_NAME_GLOW_KEY = 'shared|quarter-award|name-glow';
+export const DEFAULT_QUARTER_AWARD_NAME_GLOW: NameGlowAdjust = {
+  blur: 14,
+  opacity: 0.55,
+  color: '#000000',
+};
+export const QUARTER_AWARD_NAME_GLOW_BLUR_MAX = 80;
+
+export function normalizeNameGlow(
+  raw: unknown,
+  fallback: NameGlowAdjust = DEFAULT_QUARTER_AWARD_NAME_GLOW,
+  blurMax = QUARTER_AWARD_NAME_GLOW_BLUR_MAX
+): NameGlowAdjust {
+  if (!raw || typeof raw !== 'object') return { ...fallback };
+  const obj = raw as Partial<NameGlowAdjust>;
+  const blur = Number(obj.blur);
+  const opacity = Number(obj.opacity);
+  return {
+    blur: Number.isFinite(blur) ? Math.max(0, Math.min(blurMax, blur)) : fallback.blur,
+    opacity: Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : fallback.opacity,
+    color:
+      typeof obj.color === 'string' && /^#[0-9a-f]{6}$/i.test(obj.color.trim())
+        ? obj.color.trim()
+        : fallback.color,
+  };
+}
+
 export type RenderJob = {
   kind: RankOutputKind;
   templateUrl: string;
@@ -1212,6 +1400,8 @@ export type RenderJob = {
   periodId?: RankPeriodId;
   /** RankAdjust veya eski tek PhotoAdjust */
   adjust?: RankAdjust | PhotoAdjust;
+  /** Çeyrek ödül isim glow (global) */
+  nameGlow?: NameGlowAdjust;
 };
 
 function isQuarterPeriod(periodId?: RankPeriodId): boolean {
@@ -1257,7 +1447,17 @@ export async function renderRankVisual(job: RenderJob): Promise<HTMLCanvasElemen
     if (isQuarterPeriod(job.periodId)) await drawQuarterMedal(ctx, job.rank, layout, job.periodId);
     else drawRankNumber(ctx, job.rank, layout);
   }
-  drawNameBlock(ctx, rankDisplayName(job.people), rankTitle(job.people), layout);
+  const useNameGlow =
+    job.kind === 'award' && isQuarterPeriod(job.periodId)
+      ? normalizeNameGlow(job.nameGlow)
+      : undefined;
+  drawNameBlock(
+    ctx,
+    rankDisplayName(job.people),
+    rankTitle(job.people),
+    layout,
+    useNameGlow
+  );
   return canvas;
 }
 

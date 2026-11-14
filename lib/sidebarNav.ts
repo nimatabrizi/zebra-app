@@ -62,6 +62,7 @@ export const CORE_LIVE_TABS = [
   'studio-toplu',
   'studio-yaka-karti',
   'studio-siralama',
+  'studio-team-gorselleri',
   'studio-dogum-gunu',
   'studio-yil-donumu',
   'studio-giris',
@@ -102,6 +103,7 @@ function sharedProductModules(options?: {
   includeTopluUretim?: boolean;
   includeYakaKarti?: boolean;
   includeSiralama?: boolean;
+  includeTeamGorselleri?: boolean;
   includeDogumGunu?: boolean;
   includeGiris?: boolean;
   includeVefat?: boolean;
@@ -111,6 +113,7 @@ function sharedProductModules(options?: {
   const includeTopluUretim = options?.includeTopluUretim === true;
   const includeYakaKarti = options?.includeYakaKarti === true;
   const includeSiralama = options?.includeSiralama === true;
+  const includeTeamGorselleri = options?.includeTeamGorselleri === true;
   const includeDogumGunu = options?.includeDogumGunu === true;
   const includeGiris = options?.includeGiris === true;
   const includeVefat = options?.includeVefat === true;
@@ -124,6 +127,9 @@ function sharedProductModules(options?: {
       : []),
     ...(includeSiralama
       ? [{ id: 'studio-siralama', label: 'Sıralama Görselleri', isEnabled: true }]
+      : []),
+    ...(includeTeamGorselleri
+      ? [{ id: 'studio-team-gorselleri', label: 'Team Görselleri', isEnabled: true }]
       : []),
     ...(includeDogumGunu
       ? [{ id: 'studio-dogum-gunu', label: 'Doğum Günü', isEnabled: true }]
@@ -287,6 +293,7 @@ export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
       includeTopluUretim: nima,
       includeYakaKarti: personelStudios,
       includeSiralama: nima,
+      includeTeamGorselleri: nima,
       includeDogumGunu: personelStudios,
       includeGiris: personelStudios,
       includeVefat: personelStudios,
@@ -329,6 +336,7 @@ export function buildManagerNav(
       includeTopluUretim: nima,
       includeYakaKarti: personelStudios,
       includeSiralama: nima,
+      includeTeamGorselleri: nima,
       includeDogumGunu: personelStudios,
       includeGiris: personelStudios,
       includeVefat: personelStudios,
@@ -418,7 +426,12 @@ export function isLiveContentTab(
   if (id === 'cekim-raporu' && role === 'broker') return true;
   if (id === 'studio-yeni-portfoy') return true;
   if (id === 'studio-satildi-kiralandi') return true;
-  if (id === 'studio-toplu' || id === 'studio-siralama' || id === 'studio-hos-geldin') {
+  if (
+    id === 'studio-toplu' ||
+    id === 'studio-siralama' ||
+    id === 'studio-team-gorselleri' ||
+    id === 'studio-hos-geldin'
+  ) {
     return canSeeNimaOnlyTools(fullName);
   }
   if (

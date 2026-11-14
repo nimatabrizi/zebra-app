@@ -8,8 +8,9 @@ const TITLE_ALIASES: Record<string, string> = {
   danışman: DEFAULT_CONSULTANT_TITLE,
   personel: 'Personel',
   pilot: 'Pilot',
-  'saha direktoru': 'Saha Direktörü',
-  'saha direktörü': 'Saha Direktörü',
+  // Görsellerde saha direktörü de danışman ünvanıyla çıkar
+  'saha direktoru': DEFAULT_CONSULTANT_TITLE,
+  'saha direktörü': DEFAULT_CONSULTANT_TITLE,
 };
 
 function normalizeKey(value: string): string {

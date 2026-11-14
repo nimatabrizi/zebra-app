@@ -5,27 +5,37 @@ import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
 import {
   Award,
-  ChevronLeft,
   Download,
   FileSpreadsheet,
   FileText,
   FlipHorizontal2,
   ImageOff,
+  LayoutList,
   Loader2,
+  Presentation,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Trophy,
   Upload,
   Users,
   X,
 } from 'lucide-react';
 import RankingTeamStripStudio from './RankingTeamStripStudio';
+import RankingRankingsBoard from './RankingRankingsBoard';
+import RankingPresentationStudio from './RankingPresentationStudio';
 import { AlignGridControls, AlignGridOverlay } from './RankingAlignGrid';
 import { supabase } from '../supabaseClient';
 import { resolveConsultantTitle } from '../lib/consultantTitles';
 import { measureFace } from '../lib/girisVisuals';
 import { resolveConsultantPhotoUrl, toStudioDisplayName } from '../lib/studioAssets';
-import { toConsultantPhotoSlug } from '../lib/formatName';
+import { toConsultantPhotoSlug, toTitleCaseName } from '../lib/formatName';
+import {
+  PRESENTATION_ODUL_XLSX_URL,
+  parseOdulWorkbook,
+  resolveTeamDef,
+} from '../lib/presentationOdulWorkbook';
+import type { PresentationTeamResolve } from '../lib/rankingPresentation';
 import { AdjustSaveActions, useUnsavedChangesGuard } from './AdjustSaveControls';
 import { loadRankingWorkbook, saveRankingWorkbook } from '../lib/rankingWorkbook';
 import { sameAdjust, useSavedAdjustments } from '../lib/visualAdjustments';
@@ -39,30 +49,37 @@ import {
   type AlignGridKind,
 } from '../lib/rankingAlignGrid';
 import {
-  CERTIFICATE_CATEGORIES,
   certificateTemplateFor,
   certificateToPdfBlob,
-  isCertificateEligible,
+  isCertificatePeriod,
+  loadCertificateReport,
   renderCertificate,
+  sortAchievements,
+  type CertificateReportEntry,
 } from '../lib/rankingCertificate';
 import {
   DEFAULT_PHOTO_ADJUST,
+  DEFAULT_QUARTER_AWARD_NAME_GLOW,
+  QUARTER_AWARD_NAME_GLOW_BLUR_MAX,
+  QUARTER_AWARD_NAME_GLOW_KEY,
   RANK_CANVAS,
   RANK_CATEGORIES,
   RANK_PERIODS,
   RANK_TEMPLATES,
-  buildRankingTemplateRows,
+  buildRankingExportSheets,
   canvasToBlob,
   defaultRankAdjust,
   loadRankImage,
   measureOpaqueBox,
   mergeParsedRankings,
+  normalizeNameGlow,
   normalizeRankAdjust,
   parseRankingWorkbook,
   rankFileSlug,
   renderRankVisual,
   templateFor,
   turkishRankSuffix,
+  type NameGlowAdjust,
   type ParsedRankings,
   type PhotoAdjust,
   type RankAdjust,
@@ -76,9 +93,12 @@ import {
   TEAM_DEFS,
   matchTeamDef,
   orderTeamMembers,
+  TEAM_STRIP_EXPORT_SCALE,
   renderTeamStrip,
+  resolveTeamAwareTitle,
   teamFileSlug,
   teamSettingsFromSaved,
+  visualPeopleFileSlug,
   type TeamDef,
   type TeamMemberInput,
 } from '../lib/rankingTeamVisuals';
@@ -118,13 +138,14 @@ type OutputItem = {
 type CertItem = {
   key: string;
   periodId: RankPeriodId;
-  category: RankCategoryId;
-  rank: number;
-  people: ResolvedPerson[];
+  displayName: string;
+  achievements: string[];
   templateUrl: string;
   label: string;
   detail: string;
   pdfPath: string;
+  kind?: 'person' | 'team';
+  logoUrl?: string | null;
 };
 
 const ADJUST_STORAGE_KEY = 'zebra-siralama-photo-adjust-v2';
@@ -192,8 +213,13 @@ async function toRenderPeople(people: ResolvedPerson[]): Promise<RenderPerson[]>
   );
 }
 
-async function renderItem(item: OutputItem, adjust: RankAdjust) {
+async function renderItem(
+  item: OutputItem,
+  adjust: RankAdjust,
+  nameGlow?: NameGlowAdjust
+) {
   if (!item.templateUrl) throw new Error('Template bekleniyor');
+  const period = RANK_PERIODS.find((p) => p.id === item.periodId);
   return renderRankVisual({
     kind: item.kind,
     templateUrl: item.templateUrl,
@@ -201,6 +227,10 @@ async function renderItem(item: OutputItem, adjust: RankAdjust) {
     periodId: item.periodId,
     people: await toRenderPeople(item.people),
     adjust,
+    nameGlow:
+      item.kind === 'award' && period?.kind === 'quarter'
+        ? normalizeNameGlow(nameGlow)
+        : undefined,
   });
 }
 
@@ -238,21 +268,6 @@ function downloadBlob(blob: Blob, fileName: string) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-function periodReadyCount(periodId: RankPeriodId) {
-  const set = RANK_TEMPLATES[periodId];
-  return RANK_CATEGORIES.filter((c) => set.rank[c.id]).length + (set.award ? 1 : 0);
-}
-
-/** Çeyrek: ciro+portföy+işlem (+ödül varsa). Ay: 3 dal + ödül. */
-function periodReadyTarget(periodId: RankPeriodId) {
-  const set = RANK_TEMPLATES[periodId];
-  const period = RANK_PERIODS.find((p) => p.id === periodId);
-  if (period?.kind === 'quarter') {
-    return 3 + (set.award ? 1 : 0);
-  }
-  return 4;
-}
-
 export default function RankingVisualsStudio({
   isActive = true,
   canSave = false,
@@ -269,8 +284,18 @@ export default function RankingVisualsStudio({
   const [parsing, setParsing] = useState(false);
   const persistSkipRef = useRef(true);
 
-  /** null = dönem listesi; dolu = o dönemin tabelası */
   const [activePeriod, setActivePeriod] = useState<RankPeriodId | null>(null);
+  /** Sıralama tabelası | görsel üretim | sunum | sunum 2 | sunum 3 */
+  const [studioMode, setStudioMode] = useState<
+    | 'rankings'
+    | 'visuals'
+    | 'presentation'
+    | 'presentation2'
+    | 'presentation3'
+  >('rankings');
+  const [odulParsed, setOdulParsed] = useState<ParsedRankings | null>(null);
+  const [odulLoading, setOdulLoading] = useState(false);
+  const [odulError, setOdulError] = useState('');
   /** Dönem içinden Takım Verimliliği şerit editörü */
   const [teamStripEdit, setTeamStripEdit] = useState<string | null>(null);
   const [personQuery, setPersonQuery] = useState('');
@@ -280,7 +305,9 @@ export default function RankingVisualsStudio({
     ready: adjustmentsReady,
     save: saveAdjust,
     remove: removeAdjust,
-  } = useSavedAdjustments<RankAdjust | PhotoAdjust | Record<string, unknown>>('siralama', {
+  } = useSavedAdjustments<
+    RankAdjust | PhotoAdjust | NameGlowAdjust | Record<string, unknown>
+  >('siralama', {
     legacyStorageKey: ADJUST_STORAGE_KEY,
     canSave,
   });
@@ -290,7 +317,12 @@ export default function RankingVisualsStudio({
   const [previewReady, setPreviewReady] = useState(false);
   const [gridKind, setGridKind] = useState<AlignGridKind | null>(null);
   const [gridDraft, setGridDraft] = useState<AlignGrid>({ ...DEFAULT_ALIGN_GRID });
+  const [nameGlowDraft, setNameGlowDraft] = useState<NameGlowAdjust>({
+    ...DEFAULT_QUARTER_AWARD_NAME_GLOW,
+  });
   const editorHydratedKey = useRef<string | null>(null);
+  const nameGlowRef = useRef(nameGlowDraft);
+  nameGlowRef.current = nameGlowDraft;
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{
     pointerId: number;
@@ -301,6 +333,7 @@ export default function RankingVisualsStudio({
   } | null>(null);
   const [exporting, setExporting] = useState<{ current: number; total: number } | null>(null);
   const [downloadingKey, setDownloadingKey] = useState('');
+  const [certReport, setCertReport] = useState<CertificateReportEntry[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -351,9 +384,87 @@ export default function RankingVisualsStudio({
       if (stored?.parsed.entries.length) {
         setParsed(stored.parsed);
         setFileName(stored.fileName || 'Kayıtlı Excel');
+        const firstWithData = RANK_PERIODS.find((p) =>
+          stored.parsed.entries.some((e) => e.periodId === p.id)
+        );
+        if (firstWithData) setActivePeriod(firstWithData.id);
       }
       setExcelHydrated(true);
       persistSkipRef.current = false;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Sunum görselleri 2 — birleşik ödül Excel’i (ayrı kaynak) */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setOdulLoading(true);
+      setOdulError('');
+      try {
+        const res = await fetch(PRESENTATION_ODUL_XLSX_URL);
+        if (!res.ok) throw new Error(`Excel yüklenemedi (${res.status})`);
+        const buf = await res.arrayBuffer();
+        const XLSX = await import('xlsx');
+        const workbook = XLSX.read(buf, { type: 'array' });
+        const result = parseOdulWorkbook(workbook, (sheetName) =>
+          XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName]!, {
+            header: 1,
+            defval: '',
+            raw: true,
+          })
+        );
+        if (cancelled) return;
+        setOdulParsed(result);
+        if (result.warnings.length) {
+          console.warn('[sunum2]', result.warnings.join('; '));
+        }
+      } catch (error) {
+        console.warn('[sunum2] excel', error);
+        if (!cancelled) {
+          setOdulError(
+            error instanceof Error ? error.message : 'Birleşik ödül Excel’i okunamadı'
+          );
+          setOdulParsed(null);
+        }
+      } finally {
+        if (!cancelled) setOdulLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const resolveTeam = useCallback((name: string, key: string): PresentationTeamResolve => {
+    const def = resolveTeamDef(name) || TEAM_DEFS.find((t) => t.id === key) || null;
+    return {
+      key: def?.id || key,
+      displayName: def?.displayName || toTitleCaseName(name),
+      logoUrl: def?.logoUrl || null,
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!parsed?.entries.length || activePeriod) return;
+    const first = RANK_PERIODS.find((p) =>
+      parsed.entries.some((e) => e.periodId === p.id)
+    );
+    if (first) setActivePeriod(first.id);
+  }, [parsed, activePeriod]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const report = await loadCertificateReport();
+        if (!cancelled) setCertReport(report.certificates);
+      } catch (error) {
+        console.warn('[sertifika] rapor yüklenemedi', error);
+        if (!cancelled) setCertReport([]);
+      }
     })();
     return () => {
       cancelled = true;
@@ -377,10 +488,14 @@ export default function RankingVisualsStudio({
     (name: string, key: string): ResolvedPerson => {
       const profile = matchProfile(name, profiles);
       const baseName = profile?.name || name;
+      const slug = profile?.slug || key;
       return {
-        key,
+        key: slug,
         displayName: toStudioDisplayName(baseName),
-        title: profile?.title || resolveConsultantTitle(baseName, null),
+        title: resolveTeamAwareTitle(
+          slug,
+          profile?.title || resolveConsultantTitle(baseName, null)
+        ),
         photoUrl: resolveConsultantPhotoUrl(baseName, photoSlugs),
       };
     },
@@ -417,17 +532,20 @@ export default function RankingVisualsStudio({
     }
   };
 
-  const downloadSampleExcel = async () => {
+  const downloadRankingsExcel = async () => {
     const XLSX = await import('xlsx');
     const workbook = XLSX.utils.book_new();
-    for (const period of RANK_PERIODS) {
-      const sheet = XLSX.utils.aoa_to_sheet(
-        buildRankingTemplateRows(period.id, parsed?.entries || [])
-      );
-      sheet['!cols'] = [{ wch: 8 }, { wch: 38 }];
-      XLSX.utils.book_append_sheet(workbook, sheet, period.sheetName);
+    const sheets = buildRankingExportSheets(parsed?.entries || []);
+    for (const { name, rows, cols } of sheets) {
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      sheet['!cols'] = cols;
+      XLSX.utils.book_append_sheet(workbook, sheet, name);
     }
-    XLSX.writeFile(workbook, 'Siralamalar_Sablon.xlsx');
+    const stamp = new Date().toISOString().slice(0, 10);
+    const outName = parsed?.entries.length
+      ? `Siralamalar_2026_${stamp}.xlsx`
+      : 'Siralamalar_Sablon.xlsx';
+    XLSX.writeFile(workbook, outName);
   };
 
   const entries = useMemo(() => parsed?.entries || [], [parsed]);
@@ -470,7 +588,7 @@ export default function RankingVisualsStudio({
         .map((p) => ({
           key: p.slug,
           displayName: toStudioDisplayName(p.name),
-          title: p.title,
+          title: resolveTeamAwareTitle(p.slug, p.title),
           photoUrl: resolveConsultantPhotoUrl(p.name, photoSlugs),
         }));
       if (!raw.length) continue;
@@ -506,7 +624,7 @@ export default function RankingVisualsStudio({
             ),
             label: names,
             detail: `${period.label} · ${categoryShort(entry.category)} · ${rankText(entry.rank)}`,
-            zipPath: `${period.fileSlug}/${entry.category}/${String(entry.rank).padStart(2, '0')}-${rankFileSlug(names)}.png`,
+            zipPath: `${period.fileSlug}/${entry.category}/${String(entry.rank).padStart(2, '0')}-${visualPeopleFileSlug(people)}.png`,
           });
         }
       }
@@ -539,7 +657,7 @@ export default function RankingVisualsStudio({
             detail: `${period.label} · Ödülünüz var · ${group
               .map((e) => `${categoryShort(e.category)} ${rankText(e.rank)}`)
               .join(', ')}`,
-            zipPath: `${period.fileSlug}/odulunuz-var/${rankFileSlug(names)}.png`,
+            zipPath: `${period.fileSlug}/odulunuz-var/${visualPeopleFileSlug(people)}.png`,
           });
         }
 
@@ -592,33 +710,42 @@ export default function RankingVisualsStudio({
     [buildItems, filteredPeriodEntries]
   );
   const certItems = useMemo((): CertItem[] => {
-    if (!activePeriod || !certificateTemplateFor(activePeriod)) return [];
-    const templateUrl = certificateTemplateFor(activePeriod)!;
+    if (!activePeriod || !isCertificatePeriod(activePeriod)) return [];
+    const templateUrl = certificateTemplateFor(activePeriod);
+    if (!templateUrl) return [];
     const period = RANK_PERIODS.find((p) => p.id === activePeriod)!;
     const out: CertItem[] = [];
-    for (const entry of filteredPeriodEntries) {
-      if (!isCertificateEligible(entry.periodId, entry.category, entry.rank)) continue;
-      const people = entry.people.map((p) => resolvePerson(p.name, p.key));
-      const names = people.map((p) => p.displayName).join(' & ');
+    for (const entry of certReport) {
+      if (entry.periodId !== activePeriod) continue;
+      if (needle && !entry.displayName.toLocaleLowerCase('tr-TR').includes(needle)) continue;
+      const achievements = sortAchievements(entry.achievements);
+      const kind = entry.kind === 'team' ? 'team' : 'person';
+      const slug = rankFileSlug(entry.displayName);
       out.push({
-        key: `cert|${entry.id}`,
+        key: `cert|${entry.periodId}|${kind}|${entry.teamId || entry.displayName}`,
         periodId: entry.periodId,
-        category: entry.category,
-        rank: entry.rank,
-        people,
+        displayName: entry.displayName,
+        achievements,
         templateUrl,
-        label: names,
-        detail: `${period.label} · ${categoryShort(entry.category)} · ${rankText(entry.rank)} · sertifika`,
-        pdfPath: `${period.fileSlug}/sertifika/${entry.category}/${String(entry.rank).padStart(2, '0')}-${rankFileSlug(names)}.pdf`,
+        label: entry.displayName,
+        detail:
+          kind === 'team'
+            ? `${period.label} · takım · sertifika`
+            : `${period.label} · ${achievements.length} başarı · sertifika`,
+        pdfPath:
+          kind === 'team'
+            ? `${period.fileSlug}/sertifika/takim/${slug}.pdf`
+            : `${period.fileSlug}/sertifika/${slug}.pdf`,
+        kind,
+        logoUrl: entry.logoUrl ?? null,
       });
     }
     return out.sort(
       (a, b) =>
-        CERTIFICATE_CATEGORIES.indexOf(a.category) - CERTIFICATE_CATEGORIES.indexOf(b.category) ||
-        a.rank - b.rank ||
+        (a.kind === 'team' ? 1 : 0) - (b.kind === 'team' ? 1 : 0) ||
         a.label.localeCompare(b.label, 'tr')
     );
-  }, [activePeriod, filteredPeriodEntries, resolvePerson]);
+  }, [activePeriod, certReport, needle]);
   const items = useMemo(() => [...rankItems, ...awardItems], [rankItems, awardItems]);
   const readyItems = useMemo(() => items.filter((item) => item.templateUrl), [items]);
   const readyRankItems = useMemo(() => rankItems.filter((i) => i.templateUrl), [rankItems]);
@@ -671,12 +798,23 @@ export default function RankingVisualsStudio({
           logoGlow: settings.logoGlow,
           logoUrl: item.teamDef.logoUrl,
           grayscale: true,
+          renderScale: TEAM_STRIP_EXPORT_SCALE,
         });
       }
-      return renderItem(item, adjustOverride || adjustFor(item));
+      return renderItem(
+        item,
+        adjustOverride || adjustFor(item),
+        nameGlowRef.current
+      );
     },
     [adjustments, adjustFor]
   );
+
+  useEffect(() => {
+    setNameGlowDraft(
+      normalizeNameGlow(adjustments[QUARTER_AWARD_NAME_GLOW_KEY], DEFAULT_QUARTER_AWARD_NAME_GLOW)
+    );
+  }, [adjustments]);
 
   // Sürükleme sırasında kare kaçırmamak için: çizim sürerken gelen istek
   // biriktirilir, çizim bitince en güncel ayarla bir kez daha çizilir.
@@ -712,7 +850,7 @@ export default function RankingVisualsStudio({
     if (!item) return;
     state.busy = true;
     try {
-      const canvas = await renderItem(item, draftRef.current);
+      const canvas = await renderItem(item, draftRef.current, nameGlowRef.current);
       const target = previewCanvasRef.current;
       if (target && editingRef.current === item) {
         target.getContext('2d')?.drawImage(canvas, 0, 0, target.width, target.height);
@@ -731,7 +869,19 @@ export default function RankingVisualsStudio({
 
   useEffect(() => {
     if (editing) void paintPreview();
-  }, [editing, draft, paintPreview]);
+  }, [editing, draft, nameGlowDraft, paintPreview]);
+
+  const savedNameGlow = normalizeNameGlow(
+    adjustments[QUARTER_AWARD_NAME_GLOW_KEY],
+    DEFAULT_QUARTER_AWARD_NAME_GLOW
+  );
+  const nameGlowDirty = !sameAdjust(nameGlowDraft, savedNameGlow);
+  const saveNameGlow = async () => {
+    await saveAdjust(QUARTER_AWARD_NAME_GLOW_KEY, {
+      ...nameGlowDraft,
+      color: '#000000',
+    });
+  };
 
   const openEditor = (item: OutputItem) => {
     if (item.teamId) {
@@ -871,10 +1021,10 @@ export default function RankingVisualsStudio({
     try {
       const canvas = await renderCertificate({
         periodId: item.periodId,
-        category: item.category,
-        rank: item.rank,
-        displayName: item.label,
+        displayName: item.displayName,
+        achievements: item.achievements,
         templateUrl: item.templateUrl,
+        logoUrl: item.logoUrl,
       });
       downloadBlob(await certificateToPdfBlob(canvas), item.pdfPath.split('/').join('_'));
     } catch (error) {
@@ -894,10 +1044,10 @@ export default function RankingVisualsStudio({
         const item = certItems[i]!;
         const canvas = await renderCertificate({
           periodId: item.periodId,
-          category: item.category,
-          rank: item.rank,
-          displayName: item.label,
+          displayName: item.displayName,
+          achievements: item.achievements,
           templateUrl: item.templateUrl,
+          logoUrl: item.logoUrl,
         });
         root.file(item.pdfPath, await certificateToPdfBlob(canvas));
         setExporting({ current: i + 1, total: certItems.length });
@@ -918,46 +1068,166 @@ export default function RankingVisualsStudio({
     [rankItems]
   );
 
-  return (
-    <div className="panel-enter space-y-10">
-      <header>
-        <p className="z-page-kicker">Zebra Studio · Ödül ve sıralama</p>
-        <h1 className="z-page-title mt-3">Sıralama Görselleri</h1>
-        <p className="z-page-sub">
-          Excel yükleyin, döneme girin, tabeladan kontrol edin; sıralama görselleri ile kişi ve
-          takım &quot;Ödülünüz var&quot; görsellerini indirin.
-        </p>
-      </header>
+  const periodScroller = parsed?.entries.length ? (
+    <div className="-mx-1 overflow-x-auto px-1 pb-1">
+      <div className="flex w-max gap-1.5 sm:gap-2">
+        {RANK_PERIODS.map((period) => {
+          const count = periodCounts[period.id] || 0;
+          const selected = activePeriod === period.id;
+          return (
+            <button
+              key={period.id}
+              type="button"
+              disabled={!count}
+              onClick={() => {
+                setActivePeriod(period.id);
+                setPersonQuery('');
+              }}
+              className={`rounded-full px-3.5 py-2 text-[13px] font-medium transition-all duration-200 sm:px-4 ${
+                selected
+                  ? 'bg-[var(--z-inverse)] text-[var(--z-inverse-fg)] shadow-[var(--z-shadow-soft)]'
+                  : count
+                    ? 'bg-[color-mix(in_srgb,var(--z-elevated)_80%,transparent)] text-[var(--z-fg)] hover:bg-[var(--z-hover-strong)]'
+                    : 'cursor-not-allowed bg-transparent text-[var(--z-muted-2)] opacity-45'
+              }`}
+            >
+              <span>{period.kind === 'quarter' ? period.label.replace(/^2026\s+/, '') : period.label}</span>
+              {count ? (
+                <span className={`ml-1.5 tabular-nums ${selected ? 'opacity-70' : 'text-[var(--z-muted)]'}`}>
+                  {count}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
 
-      <section className="z-card p-6 sm:p-8">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
-          <div className="flex min-w-0 items-start gap-4">
-            <span className="z-btn-icon h-12 w-12 shrink-0">
-              <FileSpreadsheet className="h-5 w-5" strokeWidth={1.6} />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[17px] font-medium text-[var(--z-fg)]">Sıralama Excel&apos;i</p>
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-3 sm:justify-end">
+  return (
+    <div className="panel-enter space-y-7 sm:space-y-9">
+      <header className="space-y-4">
+        <div>
+          <p className="z-page-kicker">Zebra Studio · Ödül ve sıralama</p>
+          <h1 className="z-page-title mt-3">Sıralama Görselleri</h1>
+          <p className="z-page-sub max-w-2xl">
+            Tabelayı incele ve düzenle; ardından görselleri hazırla ve indir.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            className="inline-flex w-full rounded-2xl border border-[var(--z-border)] bg-[color-mix(in_srgb,var(--z-elevated)_70%,transparent)] p-1 sm:w-auto"
+            role="tablist"
+            aria-label="Sıralama görünümü"
+          >
             <button
               type="button"
-              onClick={downloadSampleExcel}
-              className="z-btn-ghost inline-flex items-center gap-2 px-5 py-3 text-[13px]"
+              role="tab"
+              aria-selected={studioMode === 'rankings'}
+              onClick={() => setStudioMode('rankings')}
+              className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-all sm:flex-none ${
+                studioMode === 'rankings'
+                  ? 'bg-[var(--z-surface)] text-[var(--z-fg)] shadow-[var(--z-shadow-soft)]'
+                  : 'text-[var(--z-muted)] hover:text-[var(--z-fg)]'
+              }`}
             >
-              <Download className="h-4 w-4" strokeWidth={1.8} />
-              {parsed ? 'Şablon olarak indir' : 'Boş şablon indir'}
+              <LayoutList className="h-4 w-4" strokeWidth={1.8} />
+              Sıralamaları görüntüle
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={studioMode === 'visuals'}
+              onClick={() => setStudioMode('visuals')}
+              disabled={!parsed?.entries.length}
+              className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-all disabled:opacity-40 sm:flex-none ${
+                studioMode === 'visuals'
+                  ? 'bg-[var(--z-surface)] text-[var(--z-fg)] shadow-[var(--z-shadow-soft)]'
+                  : 'text-[var(--z-muted)] hover:text-[var(--z-fg)]'
+              }`}
+            >
+              <Sparkles className="h-4 w-4" strokeWidth={1.8} />
+              Görsel hazırla
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={studioMode === 'presentation'}
+              onClick={() => setStudioMode('presentation')}
+              disabled={!parsed?.entries.length}
+              className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-all disabled:opacity-40 sm:flex-none ${
+                studioMode === 'presentation'
+                  ? 'bg-[var(--z-surface)] text-[var(--z-fg)] shadow-[var(--z-shadow-soft)]'
+                  : 'text-[var(--z-muted)] hover:text-[var(--z-fg)]'
+              }`}
+            >
+              <Presentation className="h-4 w-4" strokeWidth={1.8} />
+              Sunum görselleri
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={studioMode === 'presentation2'}
+              onClick={() => setStudioMode('presentation2')}
+              className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-all sm:flex-none ${
+                studioMode === 'presentation2'
+                  ? 'bg-[var(--z-surface)] text-[var(--z-fg)] shadow-[var(--z-shadow-soft)]'
+                  : 'text-[var(--z-muted)] hover:text-[var(--z-fg)]'
+              }`}
+            >
+              <Trophy className="h-4 w-4" strokeWidth={1.8} />
+              Sunum görselleri 2
+              {odulLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin opacity-70" />
+              ) : odulParsed?.entries.length ? (
+                <span className="tabular-nums text-[11px] opacity-70">
+                  {odulParsed.entries.length}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={studioMode === 'presentation3'}
+              onClick={() => setStudioMode('presentation3')}
+              className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-all sm:flex-none ${
+                studioMode === 'presentation3'
+                  ? 'bg-[var(--z-surface)] text-[var(--z-fg)] shadow-[var(--z-shadow-soft)]'
+                  : 'text-[var(--z-muted)] hover:text-[var(--z-fg)]'
+              }`}
+            >
+              <Presentation className="h-4 w-4" strokeWidth={1.8} />
+              Sunum görselleri 3
+              {odulLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin opacity-70" />
+              ) : odulParsed?.entries.length ? (
+                <span className="tabular-nums text-[11px] opacity-70">
+                  {odulParsed.entries.length}
+                </span>
+              ) : null}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void downloadRankingsExcel()}
+              className="z-btn-ghost inline-flex items-center gap-2 px-3.5 py-2 text-[12px]"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" strokeWidth={1.8} />
+              {parsed?.entries.length ? 'Sıralamaları Excel indir' : 'Boş şablon indir'}
             </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={parsing}
-              className="z-btn-primary inline-flex items-center gap-2 px-6 py-3 text-[13px] disabled:opacity-50"
+              className="z-btn-ghost inline-flex items-center gap-2 px-3.5 py-2 text-[12px] disabled:opacity-50"
             >
               {parsing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Upload className="h-4 w-4" strokeWidth={1.8} />
+                <Upload className="h-3.5 w-3.5" strokeWidth={1.8} />
               )}
               {fileName ? 'Excel güncelle' : 'Excel yükle'}
             </button>
@@ -974,112 +1244,166 @@ export default function RankingVisualsStudio({
           </div>
         </div>
 
+        {fileName ? (
+          <div className="flex items-center gap-2 text-[12px] text-[var(--z-muted)]">
+            <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} />
+            <span className="truncate">{fileName}</span>
+            <span className="tabular-nums">· {entries.length} satır</span>
+          </div>
+        ) : null}
+
         {parseError ? (
-          <p className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-[13px] text-rose-300">
+          <p className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-[13px] text-rose-300">
             {parseError}
           </p>
         ) : null}
+      </header>
 
-        {parsed?.warnings.length ? (
-          <ul className="mt-5 space-y-1 border-t border-[var(--z-border)] pt-4 text-[12px] text-amber-400/90">
-            {parsed.warnings.map((warning) => (
-              <li key={warning}>• {warning}</li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
+      {!excelHydrated ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-[var(--z-muted)]">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Sıralamalar yükleniyor…
+        </div>
+      ) : studioMode === 'presentation2' || studioMode === 'presentation3' ? (
+        <div className="space-y-5">
+          {odulError ? (
+            <p className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-[13px] text-rose-300">
+              {odulError}
+            </p>
+          ) : odulLoading || !odulParsed?.entries.length ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-[var(--z-muted)]">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Birleşik ödül sıralamaları yükleniyor…
+            </div>
+          ) : studioMode === 'presentation3' ? (
+            <RankingPresentationStudio
+              entries={odulParsed.entries}
+              resolvePerson={resolvePerson}
+              resolveTeam={resolveTeam}
+              teamRosterById={teamRosterById}
+              variant="v3"
+              exportLabel="sunum-gorselleri-3"
+              canSave={canSave}
+            />
+          ) : (
+            <RankingPresentationStudio
+              entries={odulParsed.entries}
+              resolvePerson={resolvePerson}
+              resolveTeam={resolveTeam}
+              variant="v2"
+              exportLabel="sunum-gorselleri-2"
+              canSave={canSave}
+            />
+          )}
+        </div>
+      ) : !parsed || !entries.length ? (
+        <section className="rounded-[24px] border border-dashed border-[var(--z-border-strong)] px-6 py-16 text-center">
+          <FileSpreadsheet className="mx-auto h-8 w-8 text-[var(--z-muted)]" strokeWidth={1.5} />
+          <p className="mt-4 text-[16px] font-medium text-[var(--z-fg)]">Henüz sıralama yok</p>
+          <p className="mx-auto mt-2 max-w-sm text-[13px] text-[var(--z-muted)]">
+            Excel yükleyin veya paketlenmiş 2026 dosyasının yüklenmesini bekleyin.
+          </p>
+        </section>
+      ) : (
+        <div className="space-y-5">
+          {studioMode !== 'presentation' ? periodScroller : null}
 
-      {!parsed || !entries.length ? null : activePeriod && activePeriodMeta ? (
-        <>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              type="button"
-              onClick={() => {
-                setActivePeriod(null);
-                setPersonQuery('');
+          {studioMode === 'presentation' ? (
+            <RankingPresentationStudio
+              entries={entries}
+              resolvePerson={resolvePerson}
+              canSave={canSave}
+            />
+          ) : null}
+
+          {studioMode === 'rankings' && activePeriod ? (
+            <RankingRankingsBoard
+              parsed={parsed}
+              periodId={activePeriod}
+              canEdit
+              onChange={(next) => {
+                setParsed(next);
               }}
-              className="z-btn-ghost inline-flex w-fit items-center gap-2 px-4 py-2.5 text-[13px]"
-            >
-              <ChevronLeft className="h-4 w-4" strokeWidth={1.8} />
-              Tüm dönemler
-            </button>
-            <div className="sm:text-right">
-              <p className="z-page-kicker">{activePeriodMeta.kind === 'quarter' ? 'Çeyrek' : 'Ay'}</p>
-              <h2 className="mt-1 text-[28px] font-semibold tracking-tight text-[var(--z-fg)]">
-                {activePeriodMeta.label}
-              </h2>
-            </div>
-          </div>
+            />
+          ) : null}
 
-          <section className="z-card space-y-4 p-5 sm:p-6">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--z-muted)]" />
-              <input
-                value={personQuery}
-                onChange={(e) => setPersonQuery(e.target.value)}
-                placeholder="Tabloda kişi ara…"
-                className="z-field w-full pl-11 pr-4 text-[15px]"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={!readyRankItems.length || Boolean(exporting)}
-                onClick={() =>
-                  void downloadZipOf(readyRankItems, `siralama-${activePeriodMeta.fileSlug}.zip`)
-                }
-                className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
-              >
-                <Trophy className="h-3.5 w-3.5" strokeWidth={1.8} />
-                Sıralama ZIP ({readyRankItems.length})
-              </button>
-              <button
-                type="button"
-                disabled={!readyAwardItems.length || Boolean(exporting)}
-                onClick={() =>
-                  void downloadZipOf(
-                    readyAwardItems,
-                    `odulunuz-var-${activePeriodMeta.fileSlug}.zip`
-                  )
-                }
-                className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
-              >
-                <Award className="h-3.5 w-3.5" strokeWidth={1.8} />
-                Ödülünüz var ZIP ({readyAwardItems.length})
-              </button>
-              {certificateTemplateFor(activePeriod) ? (
-                <button
-                  type="button"
-                  disabled={!certItems.length || Boolean(exporting)}
-                  onClick={() => void downloadCertZip()}
-                  className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
-                >
-                  <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
-                  Sertifika PDF ZIP ({certItems.length})
-                </button>
-              ) : null}
-              <button
-                type="button"
-                disabled={!readyItems.length || Boolean(exporting)}
-                onClick={() =>
-                  void downloadZipOf(readyItems, `siralama-hepsi-${activePeriodMeta.fileSlug}.zip`)
-                }
-                className="z-btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-[13px] disabled:opacity-40"
-              >
-                {exporting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {exporting.current}/{exporting.total}
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-4 w-4" strokeWidth={1.8} />
-                    Hepsi ({readyItems.length})
-                  </>
-                )}
-              </button>
-            </div>
-          </section>
+          {studioMode === 'visuals' && activePeriod && activePeriodMeta ? (
+            <>
+              <section className="rounded-[22px] border border-[var(--z-border)] bg-[var(--z-surface)] p-4 shadow-[var(--z-shadow-soft)] sm:p-5">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--z-muted)]" />
+                  <input
+                    value={personQuery}
+                    onChange={(e) => setPersonQuery(e.target.value)}
+                    placeholder="Görsellerde kişi ara…"
+                    className="z-field w-full pl-11 pr-4 text-[15px]"
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={!readyRankItems.length || Boolean(exporting)}
+                    onClick={() =>
+                      void downloadZipOf(
+                        readyRankItems,
+                        `siralama-${activePeriodMeta.fileSlug}.zip`
+                      )
+                    }
+                    className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
+                  >
+                    <Trophy className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    Sıralama ZIP ({readyRankItems.length})
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!readyAwardItems.length || Boolean(exporting)}
+                    onClick={() =>
+                      void downloadZipOf(
+                        readyAwardItems,
+                        `odulunuz-var-${activePeriodMeta.fileSlug}.zip`
+                      )
+                    }
+                    className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
+                  >
+                    <Award className="h-3.5 w-3.5" strokeWidth={1.8} />
+                    Ödülünüz var ZIP ({readyAwardItems.length})
+                  </button>
+                  {activePeriod && isCertificatePeriod(activePeriod) ? (
+                    <button
+                      type="button"
+                      disabled={!certItems.length || Boolean(exporting)}
+                      onClick={() => void downloadCertZip()}
+                      className="z-btn-ghost inline-flex items-center gap-2 px-4 py-2.5 text-[13px] disabled:opacity-40"
+                    >
+                      <FileText className="h-3.5 w-3.5" strokeWidth={1.8} />
+                      Sertifika PDF ZIP ({certItems.length})
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={!readyItems.length || Boolean(exporting)}
+                    onClick={() =>
+                      void downloadZipOf(
+                        readyItems,
+                        `siralama-hepsi-${activePeriodMeta.fileSlug}.zip`
+                      )
+                    }
+                    className="z-btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-[13px] disabled:opacity-40"
+                  >
+                    {exporting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        {exporting.current}/{exporting.total}
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4" strokeWidth={1.8} />
+                        Hepsi ({readyItems.length})
+                      </>
+                    )}
+                  </button>
+                </div>
+              </section>
 
           {RANK_CATEGORIES.map((category) => {
             const rows = filteredPeriodEntries
@@ -1247,13 +1571,13 @@ export default function RankingVisualsStudio({
             );
           })}
 
-          {certificateTemplateFor(activePeriod) ? (
+          {activePeriod && isCertificatePeriod(activePeriod) ? (
             <section className="z-card overflow-hidden p-0">
               <div className="flex flex-col gap-3 border-b border-[var(--z-border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <div>
                   <p className="text-[16px] font-semibold text-[var(--z-fg)]">Sertifika</p>
                   <p className="mt-0.5 text-[12px] text-[var(--z-muted)]">
-                    2.–5. sıra · Ciro / İşlem / Portföy Alma · baskı PDF (A4 yatay, 300 DPI)
+                    Danışman × çeyrek · tüm başarılar tek PDF · A4 yatay 300 DPI
                     {` · ${certItems.length} adet`}
                   </p>
                 </div>
@@ -1271,16 +1595,15 @@ export default function RankingVisualsStudio({
                 <p className="px-5 py-8 text-center text-[13px] text-[var(--z-muted)] sm:px-6">
                   {personQuery
                     ? 'Aramayla eşleşen sertifika yok.'
-                    : 'Bu dönemde 2.–5. sırada sertifika satırı yok.'}
+                    : 'Bu çeyrekte sertifika satırı yok.'}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[560px] text-left text-[14px]">
                     <thead>
                       <tr className="border-b border-[var(--z-border)] text-[12px] uppercase tracking-wide text-[var(--z-muted)]">
-                        <th className="px-5 py-3 font-medium sm:px-6">Dal</th>
-                        <th className="px-3 py-3 font-medium">Sıra</th>
-                        <th className="px-3 py-3 font-medium">İsim</th>
+                        <th className="px-5 py-3 font-medium sm:px-6">İsim</th>
+                        <th className="px-3 py-3 font-medium">Başarılar</th>
                         <th className="px-5 py-3 text-right font-medium sm:px-6">İşlem</th>
                       </tr>
                     </thead>
@@ -1290,13 +1613,12 @@ export default function RankingVisualsStudio({
                           key={item.key}
                           className="border-b border-[var(--z-border)] last:border-0 hover:bg-[color-mix(in_srgb,var(--z-elevated)_55%,transparent)]"
                         >
-                          <td className="px-5 py-3 text-[var(--z-fg)] sm:px-6">
-                            {categoryShort(item.category)}
+                          <td className="px-5 py-3 font-medium text-[var(--z-fg)] sm:px-6">
+                            {item.label}
                           </td>
-                          <td className="px-3 py-3 tabular-nums text-[var(--z-fg)]">
-                            {rankText(item.rank)}
+                          <td className="px-3 py-3 text-[13px] text-[var(--z-muted)]">
+                            {item.achievements.join(' · ')}
                           </td>
-                          <td className="px-3 py-3 font-medium text-[var(--z-fg)]">{item.label}</td>
                           <td className="px-5 py-3 sm:px-6">
                             <div className="flex justify-end">
                               <button
@@ -1409,82 +1731,10 @@ export default function RankingVisualsStudio({
               </div>
             )}
           </section>
-        </>
-      ) : parsed && entries.length ? (
-        <section className="space-y-4">
-          <div>
-            <p className="z-label">Dönem seçin</p>
-            <p className="mt-1 text-[13px] text-[var(--z-muted)]">
-              Bir aya veya çeyreğe girerek tabelayı görün ve görselleri indirin.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {RANK_PERIODS.map((period) => {
-              const set = RANK_TEMPLATES[period.id];
-              const ready = periodReadyCount(period.id);
-              const excelRows = periodCounts[period.id] || 0;
-              const muted = excelRows === 0;
-              return (
-                <button
-                  key={period.id}
-                  type="button"
-                  onClick={() => {
-                    setActivePeriod(period.id);
-                    setPersonQuery('');
-                  }}
-                  className={`cursor-pointer rounded-2xl border p-5 text-left transition-all duration-300 hover:border-[var(--z-border-strong)] hover:shadow-[var(--z-shadow-soft)] ${
-                    muted
-                      ? 'border-[var(--z-border)] opacity-55'
-                      : 'border-[var(--z-border)] bg-[color-mix(in_srgb,var(--z-elevated)_60%,transparent)]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[16px] font-semibold text-[var(--z-fg)]">{period.label}</p>
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        ready >= periodReadyTarget(period.id)
-                          ? 'bg-emerald-400'
-                          : ready
-                            ? 'bg-amber-400'
-                            : 'bg-[var(--z-muted-2)]'
-                      }`}
-                    />
-                  </div>
-                  <p className="mt-2 text-[12px] text-[var(--z-muted)]">Excel: {excelRows} satır</p>
-                  <ul className="mt-3 space-y-1 text-[11px] text-[var(--z-muted)]">
-                    {RANK_CATEGORIES.map((c) => (
-                      <li key={c.id} className="flex justify-between gap-2">
-                        <span>{c.short}</span>
-                        <span
-                          className={
-                            c.id === 'takim'
-                              ? 'text-[var(--z-muted)]'
-                              : set.rank[c.id]
-                                ? 'text-[var(--z-fg)]'
-                                : ''
-                          }
-                        >
-                          {c.id === 'takim'
-                            ? 'Sonra'
-                            : set.rank[c.id]
-                              ? 'Hazır'
-                              : 'Bekleniyor'}
-                        </span>
-                      </li>
-                    ))}
-                    <li className="flex justify-between gap-2">
-                      <span>Ödülünüz var</span>
-                      <span className={set.award ? 'text-[var(--z-fg)]' : ''}>
-                        {set.award ? 'Hazır' : 'Bekleniyor'}
-                      </span>
-                    </li>
-                  </ul>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
+            </>
+          ) : null}
+        </div>
+      )}
 
       {teamStripEdit && activePeriod ? (
         <RankingTeamStripStudio
@@ -1616,6 +1866,78 @@ export default function RankingVisualsStudio({
                     {activePersonAdjust.flipH ? 'Açık' : 'Kapalı'}
                   </span>
                 </button>
+              ) : null}
+
+              {editing.kind === 'award' &&
+              RANK_PERIODS.find((p) => p.id === editing.periodId)?.kind === 'quarter' ? (
+                <div className="mt-6 rounded-xl border border-[var(--z-border)] bg-[var(--z-elevated)]/40 p-3">
+                  <p className="text-[12px] font-medium text-[var(--z-fg)]">
+                    İsim outer glow (çeyrek ödül · global)
+                  </p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[var(--z-muted)]">
+                    Siyah · II ve III çeyrek Ödülünüz var isimlerine ortak
+                  </p>
+                  <label className="mt-3 block">
+                    <span className="flex justify-between text-[12px] text-[var(--z-muted)]">
+                      <span>Blur</span>
+                      <span className="tabular-nums text-[var(--z-fg)]">
+                        {nameGlowDraft.blur}px
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={QUARTER_AWARD_NAME_GLOW_BLUR_MAX}
+                      step={1}
+                      value={Math.min(nameGlowDraft.blur, QUARTER_AWARD_NAME_GLOW_BLUR_MAX)}
+                      onChange={(e) =>
+                        setNameGlowDraft((g) =>
+                          normalizeNameGlow({
+                            ...g,
+                            blur: Number(e.target.value),
+                            color: '#000000',
+                          })
+                        )
+                      }
+                      className="mt-2 w-full accent-[var(--z-fg)]"
+                    />
+                  </label>
+                  <label className="mt-3 block">
+                    <span className="flex justify-between text-[12px] text-[var(--z-muted)]">
+                      <span>Opaklık</span>
+                      <span className="tabular-nums text-[var(--z-fg)]">
+                        %{Math.round(nameGlowDraft.opacity * 100)}
+                      </span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={nameGlowDraft.opacity}
+                      onChange={(e) =>
+                        setNameGlowDraft((g) =>
+                          normalizeNameGlow({
+                            ...g,
+                            opacity: Number(e.target.value),
+                            color: '#000000',
+                          })
+                        )
+                      }
+                      className="mt-2 w-full accent-[var(--z-fg)]"
+                    />
+                  </label>
+                  {canSave ? (
+                    <button
+                      type="button"
+                      disabled={!nameGlowDirty}
+                      onClick={() => void saveNameGlow()}
+                      className="z-btn-ghost mt-3 w-full px-3 py-2 text-[12px] disabled:opacity-40"
+                    >
+                      {nameGlowDirty ? 'Glow ayarını kaydet' : 'Glow kaydedildi'}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
 
               {gridKind ? (

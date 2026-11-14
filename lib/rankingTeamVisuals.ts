@@ -14,6 +14,7 @@ import {
   canvasToBlob,
   loadRankImage,
   measureOpaqueBox,
+  rankFileSlug,
   type OpaqueBox,
   type PhotoAdjust,
   type RankFaceMetrics,
@@ -205,6 +206,35 @@ export type TeamDef = {
   logoUrl: string | null;
 };
 
+/** Görsellerde takım lideri ünvanı */
+export const TEAM_LEADER_TITLE = 'Takım Lideri';
+
+export function isTeamLeaderKey(key: string | null | undefined): boolean {
+  if (!key) return false;
+  const k = key.normalize('NFC').trim().toLocaleLowerCase('tr-TR');
+  return TEAM_DEFS.some((def) => def.leaders.some((leader) => leader === k));
+}
+
+export function resolveTeamAwareTitle(
+  key: string | null | undefined,
+  fallbackTitle: string
+): string {
+  return isTeamLeaderKey(key) ? TEAM_LEADER_TITLE : fallbackTitle;
+}
+
+/**
+ * Tek kişilik görselde takım lideri ise dosya adına `x-` öneki
+ * (ör. x-hasan-vacip-tekerbas.png).
+ */
+export function visualPeopleFileSlug(
+  people: { key: string; displayName: string }[]
+): string {
+  const names = people.map((p) => p.displayName).join(' & ');
+  const base = rankFileSlug(names);
+  if (people.length === 1 && isTeamLeaderKey(people[0]?.key)) return `x-${base}`;
+  return base;
+}
+
 export const TEAM_DEFS: TeamDef[] = [
   {
     id: 'best-sellers',
@@ -310,7 +340,7 @@ export const TEAM_DEFS: TeamDef[] = [
       'anil-kosehanci',
       'ozge-caliskan',
     ],
-    logoUrl: null,
+    logoUrl: '/templates/siralama/teams/sirius.png',
   },
   {
     id: 'prime',
@@ -364,6 +394,75 @@ export const TEAM_DEFS: TeamDef[] = [
 
 export function teamAdjustKey(teamId: string) {
   return `team|${teamId}`;
+}
+
+/** Team Görselleri — kalıcı üye sırası (slug listesi) */
+export function teamRosterKey(teamId: string) {
+  return `team|${teamId}|roster`;
+}
+
+/** Team Görselleri — tüm takımlarda ortak görüntü ayarı */
+export const TEAM_VISUALS_NAMES_KEY = 'team|visuals|names';
+
+export type TeamVisualsNamesAdjust = {
+  showNames: boolean;
+  /** İsim–soyisim satır aralığı (px) */
+  nameLineGap: number;
+  /** Danışman fotoğrafları */
+  showPeople: boolean;
+  /** Alt siyah gradient */
+  showGradient: boolean;
+  gradientHeight: number;
+  /** 0–1 */
+  gradientOpacity: number;
+};
+
+export const DEFAULT_TEAM_VISUALS_NAMES: TeamVisualsNamesAdjust = {
+  showNames: false,
+  nameLineGap: TEAM_AWARD_ANCHORS.defaultNameLineGap,
+  showPeople: true,
+  showGradient: false,
+  gradientHeight: DEFAULT_TEAM_STRIP_ADJUST.bottomGradientHeight,
+  gradientOpacity: DEFAULT_TEAM_STRIP_ADJUST.bottomGradientOpacity,
+};
+
+export function normalizeTeamVisualsNames(raw: unknown): TeamVisualsNamesAdjust {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ...DEFAULT_TEAM_VISUALS_NAMES };
+  }
+  const obj = raw as Partial<TeamVisualsNamesAdjust>;
+  const gap = Number(obj.nameLineGap);
+  const gh = Number(obj.gradientHeight);
+  const go = Number(obj.gradientOpacity);
+  return {
+    showNames: Boolean(obj.showNames),
+    nameLineGap: Number.isFinite(gap)
+      ? Math.max(10, Math.min(56, Math.round(gap)))
+      : DEFAULT_TEAM_VISUALS_NAMES.nameLineGap,
+    // Eski kayıtlarda yoksa varsayılan açık
+    showPeople: obj.showPeople === undefined ? true : Boolean(obj.showPeople),
+    showGradient: Boolean(obj.showGradient),
+    gradientHeight: Number.isFinite(gh)
+      ? Math.max(0, Math.min(500, Math.round(gh)))
+      : DEFAULT_TEAM_VISUALS_NAMES.gradientHeight,
+    gradientOpacity: Number.isFinite(go)
+      ? Math.max(0, Math.min(1, go))
+      : DEFAULT_TEAM_VISUALS_NAMES.gradientOpacity,
+  };
+}
+
+export function normalizeTeamRoster(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw) {
+    const key = String(item || '')
+      .normalize('NFC')
+      .trim()
+      .toLocaleLowerCase('tr-TR');
+    if (!key || out.includes(key)) continue;
+    out.push(key);
+  }
+  return out;
 }
 
 export function personAdjustKey(personKey: string) {
@@ -688,54 +787,110 @@ const edgeCleanCache = new WeakMap<
   { key: string; canvas: HTMLCanvasElement }
 >();
 
+/** Önizleme için üst sınır; 0 = tam çözünürlük (indir) */
+export const EDGE_CLEAN_PREVIEW_MAX_SIDE = 480;
+
 /**
- * PNG beyaz fringe: alpha’yı chokePx kadar erit + kenarı koyulaştır.
- * Sonuç cache’lenir (aynı foto + ayar).
+ * Satır/sütunda kaydırmalı min (morfolojik erozyon yaklaşımı) — O(w·h·r).
+ */
+function separableMinAlpha(
+  alpha: Uint8Array,
+  w: number,
+  h: number,
+  radius: number
+): Uint8Array {
+  const out = new Uint8Array(w * h);
+  const row = new Uint8Array(w);
+  for (let y = 0; y < h; y += 1) {
+    const rowOff = y * w;
+    for (let x = 0; x < w; x += 1) {
+      let minA = 255;
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(w - 1, x + radius);
+      for (let xi = x0; xi <= x1; xi += 1) {
+        const a = alpha[rowOff + xi]!;
+        if (a < minA) minA = a;
+      }
+      row[x] = minA;
+    }
+    for (let x = 0; x < w; x += 1) out[rowOff + x] = row[x]!;
+  }
+  const col = new Uint8Array(h);
+  const final = new Uint8Array(w * h);
+  for (let x = 0; x < w; x += 1) {
+    for (let y = 0; y < h; y += 1) {
+      let minA = 255;
+      const y0 = Math.max(0, y - radius);
+      const y1 = Math.min(h - 1, y + radius);
+      for (let yi = y0; yi <= y1; yi += 1) {
+        const a = out[yi * w + x]!;
+        if (a < minA) minA = a;
+      }
+      col[y] = minA;
+    }
+    for (let y = 0; y < h; y += 1) final[y * w + x] = col[y]!;
+  }
+  return final;
+}
+
+/**
+ * PNG beyaz fringe: alpha choke + kenar koyulaştır.
+ * maxSide ile küçültülüp işlenir (önizleme hızlı); layout boyutu orijinal kalır.
  */
 function getEdgeCleanedPhoto(
   img: HTMLImageElement,
-  edge: PersonEdgeCleanAdjust
+  edge: PersonEdgeCleanAdjust,
+  maxSide = 0
 ): { source: CanvasImageSource; width: number; height: number } {
-  const w = img.naturalWidth || 1;
-  const h = img.naturalHeight || 1;
+  const srcW = img.naturalWidth || 1;
+  const srcH = img.naturalHeight || 1;
   const choke = Math.max(0, edge.chokePx);
   const darken = Math.max(0, Math.min(1, edge.fringeDarken));
   if (choke <= 0 && darken <= 0) {
-    return { source: img, width: w, height: h };
+    return { source: img, width: srcW, height: srcH };
   }
 
-  const key = `${choke.toFixed(2)}|${darken.toFixed(3)}`;
+  const scale =
+    maxSide > 0 ? Math.min(1, maxSide / Math.max(srcW, srcH)) : 1;
+  const w = Math.max(1, Math.round(srcW * scale));
+  const h = Math.max(1, Math.round(srcH * scale));
+  const chokePx = choke * scale;
+  const radius = Math.max(0, Math.min(24, Math.ceil(chokePx)));
+
+  const key = `${choke.toFixed(2)}|${darken.toFixed(3)}|${w}x${h}`;
   const hit = edgeCleanCache.get(img);
   if (hit && hit.key === key) {
-    return { source: hit.canvas, width: w, height: h };
+    return { source: hit.canvas, width: srcW, height: srcH };
   }
 
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const cx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!cx) return { source: img, width: w, height: h };
-  cx.drawImage(img, 0, 0);
+  if (!cx) return { source: img, width: srcW, height: srcH };
+  cx.drawImage(img, 0, 0, w, h);
 
-  const radius = Math.max(0, Math.ceil(choke));
   let data: ImageData;
   try {
     data = cx.getImageData(0, 0, w, h);
   } catch {
-    return { source: img, width: w, height: h };
+    return { source: img, width: srcW, height: srcH };
   }
   const src = data.data;
+  const alpha = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < src.length; i += 4, p += 1) {
+    alpha[p] = src[i + 3]!;
+  }
+
+  const eroded = radius > 0 ? separableMinAlpha(alpha, w, h, radius) : alpha;
   const out = cx.createImageData(w, h);
   const dst = out.data;
-  const alphaAt = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x >= w || y >= h) return 0;
-    return src[(y * w + x) * 4 + 3]!;
-  };
 
   for (let y = 0; y < h; y += 1) {
     for (let x = 0; x < w; x += 1) {
-      const i = (y * w + x) * 4;
-      const a0 = src[i + 3]!;
+      const p = y * w + x;
+      const i = p * 4;
+      const a0 = alpha[p]!;
       if (a0 < 2) {
         dst[i] = 0;
         dst[i + 1] = 0;
@@ -744,38 +899,20 @@ function getEdgeCleanedPhoto(
         continue;
       }
 
-      let minA = a0;
-      if (radius > 0) {
-        for (let dy = -radius; dy <= radius; dy += 1) {
-          for (let dx = -radius; dx <= radius; dx += 1) {
-            if (dx * dx + dy * dy > choke * choke) continue;
-            const a = alphaAt(x + dx, y + dy);
-            if (a < minA) minA = a;
-          }
-        }
-      }
-
-      // Erosion: komşu boşsa bu piksel de düşer / alpha düşer
-      let a = radius > 0 ? Math.min(a0, minA) : a0;
-      if (radius > 0 && minA < 40) a = 0;
+      let a = eroded[p]!;
+      if (radius > 0 && a < 40) a = 0;
 
       let r = src[i]!;
       let g = src[i + 1]!;
       let b = src[i + 2]!;
 
       if (darken > 0 && a > 0) {
-        // Kenar mı? Dışarıda düşük alpha komşu var mı
-        let edge = false;
-        for (let dy = -2; dy <= 2 && !edge; dy += 1) {
-          for (let dx = -2; dx <= 2; dx += 1) {
-            if (alphaAt(x + dx, y + dy) < 80) {
-              edge = true;
-              break;
-            }
-          }
-        }
-        if (edge) {
-          // Açık fringe’i bastır
+        const left = x > 0 ? eroded[p - 1]! : 0;
+        const right = x + 1 < w ? eroded[p + 1]! : 0;
+        const up = y > 0 ? eroded[p - w]! : 0;
+        const down = y + 1 < h ? eroded[p + w]! : 0;
+        const isEdge = left < 80 || right < 80 || up < 80 || down < 80 || a < a0;
+        if (isEdge) {
           const lum = (r + g + b) / 3;
           const t = darken * (lum > 140 ? 1 : lum > 90 ? 0.75 : 0.45);
           r = Math.round(r * (1 - t));
@@ -793,7 +930,8 @@ function getEdgeCleanedPhoto(
 
   cx.putImageData(out, 0, 0);
   edgeCleanCache.set(img, { key, canvas });
-  return { source: canvas, width: w, height: h };
+  // Layout orijinal boyutta; drawImage kaynak canvas’ı ölçekler
+  return { source: canvas, width: srcW, height: srcH };
 }
 
 function parseHex(color: string): { r: number; g: number; b: number } | null {
@@ -986,15 +1124,18 @@ function drawDividers(
   slotW: number,
   adjust: TeamStripAdjust
 ) {
-  if (count < 2) return;
+  if (count < 1) return;
   const bottom = SLOGAN_BAR_TOP;
   const top = Math.max(0, bottom - adjust.lineHeight);
   const fade = Math.min(adjust.lineFade, adjust.lineHeight);
   const rgb = parseHex(adjust.strokeColor) || { r: 196, g: 163, b: 90 };
   const core = adjust.strokeWidth;
+  const { width: canvasW } = RANK_CANVAS;
 
-  for (let i = 1; i < count; i += 1) {
-    const x = i * slotW;
+  // Danışmanlar arası + en sağdaki danışmanın sağı (kapanış çizgisi)
+  for (let i = 1; i <= count; i += 1) {
+    // Sağ kenarda stroke yarısı kesilmesin
+    const x = i === count ? Math.min(canvasW - core / 2, i * slotW) : i * slotW;
     const grad = ctx.createLinearGradient(x, top, x, bottom);
     // Yukarıdan fade-out → altta (şerit üstü) tam opak
     if (fade > 0) {
@@ -1087,25 +1228,56 @@ export type TeamStripRenderJob = {
   logoShadow?: OuterGlowAdjust;
   logoUrl: string | null;
   grayscale?: boolean;
+  /** Kenar temizliği max kenar (px); önizlemede küçük tut. 0/undefined = tam çözünürlük */
+  edgeCleanMaxSide?: number;
+  /**
+   * Çıktı ölçeği (1 = 1080×1350, 2 = 2160×2700).
+   * İndirmede 2× — kalabalık takımlarda zoom/baskı keskinliği için.
+   */
+  renderScale?: number;
+  /** Sunum 3: ödül şablonu çizme — yalnızca logo + kişiler (şeffaf zemin) */
+  skipBackground?: boolean;
+  /** Team Görselleri: logo çizme */
+  skipLogo?: boolean;
+  /** Team Görselleri: isim satırları çizme */
+  skipNames?: boolean;
+  /** Team Görselleri: alt siyah gradient çizme */
+  skipBottomGradient?: boolean;
+  /** Team Görselleri: danışman fotoğrafları çizme */
+  skipPeople?: boolean;
 };
+
+/** Takım şeridi indirme / Sunum 3 varsayılan ölçeği (max 3) */
+export const TEAM_STRIP_EXPORT_SCALE = 3;
 
 export async function renderTeamStrip(job: TeamStripRenderJob): Promise<HTMLCanvasElement> {
   await ensureTeamFonts();
 
   const { width: W, height: H } = RANK_CANVAS;
+  const s = Math.max(1, Math.min(3, Number(job.renderScale) || 1));
+  const outW = Math.round(W * s);
+  const outH = Math.round(H * s);
   const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = outW;
+  canvas.height = outH;
   const ctx = canvas.getContext('2d');
   if (!ctx) return canvas;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
-  const templateUrl = RANK_TEMPLATES[job.periodId]?.award || null;
-  const template = await loadRankImage(templateUrl);
-  if (template) ctx.drawImage(template, 0, 0, W, H);
-  else {
+  const templateUrl = job.skipBackground
+    ? null
+    : RANK_TEMPLATES[job.periodId]?.award || null;
+  const template = templateUrl ? await loadRankImage(templateUrl) : null;
+  // Şablon fiziksel çözünürlükte (transform’suz) — daha keskin zemin
+  if (template) ctx.drawImage(template, 0, 0, outW, outH);
+  else if (!job.skipBackground) {
     ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0, 0, outW, outH);
   }
+
+  // Sonraki çizimler mantıksal 1080×1350 uzayında
+  ctx.setTransform(s, 0, 0, s, 0, 0);
 
   const teamAdjust = normalizeTeamStripAdjust(job.teamAdjust);
   const personGlow = {
@@ -1125,6 +1297,7 @@ export async function renderTeamStrip(job: TeamStripRenderJob): Promise<HTMLCanv
     color: '#000000',
   };
   const personEdgeClean = normalizePersonEdgeClean(job.personEdgeClean);
+  const edgeCleanMaxSide = Math.max(0, job.edgeCleanMaxSide ?? 0);
   const personPeriodTint = normalizePersonPeriodTint(job.personPeriodTint);
   const logoGlow = normalizeOuterGlow(
     job.logoGlow ?? job.logoShadow,
@@ -1135,12 +1308,13 @@ export async function renderTeamStrip(job: TeamStripRenderJob): Promise<HTMLCanv
   const n = people.length;
   const offsetY = teamAdjust.peopleOffsetY;
 
-  const logo = await loadRankImage(job.logoUrl);
+  const logo = !job.skipLogo ? await loadRankImage(job.logoUrl) : null;
   if (logo) drawLogo(ctx, logo, teamAdjust, logoGlow);
 
   if (!n) {
     // Slogan şeridini her zaman en üstte tut
     if (template) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(
         template,
         0,
@@ -1148,9 +1322,9 @@ export async function renderTeamStrip(job: TeamStripRenderJob): Promise<HTMLCanv
         W,
         H - SLOGAN_BAR_TOP,
         0,
-        SLOGAN_BAR_TOP,
-        W,
-        H - SLOGAN_BAR_TOP
+        SLOGAN_BAR_TOP * s,
+        outW,
+        (H - SLOGAN_BAR_TOP) * s
       );
     }
     return canvas;
@@ -1165,145 +1339,162 @@ export async function renderTeamStrip(job: TeamStripRenderJob): Promise<HTMLCanv
   const fadeStart = band.fadeStart + offsetY;
   const fadeEnd = Math.min(band.clipBottom - 8, band.fadeEnd + offsetY);
 
-  // 1) Fotoğrafları glow’suz çiz (clip + fade)
-  const peopleLayer = document.createElement('canvas');
-  peopleLayer.width = W;
-  peopleLayer.height = H;
-  const lctx = peopleLayer.getContext('2d');
-  if (!lctx) return canvas;
+  if (!job.skipPeople) {
+    // 1) Fotoğrafları glow’suz çiz (clip + fade) — yüksek çözünürlük katmanı
+    const peopleLayer = document.createElement('canvas');
+    peopleLayer.width = outW;
+    peopleLayer.height = outH;
+    const lctx = peopleLayer.getContext('2d');
+    if (!lctx) return canvas;
+    lctx.imageSmoothingEnabled = true;
+    lctx.imageSmoothingQuality = 'high';
+    lctx.setTransform(s, 0, 0, s, 0, 0);
 
-  for (let i = 0; i < n; i += 1) {
-    const person = people[i]!;
-    if (!person.photo || (!person.face && !person.bounds)) continue;
-    const adj = normalizeTeamPersonAdjust(job.personAdjusts[i] || DEFAULT_TEAM_PERSON_ADJUST);
-    const flipH = Boolean(adj.flipH);
-    const img = person.photo;
-    const imgW = img.naturalWidth;
-    const cleaned = getEdgeCleanedPhoto(img, personEdgeClean);
-    const face = person.face && flipH ? flipFace(person.face, imgW) : person.face;
-    const bounds = person.bounds && flipH ? flipBox(person.bounds, imgW) : person.bounds;
+    for (let i = 0; i < n; i += 1) {
+      const person = people[i]!;
+      if (!person.photo || (!person.face && !person.bounds)) continue;
+      const adj = normalizeTeamPersonAdjust(job.personAdjusts[i] || DEFAULT_TEAM_PERSON_ADJUST);
+      const flipH = Boolean(adj.flipH);
+      const img = person.photo;
+      const imgW = img.naturalWidth;
+      const cleaned = getEdgeCleanedPhoto(img, personEdgeClean, edgeCleanMaxSide);
+      const face = person.face && flipH ? flipFace(person.face, imgW) : person.face;
+      const bounds = person.bounds && flipH ? flipBox(person.bounds, imgW) : person.bounds;
 
-    const slotLeft = i * slotW;
-    const slotCenterX = slotLeft + slotW / 2;
+      const slotLeft = i * slotW;
+      const slotCenterX = slotLeft + slotW / 2;
 
-    lctx.save();
-    lctx.beginPath();
-    lctx.rect(slotLeft, 0, slotW, band.clipBottom);
-    lctx.clip();
+      lctx.save();
+      lctx.beginPath();
+      lctx.rect(slotLeft, 0, slotW, band.clipBottom);
+      lctx.clip();
 
-    const filters: string[] = [];
-    if (job.grayscale !== false) filters.push('grayscale(1)');
-    if (adj.brightness) filters.push(brightnessFilter(adj.brightness));
-    lctx.filter = filters.length ? filters.join(' ') : 'none';
+      const filters: string[] = [];
+      if (job.grayscale !== false) filters.push('grayscale(1)');
+      if (adj.brightness) filters.push(brightnessFilter(adj.brightness));
+      lctx.filter = filters.length ? filters.join(' ') : 'none';
 
-    if (face && face.eyeDistance > 4) {
-      const scale = (eyeTarget * adj.scale) / face.eyeDistance;
-      const drawX = slotCenterX + adj.dx - face.eyeMidX * scale;
-      const drawY = eyeMidY + adj.dy - face.eyeMidY * scale;
-      drawPerson(
-        lctx,
-        cleaned.source,
-        drawX,
-        drawY,
-        scale,
-        flipH,
-        cleaned.width,
-        cleaned.height
-      );
-    } else if (bounds) {
-      const targetW = slotW * 0.92 * adj.scale;
-      const scale = targetW / Math.max(8, bounds.w);
-      const drawX = slotCenterX + adj.dx - (bounds.x + bounds.w / 2) * scale;
-      const drawY = photoTop + slotW * 0.12 + adj.dy - bounds.y * scale;
-      drawPerson(
-        lctx,
-        cleaned.source,
-        drawX,
-        drawY,
-        scale,
-        flipH,
-        cleaned.width,
-        cleaned.height
-      );
+      if (face && face.eyeDistance > 4) {
+        const scale = (eyeTarget * adj.scale) / face.eyeDistance;
+        const drawX = slotCenterX + adj.dx - face.eyeMidX * scale;
+        const drawY = eyeMidY + adj.dy - face.eyeMidY * scale;
+        drawPerson(
+          lctx,
+          cleaned.source,
+          drawX,
+          drawY,
+          scale,
+          flipH,
+          cleaned.width,
+          cleaned.height
+        );
+      } else if (bounds) {
+        const targetW = slotW * 0.92 * adj.scale;
+        const scale = targetW / Math.max(8, bounds.w);
+        const drawX = slotCenterX + adj.dx - (bounds.x + bounds.w / 2) * scale;
+        const drawY = photoTop + slotW * 0.12 + adj.dy - bounds.y * scale;
+        drawPerson(
+          lctx,
+          cleaned.source,
+          drawX,
+          drawY,
+          scale,
+          flipH,
+          cleaned.width,
+          cleaned.height
+        );
+      }
+
+      lctx.filter = 'none';
+      lctx.restore();
     }
 
-    lctx.filter = 'none';
-    lctx.restore();
+    // Ay şerit rengi · multiply (silüet maskeli)
+    applyPeriodTintToPeopleLayer(lctx, peopleLayer, job.periodId, personPeriodTint);
+
+    // Alt fade + slogan şeridine binmemek için sert kesim
+    lctx.globalCompositeOperation = 'source-atop';
+    const gradient = lctx.createLinearGradient(0, fadeStart, 0, fadeEnd);
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(1, `rgba(0,0,0,${band.fadeMax})`);
+    lctx.fillStyle = gradient;
+    lctx.fillRect(0, fadeStart, W, Math.max(1, fadeEnd - fadeStart));
+    lctx.fillStyle = `rgba(0,0,0,${band.fadeMax})`;
+    lctx.fillRect(0, fadeEnd, W, Math.max(0, band.clipBottom - fadeEnd));
+    lctx.globalCompositeOperation = 'destination-out';
+    lctx.fillStyle = '#000';
+    lctx.fillRect(0, band.clipBottom, W, H - band.clipBottom);
+    lctx.globalCompositeOperation = 'source-over';
+
+    // 2) Outer glow + keskin silüet — 1:1 piksel (transform’suz), blur ölçeklenir
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const glowPx = {
+      ...personGlow,
+      blur: personGlow.blur * s,
+    };
+    const innerGlowPx = {
+      ...personInnerGlow,
+      blur: personInnerGlow.blur * s,
+    };
+    drawWithOuterGlow(ctx, peopleLayer, glowPx);
+    drawWithInnerGlow(ctx, peopleLayer, innerGlowPx, outW, outH);
   }
 
-  // Ay şerit rengi · multiply (silüet maskeli)
-  applyPeriodTintToPeopleLayer(lctx, peopleLayer, job.periodId, personPeriodTint);
-
-  // Alt fade + slogan şeridine binmemek için sert kesim
-  lctx.globalCompositeOperation = 'source-atop';
-  const gradient = lctx.createLinearGradient(0, fadeStart, 0, fadeEnd);
-  gradient.addColorStop(0, 'rgba(0,0,0,0)');
-  gradient.addColorStop(1, `rgba(0,0,0,${band.fadeMax})`);
-  lctx.fillStyle = gradient;
-  lctx.fillRect(0, fadeStart, W, Math.max(1, fadeEnd - fadeStart));
-  lctx.fillStyle = `rgba(0,0,0,${band.fadeMax})`;
-  lctx.fillRect(0, fadeEnd, W, Math.max(0, band.clipBottom - fadeEnd));
-  lctx.globalCompositeOperation = 'destination-out';
-  lctx.fillStyle = '#000';
-  lctx.fillRect(0, band.clipBottom, W, H - band.clipBottom);
-  lctx.globalCompositeOperation = 'source-over';
-
-  // 2) Outer glow + keskin silüet + ince inner glow
-  drawWithOuterGlow(ctx, peopleLayer, personGlow);
-  drawWithInnerGlow(ctx, peopleLayer, personInnerGlow, W, H);
-
-  // 3) Çizgiler — alt uç slogan üstünde, yukarı fade
+  // 3–5 mantıksal uzayda
+  ctx.setTransform(s, 0, 0, s, 0, 0);
   drawDividers(ctx, n, slotW, teamAdjust);
 
-  // 4) Siyah alt gradient — yeşil şeridin hemen üstünden yukarı (takım ayarı)
-  const gradH = Math.max(0, teamAdjust.bottomGradientHeight);
-  const gradOp = Math.max(0, Math.min(1, teamAdjust.bottomGradientOpacity));
-  if (gradH > 0 && gradOp > 0) {
-    const gradTop = SLOGAN_BAR_TOP - gradH;
-    const blackGrad = ctx.createLinearGradient(0, gradTop, 0, SLOGAN_BAR_TOP);
-    blackGrad.addColorStop(0, 'rgba(0,0,0,0)');
-    blackGrad.addColorStop(1, `rgba(0,0,0,${gradOp})`);
-    ctx.fillStyle = blackGrad;
-    ctx.fillRect(0, gradTop, W, gradH);
+  if (!job.skipBottomGradient) {
+    const gradH = Math.max(0, teamAdjust.bottomGradientHeight);
+    const gradOp = Math.max(0, Math.min(1, teamAdjust.bottomGradientOpacity));
+    if (gradH > 0 && gradOp > 0) {
+      const gradTop = SLOGAN_BAR_TOP - gradH;
+      const blackGrad = ctx.createLinearGradient(0, gradTop, 0, SLOGAN_BAR_TOP);
+      blackGrad.addColorStop(0, 'rgba(0,0,0,0)');
+      blackGrad.addColorStop(1, `rgba(0,0,0,${gradOp})`);
+      ctx.fillStyle = blackGrad;
+      ctx.fillRect(0, gradTop, W, gradH);
+    }
   }
 
-  // 5) İsimler — gradient’in üstünde
-  const namePads = 10;
-  const maxNameW = slotW - namePads * 2;
-  const nameLines = people.map((p) => {
-    const { given, family } = splitDisplayName(p.displayName);
-    return [given.toLocaleUpperCase('tr-TR'), family.toLocaleUpperCase('tr-TR')].filter(
-      Boolean
-    );
-  });
-  const allLines = nameLines.flat();
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  const fontSize = fitNameSize(ctx, allLines, maxNameW);
-  const tracking = fontSize * TEAM_AWARD_ANCHORS.nameTracking;
-  ctx.font = `400 ${fontSize}px "${TEAM_FONTS.name.family}", "Bebas Neue", Impact, sans-serif`;
-  ctx.fillStyle = '#ffffff';
-
-  /** Son satır (soyisim) yeşil şeridin üstünden nameBottomGap kadar yukarıda */
-  const familyY = Math.min(
-    SLOGAN_BAR_TOP - Math.max(4, teamAdjust.nameBottomGap),
-    SLOGAN_BAR_TOP - 4
-  );
-  const givenY = familyY - teamAdjust.nameLineGap;
-
-  for (let i = 0; i < n; i += 1) {
-    const lines = nameLines[i]!;
-    const slotLeft = i * slotW;
-    const centerX = slotLeft + slotW / 2;
-    const ys = lines.length === 1 ? [familyY] : [givenY, familyY];
-    lines.forEach((line, li) => {
-      const w = measureTracked(ctx, line, tracking);
-      fillTracked(ctx, line, centerX - w / 2, ys[li] ?? ys[0]!, tracking);
+  if (!job.skipNames) {
+    const namePads = 10;
+    const maxNameW = slotW - namePads * 2;
+    const nameLines = people.map((p) => {
+      const { given, family } = splitDisplayName(p.displayName);
+      return [given.toLocaleUpperCase('tr-TR'), family.toLocaleUpperCase('tr-TR')].filter(
+        Boolean
+      );
     });
+    const allLines = nameLines.flat();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    const fontSize = fitNameSize(ctx, allLines, maxNameW);
+    const tracking = fontSize * TEAM_AWARD_ANCHORS.nameTracking;
+    ctx.font = `400 ${fontSize}px "${TEAM_FONTS.name.family}", "Bebas Neue", Impact, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+
+    const familyY = Math.min(
+      SLOGAN_BAR_TOP - Math.max(4, teamAdjust.nameBottomGap),
+      SLOGAN_BAR_TOP - 4
+    );
+    const givenY = familyY - teamAdjust.nameLineGap;
+
+    for (let i = 0; i < n; i += 1) {
+      const lines = nameLines[i]!;
+      const slotLeft = i * slotW;
+      const centerX = slotLeft + slotW / 2;
+      const ys = lines.length === 1 ? [familyY] : [givenY, familyY];
+      lines.forEach((line, li) => {
+        const w = measureTracked(ctx, line, tracking);
+        fillTracked(ctx, line, centerX - w / 2, ys[li] ?? ys[0]!, tracking);
+      });
+    }
   }
 
-  // 6) Yeşil slogan şeridini en üste yeniden çiz — foto/çizgi/gradient asla binmez
+  // 6) Slogan şeridi — fiziksel çözünürlükte
   if (template) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(
       template,
       0,
@@ -1311,9 +1502,9 @@ export async function renderTeamStrip(job: TeamStripRenderJob): Promise<HTMLCanv
       W,
       H - SLOGAN_BAR_TOP,
       0,
-      SLOGAN_BAR_TOP,
-      W,
-      H - SLOGAN_BAR_TOP
+      SLOGAN_BAR_TOP * s,
+      outW,
+      (H - SLOGAN_BAR_TOP) * s
     );
   }
 

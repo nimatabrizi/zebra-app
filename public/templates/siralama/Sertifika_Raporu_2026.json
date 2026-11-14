@@ -1,0 +1,782 @@
+{
+  "year": 2026,
+  "certificates": [
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Nurgün Alpdoğan",
+      "achievements": [
+        "Haziran Portföy Alma 3.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Çağdaş Yalçınkaya",
+      "achievements": [
+        "Haziran Portföy Alma 2.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Başak Atabek",
+      "achievements": [
+        "Haziran Portföy Alma 1.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Mustafa Karaboğa",
+      "achievements": [
+        "II. Çeyrek Portföy Alma 4.sü",
+        "Haziran Portföy Alma 3.sü"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Şenol Pehlivan",
+      "achievements": [
+        "II. Çeyrek Portföy Alma 3.sü",
+        "Mayıs Portföy Alma 2.si"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Aynur Özden",
+      "achievements": [
+        "II. Çeyrek Portföy Alma 1.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Fırat Alperen Üsküp",
+      "achievements": [
+        "Haziran İşlem 3.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Selma Çelik Avcık",
+      "achievements": [
+        "Haziran İşlem 3.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Turgay Koca",
+      "achievements": [
+        "Haziran İşlem 3.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Serkan Eskit & Selin Eskit",
+      "achievements": [
+        "Haziran İşlem 2.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Suat Erişen",
+      "achievements": [
+        "II. Çeyrek İşlem 5.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Hasan Korkmaz",
+      "achievements": [
+        "II. Çeyrek İşlem 5.si",
+        "Haziran İşlem 1.si"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Alper Topbaşoğlu",
+      "achievements": [
+        "II. Çeyrek İşlem 4.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Esra Uslu",
+      "achievements": [
+        "II. Çeyrek İşlem 4.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Semih Nihat Uysal",
+      "achievements": [
+        "II. Çeyrek İşlem 4.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Öznur Kara",
+      "achievements": [
+        "II. Çeyrek İşlem 4.sü",
+        "Haziran İşlem 2.si"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Hasan Vacip Tekerbaş",
+      "achievements": [
+        "Haziran Ciro 5.si",
+        "II. Çeyrek Portföy Alma 5.si"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Gönül Hanege",
+      "achievements": [
+        "Mayıs Ciro 5.si",
+        "II. Çeyrek İşlem 2.si",
+        "Mayıs İşlem 2.si",
+        "Haziran İşlem 3.sü",
+        "Haziran Portföy Alma 3.sü"
+      ],
+      "count": 5
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Nermin Karaçocuk",
+      "achievements": [
+        "Haziran Ciro 4.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Ayşe Pullu",
+      "achievements": [
+        "Haziran Ciro 3.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Mesut Kaya",
+      "achievements": [
+        "Haziran Ciro 2.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Turgay Koca",
+      "achievements": [
+        "Ağustos Portföy Alma 2.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Nurcan Güler",
+      "achievements": [
+        "Eylül Portföy Alma 2.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Ebru Biçer",
+      "achievements": [
+        "III. Çeyrek Portföy Alma 5.si",
+        "Temmuz Portföy Alma 1.si"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Ceyda Birdal Demirulus",
+      "achievements": [
+        "III. Çeyrek Portföy Alma 4.sü",
+        "Eylül Portföy Alma 3.sü"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "İhsan Subayoğulları",
+      "achievements": [
+        "III. Çeyrek Portföy Alma 3.sü",
+        "Eylül Portföy Alma 1.si"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Gönül Hanege",
+      "achievements": [
+        "Temmuz İşlem 3.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Hülya Yetek",
+      "achievements": [
+        "Ağustos İşlem 3.sü"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Selma Çelik Avcık",
+      "achievements": [
+        "Ağustos İşlem 2.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Sevil Çalışkan Polat",
+      "achievements": [
+        "III. Çeyrek İşlem 5.si",
+        "Ağustos İşlem 3.sü",
+        "Temmuz Portföy Alma 2.si"
+      ],
+      "count": 3
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Mustafa Karaboğa",
+      "achievements": [
+        "Eylül Ciro 5.si"
+      ],
+      "count": 1
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Serhat Pakiş",
+      "achievements": [
+        "Ağustos Ciro 5.si",
+        "Ağustos İşlem 2.si"
+      ],
+      "count": 2
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Arzu Ergüven",
+      "achievements": [
+        "Eylül Ciro 4.sü",
+        "III. Çeyrek Portföy Alma 1.si",
+        "Temmuz Portföy Alma 1.si"
+      ],
+      "count": 3
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Özkan Aydın & Ecehan Kılıç",
+      "achievements": [
+        "Eylül Ciro 3.sü",
+        "III. Çeyrek Portföy Alma 2.si",
+        "Ağustos Portföy Alma 1.si",
+        "Temmuz Portföy Alma 3.sü"
+      ],
+      "count": 4
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Özge Mete",
+      "achievements": [
+        "Eylül Ciro 2.si"
+      ],
+      "count": 1
+    }
+  ],
+  "items": [
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Nurgün Alpdoğan",
+      "periodLabel": "Haziran",
+      "category": "Portföy Alma",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Çağdaş Yalçınkaya",
+      "periodLabel": "Haziran",
+      "category": "Portföy Alma",
+      "rank": "2."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Başak Atabek",
+      "periodLabel": "Haziran",
+      "category": "Portföy Alma",
+      "rank": "1."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Mustafa Karaboğa",
+      "periodLabel": "II. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "4."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Mustafa Karaboğa",
+      "periodLabel": "Haziran",
+      "category": "Portföy Alma",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Şenol Pehlivan",
+      "periodLabel": "II. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Şenol Pehlivan",
+      "periodLabel": "Mayıs",
+      "category": "Portföy Alma",
+      "rank": "2."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Aynur Özden",
+      "periodLabel": "II. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "1."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Fırat Alperen Üsküp",
+      "periodLabel": "Haziran",
+      "category": "İşlem",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Selma Çelik Avcık",
+      "periodLabel": "Haziran",
+      "category": "İşlem",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Turgay Koca",
+      "periodLabel": "Haziran",
+      "category": "İşlem",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Serkan Eskit & Selin Eskit",
+      "periodLabel": "Haziran",
+      "category": "İşlem",
+      "rank": "2."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Suat Erişen",
+      "periodLabel": "II. Çeyrek",
+      "category": "İşlem",
+      "rank": "5."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Hasan Korkmaz",
+      "periodLabel": "II. Çeyrek",
+      "category": "İşlem",
+      "rank": "5."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Hasan Korkmaz",
+      "periodLabel": "Haziran",
+      "category": "İşlem",
+      "rank": "1."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Alper Topbaşoğlu",
+      "periodLabel": "II. Çeyrek",
+      "category": "İşlem",
+      "rank": "4."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Esra Uslu",
+      "periodLabel": "II. Çeyrek",
+      "category": "İşlem",
+      "rank": "4."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Semih Nihat Uysal",
+      "periodLabel": "II. Çeyrek",
+      "category": "İşlem",
+      "rank": "4."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Öznur Kara",
+      "periodLabel": "II. Çeyrek",
+      "category": "İşlem",
+      "rank": "4."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Öznur Kara",
+      "periodLabel": "Haziran",
+      "category": "İşlem",
+      "rank": "2."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Hasan Vacip Tekerbaş",
+      "periodLabel": "Haziran",
+      "category": "Ciro",
+      "rank": "5."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Hasan Vacip Tekerbaş",
+      "periodLabel": "II. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "5."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Gönül Hanege",
+      "periodLabel": "Mayıs",
+      "category": "Ciro",
+      "rank": "5."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Gönül Hanege",
+      "periodLabel": "II. Çeyrek",
+      "category": "İşlem",
+      "rank": "2."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Gönül Hanege",
+      "periodLabel": "Mayıs",
+      "category": "İşlem",
+      "rank": "2."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Gönül Hanege",
+      "periodLabel": "Haziran",
+      "category": "İşlem",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Gönül Hanege",
+      "periodLabel": "Haziran",
+      "category": "Portföy Alma",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Nermin Karaçocuk",
+      "periodLabel": "Haziran",
+      "category": "Ciro",
+      "rank": "4."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Ayşe Pullu",
+      "periodLabel": "Haziran",
+      "category": "Ciro",
+      "rank": "3."
+    },
+    {
+      "quarter": "II. Çeyrek",
+      "periodId": "2026-q2",
+      "displayName": "Mesut Kaya",
+      "periodLabel": "Haziran",
+      "category": "Ciro",
+      "rank": "2."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Turgay Koca",
+      "periodLabel": "Ağustos",
+      "category": "Portföy Alma",
+      "rank": "2."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Nurcan Güler",
+      "periodLabel": "Eylül",
+      "category": "Portföy Alma",
+      "rank": "2."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Ebru Biçer",
+      "periodLabel": "III. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "5."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Ebru Biçer",
+      "periodLabel": "Temmuz",
+      "category": "Portföy Alma",
+      "rank": "1."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Ceyda Birdal Demirulus",
+      "periodLabel": "III. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "4."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Ceyda Birdal Demirulus",
+      "periodLabel": "Eylül",
+      "category": "Portföy Alma",
+      "rank": "3."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "İhsan Subayoğulları",
+      "periodLabel": "III. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "3."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "İhsan Subayoğulları",
+      "periodLabel": "Eylül",
+      "category": "Portföy Alma",
+      "rank": "1."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Gönül Hanege",
+      "periodLabel": "Temmuz",
+      "category": "İşlem",
+      "rank": "3."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Hülya Yetek",
+      "periodLabel": "Ağustos",
+      "category": "İşlem",
+      "rank": "3."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Selma Çelik Avcık",
+      "periodLabel": "Ağustos",
+      "category": "İşlem",
+      "rank": "2."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Sevil Çalışkan Polat",
+      "periodLabel": "III. Çeyrek",
+      "category": "İşlem",
+      "rank": "5."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Sevil Çalışkan Polat",
+      "periodLabel": "Ağustos",
+      "category": "İşlem",
+      "rank": "3."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Sevil Çalışkan Polat",
+      "periodLabel": "Temmuz",
+      "category": "Portföy Alma",
+      "rank": "2."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Mustafa Karaboğa",
+      "periodLabel": "Eylül",
+      "category": "Ciro",
+      "rank": "5."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Serhat Pakiş",
+      "periodLabel": "Ağustos",
+      "category": "Ciro",
+      "rank": "5."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Serhat Pakiş",
+      "periodLabel": "Ağustos",
+      "category": "İşlem",
+      "rank": "2."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Arzu Ergüven",
+      "periodLabel": "Eylül",
+      "category": "Ciro",
+      "rank": "4."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Arzu Ergüven",
+      "periodLabel": "III. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "1."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Arzu Ergüven",
+      "periodLabel": "Temmuz",
+      "category": "Portföy Alma",
+      "rank": "1."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Özkan Aydın & Ecehan Kılıç",
+      "periodLabel": "Eylül",
+      "category": "Ciro",
+      "rank": "3."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Özkan Aydın & Ecehan Kılıç",
+      "periodLabel": "III. Çeyrek",
+      "category": "Portföy Alma",
+      "rank": "2."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Özkan Aydın & Ecehan Kılıç",
+      "periodLabel": "Ağustos",
+      "category": "Portföy Alma",
+      "rank": "1."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Özkan Aydın & Ecehan Kılıç",
+      "periodLabel": "Temmuz",
+      "category": "Portföy Alma",
+      "rank": "3."
+    },
+    {
+      "quarter": "III. Çeyrek",
+      "periodId": "2026-q3",
+      "displayName": "Özge Mete",
+      "periodLabel": "Eylül",
+      "category": "Ciro",
+      "rank": "2."
+    }
+  ]
+}

@@ -35,8 +35,10 @@ import {
   DEFAULT_PERSON_PERIOD_TINT,
   DEFAULT_TEAM_PERSON_ADJUST,
   DEFAULT_TEAM_STRIP_ADJUST,
+  EDGE_CLEAN_PREVIEW_MAX_SIDE,
   LOGO_GLOW_BLUR_MAX,
   PERSON_EDGE_CHOKE_MAX,
+  TEAM_STRIP_EXPORT_SCALE,
   PERSON_GLOW_BLUR_MAX,
   PERSON_INNER_GLOW_BLUR_MAX,
   TEAM_DEFS,
@@ -415,6 +417,7 @@ export default function RankingTeamStripStudio({
         logoGlow: draftRef.current.logoGlow,
         logoUrl: row.def.logoUrl,
         grayscale: true,
+        edgeCleanMaxSide: EDGE_CLEAN_PREVIEW_MAX_SIDE,
       });
       const target = previewCanvasRef.current;
       if (target && editingRef.current === row) {
@@ -433,7 +436,11 @@ export default function RankingTeamStripStudio({
   }, []);
 
   useEffect(() => {
-    if (editing) void paintPreview();
+    if (!editing) return;
+    const timer = window.setTimeout(() => {
+      void paintPreview();
+    }, 160);
+    return () => window.clearTimeout(timer);
   }, [editing, draft, periodId, paintPreview]);
 
   const savedTeamGrid = normalizeAlignGrid(adjustments[teamGridKey]);
@@ -614,6 +621,7 @@ export default function RankingTeamStripStudio({
         logoGlow: d.logoGlow,
         logoUrl: row.def.logoUrl,
         grayscale: true,
+        renderScale: TEAM_STRIP_EXPORT_SCALE,
       });
       const periodSlug = RANK_PERIODS.find((p) => p.id === periodId)?.fileSlug || periodId;
       downloadBlob(
@@ -1175,15 +1183,18 @@ export default function RankingTeamStripStudio({
                         max={PERSON_EDGE_CHOKE_MAX}
                         step={0.5}
                         value={draft.personEdgeClean.chokePx}
-                        onChange={(event) =>
+                        onInput={(event) => {
+                          const chokePx = Number(
+                            (event.target as HTMLInputElement).value
+                          );
                           setDraft((c) => ({
                             ...c,
                             personEdgeClean: normalizePersonEdgeClean({
                               ...c.personEdgeClean,
-                              chokePx: Number(event.target.value),
+                              chokePx,
                             }),
-                          }))
-                        }
+                          }));
+                        }}
                         className="mt-2 w-full accent-[var(--z-fg)]"
                       />
                     </label>
@@ -1200,15 +1211,17 @@ export default function RankingTeamStripStudio({
                         max={100}
                         step={1}
                         value={Math.round(draft.personEdgeClean.fringeDarken * 100)}
-                        onChange={(event) =>
+                        onInput={(event) => {
+                          const fringeDarken =
+                            Number((event.target as HTMLInputElement).value) / 100;
                           setDraft((c) => ({
                             ...c,
                             personEdgeClean: normalizePersonEdgeClean({
                               ...c.personEdgeClean,
-                              fringeDarken: Number(event.target.value) / 100,
+                              fringeDarken,
                             }),
-                          }))
-                        }
+                          }));
+                        }}
                         className="mt-2 w-full accent-[var(--z-fg)]"
                       />
                     </label>

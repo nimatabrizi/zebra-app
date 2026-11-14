@@ -1,0 +1,2047 @@
+{
+  "fileName": "Siralamalar_2026.xlsx",
+  "parsed": {
+    "entries": [
+      {
+        "id": "2026-05|ciro|1|kagan-kaymaz",
+        "periodId": "2026-05",
+        "category": "ciro",
+        "rank": 1,
+        "rawName": "KAĞAN KAYMAZ",
+        "people": [
+          {
+            "name": "KAĞAN KAYMAZ",
+            "key": "kagan-kaymaz"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|ciro|2|cahit-erez",
+        "periodId": "2026-05",
+        "category": "ciro",
+        "rank": 2,
+        "rawName": "CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|ciro|3|serpil-guzelce",
+        "periodId": "2026-05",
+        "category": "ciro",
+        "rank": 3,
+        "rawName": "SERPİL GÜZELCE",
+        "people": [
+          {
+            "name": "SERPİL GÜZELCE",
+            "key": "serpil-guzelce"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|ciro|4|cengiz-sengul",
+        "periodId": "2026-05",
+        "category": "ciro",
+        "rank": 4,
+        "rawName": "CENGİZ ŞENGÜL",
+        "people": [
+          {
+            "name": "CENGİZ ŞENGÜL",
+            "key": "cengiz-sengul"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|ciro|5|gonul-hanege",
+        "periodId": "2026-05",
+        "category": "ciro",
+        "rank": 5,
+        "rawName": "GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "GÖNÜL HANEGE",
+            "key": "gonul-hanege"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|islem|1|kagan-kaymaz",
+        "periodId": "2026-05",
+        "category": "islem",
+        "rank": 1,
+        "rawName": "KAĞAN KAYMAZ",
+        "people": [
+          {
+            "name": "KAĞAN KAYMAZ",
+            "key": "kagan-kaymaz"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|islem|2|gonul-hanege",
+        "periodId": "2026-05",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "GÖNÜL HANEGE, CAHİT EREZ",
+        "people": [
+          {
+            "name": "GÖNÜL HANEGE",
+            "key": "gonul-hanege"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|islem|2|cahit-erez",
+        "periodId": "2026-05",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "GÖNÜL HANEGE, CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|islem|3|cengiz-sengul",
+        "periodId": "2026-05",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "CENGİZ ŞENGÜL, FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "CENGİZ ŞENGÜL",
+            "key": "cengiz-sengul"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|islem|3|fahriye-turkoglu",
+        "periodId": "2026-05",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "CENGİZ ŞENGÜL, FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|portfoy|1|meltem-cumen",
+        "periodId": "2026-05",
+        "category": "portfoy",
+        "rank": 1,
+        "rawName": "MELTEM ÇÜMEN",
+        "people": [
+          {
+            "name": "MELTEM ÇÜMEN",
+            "key": "meltem-cumen"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|portfoy|2|senol-pehlivan",
+        "periodId": "2026-05",
+        "category": "portfoy",
+        "rank": 2,
+        "rawName": "ŞENOL PEHLİVAN",
+        "people": [
+          {
+            "name": "ŞENOL PEHLİVAN",
+            "key": "senol-pehlivan"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|portfoy|3|cahit-erez",
+        "periodId": "2026-05",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|takim|1|best-sellers-team",
+        "periodId": "2026-05",
+        "category": "takim",
+        "rank": 1,
+        "rawName": "BEST SELLERS TEAM",
+        "people": [
+          {
+            "name": "BEST SELLERS TEAM",
+            "key": "best-sellers-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|takim|2|expertiz-team",
+        "periodId": "2026-05",
+        "category": "takim",
+        "rank": 2,
+        "rawName": "EXPERTİZ TEAM",
+        "people": [
+          {
+            "name": "EXPERTİZ TEAM",
+            "key": "expertiz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|takim|3|core-team",
+        "periodId": "2026-05",
+        "category": "takim",
+        "rank": 3,
+        "rawName": "CORE TEAM",
+        "people": [
+          {
+            "name": "CORE TEAM",
+            "key": "core-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|takim|4|west-team",
+        "periodId": "2026-05",
+        "category": "takim",
+        "rank": 4,
+        "rawName": "WEST TEAM",
+        "people": [
+          {
+            "name": "WEST TEAM",
+            "key": "west-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-05|takim|5|first-team",
+        "periodId": "2026-05",
+        "category": "takim",
+        "rank": 5,
+        "rawName": "FIRST TEAM",
+        "people": [
+          {
+            "name": "FIRST TEAM",
+            "key": "first-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|ciro|1|hulya-kurt",
+        "periodId": "2026-06",
+        "category": "ciro",
+        "rank": 1,
+        "rawName": "HÜLYA KURT",
+        "people": [
+          {
+            "name": "HÜLYA KURT",
+            "key": "hulya-kurt"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|ciro|2|mesut-kaya",
+        "periodId": "2026-06",
+        "category": "ciro",
+        "rank": 2,
+        "rawName": "MESUT KAYA",
+        "people": [
+          {
+            "name": "MESUT KAYA",
+            "key": "mesut-kaya"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|ciro|3|ayse-pullu",
+        "periodId": "2026-06",
+        "category": "ciro",
+        "rank": 3,
+        "rawName": "AYŞE PULLU",
+        "people": [
+          {
+            "name": "AYŞE PULLU",
+            "key": "ayse-pullu"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|ciro|4|nermin-karacocuk",
+        "periodId": "2026-06",
+        "category": "ciro",
+        "rank": 4,
+        "rawName": "NERMİN KARAÇOCUK",
+        "people": [
+          {
+            "name": "NERMİN KARAÇOCUK",
+            "key": "nermin-karacocuk"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|ciro|5|hasan-vacip-tekerbas",
+        "periodId": "2026-06",
+        "category": "ciro",
+        "rank": 5,
+        "rawName": "HASAN VACİP TEKERBAŞ",
+        "people": [
+          {
+            "name": "HASAN VACİP TEKERBAŞ",
+            "key": "hasan-vacip-tekerbas"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|1|hasan-korkmaz",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 1,
+        "rawName": "HASAN KORKMAZ",
+        "people": [
+          {
+            "name": "HASAN KORKMAZ",
+            "key": "hasan-korkmaz"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|2|yavuz-demirulus",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "YAVUZ DEMİRULUS, SERKAN & SELİN ESKİT, ÖZNUR KARA, HÜLYA KURT",
+        "people": [
+          {
+            "name": "YAVUZ DEMİRULUS",
+            "key": "yavuz-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|2|serkan-eskit+selin-eskit",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "YAVUZ DEMİRULUS, SERKAN & SELİN ESKİT, ÖZNUR KARA, HÜLYA KURT",
+        "people": [
+          {
+            "name": "SERKAN ESKİT",
+            "key": "serkan-eskit"
+          },
+          {
+            "name": "SELİN ESKİT",
+            "key": "selin-eskit"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|2|oznur-kara",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "YAVUZ DEMİRULUS, SERKAN & SELİN ESKİT, ÖZNUR KARA, HÜLYA KURT",
+        "people": [
+          {
+            "name": "ÖZNUR KARA",
+            "key": "oznur-kara"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|2|hulya-kurt",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "YAVUZ DEMİRULUS, SERKAN & SELİN ESKİT, ÖZNUR KARA, HÜLYA KURT",
+        "people": [
+          {
+            "name": "HÜLYA KURT",
+            "key": "hulya-kurt"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|3|fahriye-turkoglu",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "FAHRİYE TÜRKOĞLU, FIRAT ALPEREN ÜSKÜP, GÖNÜL HANEGE, SELMA ÇELİK AVCIK, TURGAY KOCA",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|3|firat-alperen-uskup",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "FAHRİYE TÜRKOĞLU, FIRAT ALPEREN ÜSKÜP, GÖNÜL HANEGE, SELMA ÇELİK AVCIK, TURGAY KOCA",
+        "people": [
+          {
+            "name": "FIRAT ALPEREN ÜSKÜP",
+            "key": "firat-alperen-uskup"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|3|gonul-hanege",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "FAHRİYE TÜRKOĞLU, FIRAT ALPEREN ÜSKÜP, GÖNÜL HANEGE, SELMA ÇELİK AVCIK, TURGAY KOCA",
+        "people": [
+          {
+            "name": "GÖNÜL HANEGE",
+            "key": "gonul-hanege"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|3|selma-celik-avcik",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "FAHRİYE TÜRKOĞLU, FIRAT ALPEREN ÜSKÜP, GÖNÜL HANEGE, SELMA ÇELİK AVCIK, TURGAY KOCA",
+        "people": [
+          {
+            "name": "SELMA ÇELİK AVCIK",
+            "key": "selma-celik-avcik"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|islem|3|turgay-koca",
+        "periodId": "2026-06",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "FAHRİYE TÜRKOĞLU, FIRAT ALPEREN ÜSKÜP, GÖNÜL HANEGE, SELMA ÇELİK AVCIK, TURGAY KOCA",
+        "people": [
+          {
+            "name": "TURGAY KOCA",
+            "key": "turgay-koca"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|portfoy|1|basak-atabek",
+        "periodId": "2026-06",
+        "category": "portfoy",
+        "rank": 1,
+        "rawName": "BAŞAK ATABEK",
+        "people": [
+          {
+            "name": "BAŞAK ATABEK",
+            "key": "basak-atabek"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|portfoy|2|cagdas-yalcinkaya",
+        "periodId": "2026-06",
+        "category": "portfoy",
+        "rank": 2,
+        "rawName": "ÇAĞDAŞ YALÇINKAYA",
+        "people": [
+          {
+            "name": "ÇAĞDAŞ YALÇINKAYA",
+            "key": "cagdas-yalcinkaya"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|portfoy|3|mustafa-karaboga",
+        "periodId": "2026-06",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "MUSTAFA KARABOĞA, NURGÜN ALPDOĞAN, GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "MUSTAFA KARABOĞA",
+            "key": "mustafa-karaboga"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|portfoy|3|nurgun-alpdogan",
+        "periodId": "2026-06",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "MUSTAFA KARABOĞA, NURGÜN ALPDOĞAN, GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "NURGÜN ALPDOĞAN",
+            "key": "nurgun-alpdogan"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|portfoy|3|gonul-hanege",
+        "periodId": "2026-06",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "MUSTAFA KARABOĞA, NURGÜN ALPDOĞAN, GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "GÖNÜL HANEGE",
+            "key": "gonul-hanege"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|takim|1|west-team",
+        "periodId": "2026-06",
+        "category": "takim",
+        "rank": 1,
+        "rawName": "WEST TEAM",
+        "people": [
+          {
+            "name": "WEST TEAM",
+            "key": "west-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|takim|2|expertiz-team",
+        "periodId": "2026-06",
+        "category": "takim",
+        "rank": 2,
+        "rawName": "EXPERTİZ TEAM",
+        "people": [
+          {
+            "name": "EXPERTİZ TEAM",
+            "key": "expertiz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|takim|3|first-team",
+        "periodId": "2026-06",
+        "category": "takim",
+        "rank": 3,
+        "rawName": "FIRST TEAM",
+        "people": [
+          {
+            "name": "FIRST TEAM",
+            "key": "first-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|takim|4|best-sellers-team",
+        "periodId": "2026-06",
+        "category": "takim",
+        "rank": 4,
+        "rawName": "BEST SELLERS TEAM",
+        "people": [
+          {
+            "name": "BEST SELLERS TEAM",
+            "key": "best-sellers-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-06|takim|5|trust-line-team",
+        "periodId": "2026-06",
+        "category": "takim",
+        "rank": 5,
+        "rawName": "TRUST LINE TEAM",
+        "people": [
+          {
+            "name": "TRUST LINE TEAM",
+            "key": "trust-line-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|ciro|1|fahriye-turkoglu",
+        "periodId": "2026-07",
+        "category": "ciro",
+        "rank": 1,
+        "rawName": "FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|ciro|2|filiz-senol",
+        "periodId": "2026-07",
+        "category": "ciro",
+        "rank": 2,
+        "rawName": "FİLİZ ŞENOL",
+        "people": [
+          {
+            "name": "FİLİZ ŞENOL",
+            "key": "filiz-senol"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|ciro|3|yavuz-demirulus",
+        "periodId": "2026-07",
+        "category": "ciro",
+        "rank": 3,
+        "rawName": "YAVUZ DEMİRULUS",
+        "people": [
+          {
+            "name": "YAVUZ DEMİRULUS",
+            "key": "yavuz-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|ciro|4|melek-binoglu",
+        "periodId": "2026-07",
+        "category": "ciro",
+        "rank": 4,
+        "rawName": "MELEK BİNOĞLU",
+        "people": [
+          {
+            "name": "MELEK BİNOĞLU",
+            "key": "melek-binoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|ciro|5|cahit-erez",
+        "periodId": "2026-07",
+        "category": "ciro",
+        "rank": 5,
+        "rawName": "CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|islem|1|cahit-erez",
+        "periodId": "2026-07",
+        "category": "islem",
+        "rank": 1,
+        "rawName": "CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|islem|2|yavuz-demirulus",
+        "periodId": "2026-07",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "YAVUZ DEMİRULUS",
+        "people": [
+          {
+            "name": "YAVUZ DEMİRULUS",
+            "key": "yavuz-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|islem|3|cengiz-sengul",
+        "periodId": "2026-07",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "CENGİZ ŞENGÜL, EZGİ SEZER, GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "CENGİZ ŞENGÜL",
+            "key": "cengiz-sengul"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|islem|3|ezgi-sezer",
+        "periodId": "2026-07",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "CENGİZ ŞENGÜL, EZGİ SEZER, GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "EZGİ SEZER",
+            "key": "ezgi-sezer"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|islem|3|gonul-hanege",
+        "periodId": "2026-07",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "CENGİZ ŞENGÜL, EZGİ SEZER, GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "GÖNÜL HANEGE",
+            "key": "gonul-hanege"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|portfoy|1|ebru-bicer",
+        "periodId": "2026-07",
+        "category": "portfoy",
+        "rank": 1,
+        "rawName": "EBRU BİÇER, ARZU ERGÜVEN",
+        "people": [
+          {
+            "name": "EBRU BİÇER",
+            "key": "ebru-bicer"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|portfoy|1|arzu-erguven",
+        "periodId": "2026-07",
+        "category": "portfoy",
+        "rank": 1,
+        "rawName": "EBRU BİÇER, ARZU ERGÜVEN",
+        "people": [
+          {
+            "name": "ARZU ERGÜVEN",
+            "key": "arzu-erguven"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|portfoy|2|sevil-caliskan-polat",
+        "periodId": "2026-07",
+        "category": "portfoy",
+        "rank": 2,
+        "rawName": "SEVİL ÇALIŞKAN POLAT",
+        "people": [
+          {
+            "name": "SEVİL ÇALIŞKAN POLAT",
+            "key": "sevil-caliskan-polat"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|portfoy|3|ozkan-aydin+ecehan-kilic",
+        "periodId": "2026-07",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "ÖZKAN AYDIN & ECEHAN KILIÇ",
+        "people": [
+          {
+            "name": "ÖZKAN AYDIN",
+            "key": "ozkan-aydin"
+          },
+          {
+            "name": "ECEHAN KILIÇ",
+            "key": "ecehan-kilic"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|takim|1|first-team",
+        "periodId": "2026-07",
+        "category": "takim",
+        "rank": 1,
+        "rawName": "FIRST TEAM",
+        "people": [
+          {
+            "name": "FIRST TEAM",
+            "key": "first-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|takim|2|expertiz-team",
+        "periodId": "2026-07",
+        "category": "takim",
+        "rank": 2,
+        "rawName": "EXPERTİZ TEAM",
+        "people": [
+          {
+            "name": "EXPERTİZ TEAM",
+            "key": "expertiz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|takim|3|west-team",
+        "periodId": "2026-07",
+        "category": "takim",
+        "rank": 3,
+        "rawName": "WEST TEAM",
+        "people": [
+          {
+            "name": "WEST TEAM",
+            "key": "west-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|takim|4|oz-team",
+        "periodId": "2026-07",
+        "category": "takim",
+        "rank": 4,
+        "rawName": "ÖZ TEAM",
+        "people": [
+          {
+            "name": "ÖZ TEAM",
+            "key": "oz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-07|takim|5|red-blue-team",
+        "periodId": "2026-07",
+        "category": "takim",
+        "rank": 5,
+        "rawName": "RED BLUE TEAM",
+        "people": [
+          {
+            "name": "RED BLUE TEAM",
+            "key": "red-blue-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|ciro|1|fahriye-turkoglu",
+        "periodId": "2026-08",
+        "category": "ciro",
+        "rank": 1,
+        "rawName": "FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|ciro|2|yavuz-demirulus",
+        "periodId": "2026-08",
+        "category": "ciro",
+        "rank": 2,
+        "rawName": "YAVUZ DEMİRULUS",
+        "people": [
+          {
+            "name": "YAVUZ DEMİRULUS",
+            "key": "yavuz-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|ciro|3|ezgi-sezer",
+        "periodId": "2026-08",
+        "category": "ciro",
+        "rank": 3,
+        "rawName": "EZGİ SEZER",
+        "people": [
+          {
+            "name": "EZGİ SEZER",
+            "key": "ezgi-sezer"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|ciro|4|senol-pehlivan",
+        "periodId": "2026-08",
+        "category": "ciro",
+        "rank": 4,
+        "rawName": "ŞENOL PEHLİVAN",
+        "people": [
+          {
+            "name": "ŞENOL PEHLİVAN",
+            "key": "senol-pehlivan"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|ciro|5|serhat-pakis",
+        "periodId": "2026-08",
+        "category": "ciro",
+        "rank": 5,
+        "rawName": "SERHAT PAKİŞ",
+        "people": [
+          {
+            "name": "SERHAT PAKİŞ",
+            "key": "serhat-pakis"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|islem|1|ezgi-sezer",
+        "periodId": "2026-08",
+        "category": "islem",
+        "rank": 1,
+        "rawName": "EZGİ SEZER",
+        "people": [
+          {
+            "name": "EZGİ SEZER",
+            "key": "ezgi-sezer"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|islem|2|serhat-pakis",
+        "periodId": "2026-08",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "SERHAT PAKİŞ, SELMA ÇELİK AVCIK, FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "SERHAT PAKİŞ",
+            "key": "serhat-pakis"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|islem|2|selma-celik-avcik",
+        "periodId": "2026-08",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "SERHAT PAKİŞ, SELMA ÇELİK AVCIK, FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "SELMA ÇELİK AVCIK",
+            "key": "selma-celik-avcik"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|islem|2|fahriye-turkoglu",
+        "periodId": "2026-08",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "SERHAT PAKİŞ, SELMA ÇELİK AVCIK, FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|islem|3|senol-pehlivan",
+        "periodId": "2026-08",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "ŞENOL PEHLİVAN, SEVİL ÇALIŞKAN POLAT, HÜLYA YETEK, CENGİZ ŞENGÜL",
+        "people": [
+          {
+            "name": "ŞENOL PEHLİVAN",
+            "key": "senol-pehlivan"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|islem|3|sevil-caliskan-polat",
+        "periodId": "2026-08",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "ŞENOL PEHLİVAN, SEVİL ÇALIŞKAN POLAT, HÜLYA YETEK, CENGİZ ŞENGÜL",
+        "people": [
+          {
+            "name": "SEVİL ÇALIŞKAN POLAT",
+            "key": "sevil-caliskan-polat"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|islem|3|hulya-yetek",
+        "periodId": "2026-08",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "ŞENOL PEHLİVAN, SEVİL ÇALIŞKAN POLAT, HÜLYA YETEK, CENGİZ ŞENGÜL",
+        "people": [
+          {
+            "name": "HÜLYA YETEK",
+            "key": "hulya-yetek"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|islem|3|cengiz-sengul",
+        "periodId": "2026-08",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "ŞENOL PEHLİVAN, SEVİL ÇALIŞKAN POLAT, HÜLYA YETEK, CENGİZ ŞENGÜL",
+        "people": [
+          {
+            "name": "CENGİZ ŞENGÜL",
+            "key": "cengiz-sengul"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|portfoy|1|ozkan-aydin+ecehan-kilic",
+        "periodId": "2026-08",
+        "category": "portfoy",
+        "rank": 1,
+        "rawName": "ÖZKAN AYDIN & ECEHAN KILIÇ",
+        "people": [
+          {
+            "name": "ÖZKAN AYDIN",
+            "key": "ozkan-aydin"
+          },
+          {
+            "name": "ECEHAN KILIÇ",
+            "key": "ecehan-kilic"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|portfoy|2|turgay-koca",
+        "periodId": "2026-08",
+        "category": "portfoy",
+        "rank": 2,
+        "rawName": "TURGAY KOCA",
+        "people": [
+          {
+            "name": "TURGAY KOCA",
+            "key": "turgay-koca"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|portfoy|3|cahit-erez",
+        "periodId": "2026-08",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|takim|1|west-team",
+        "periodId": "2026-08",
+        "category": "takim",
+        "rank": 1,
+        "rawName": "WEST TEAM",
+        "people": [
+          {
+            "name": "WEST TEAM",
+            "key": "west-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|takim|2|first-team",
+        "periodId": "2026-08",
+        "category": "takim",
+        "rank": 2,
+        "rawName": "FIRST TEAM",
+        "people": [
+          {
+            "name": "FIRST TEAM",
+            "key": "first-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|takim|3|expertiz-team",
+        "periodId": "2026-08",
+        "category": "takim",
+        "rank": 3,
+        "rawName": "EXPERTİZ TEAM",
+        "people": [
+          {
+            "name": "EXPERTİZ TEAM",
+            "key": "expertiz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|takim|4|trust-line-team",
+        "periodId": "2026-08",
+        "category": "takim",
+        "rank": 4,
+        "rawName": "TRUST LINE TEAM",
+        "people": [
+          {
+            "name": "TRUST LINE TEAM",
+            "key": "trust-line-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-08|takim|5|best-sellers-team",
+        "periodId": "2026-08",
+        "category": "takim",
+        "rank": 5,
+        "rawName": "BEST SELLERS TEAM",
+        "people": [
+          {
+            "name": "BEST SELLERS TEAM",
+            "key": "best-sellers-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|ciro|1|hulya-kurt",
+        "periodId": "2026-09",
+        "category": "ciro",
+        "rank": 1,
+        "rawName": "HÜLYA KURT",
+        "people": [
+          {
+            "name": "HÜLYA KURT",
+            "key": "hulya-kurt"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|ciro|2|ozge-mete",
+        "periodId": "2026-09",
+        "category": "ciro",
+        "rank": 2,
+        "rawName": "ÖZGE METE",
+        "people": [
+          {
+            "name": "ÖZGE METE",
+            "key": "ozge-mete"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|ciro|3|ozkan-aydin+ecehan-kilic",
+        "periodId": "2026-09",
+        "category": "ciro",
+        "rank": 3,
+        "rawName": "ÖZKAN AYDIN & ECEHAN KILIÇ",
+        "people": [
+          {
+            "name": "ÖZKAN AYDIN",
+            "key": "ozkan-aydin"
+          },
+          {
+            "name": "ECEHAN KILIÇ",
+            "key": "ecehan-kilic"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|ciro|4|arzu-erguven",
+        "periodId": "2026-09",
+        "category": "ciro",
+        "rank": 4,
+        "rawName": "ARZU ERGÜVEN",
+        "people": [
+          {
+            "name": "ARZU ERGÜVEN",
+            "key": "arzu-erguven"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|ciro|5|mustafa-karaboga",
+        "periodId": "2026-09",
+        "category": "ciro",
+        "rank": 5,
+        "rawName": "MUSTAFA KARABOĞA",
+        "people": [
+          {
+            "name": "MUSTAFA KARABOĞA",
+            "key": "mustafa-karaboga"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|islem|1|hulya-kurt",
+        "periodId": "2026-09",
+        "category": "islem",
+        "rank": 1,
+        "rawName": "HÜLYA KURT",
+        "people": [
+          {
+            "name": "HÜLYA KURT",
+            "key": "hulya-kurt"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|islem|2|ezgi-sezer",
+        "periodId": "2026-09",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "EZGİ SEZER",
+        "people": [
+          {
+            "name": "EZGİ SEZER",
+            "key": "ezgi-sezer"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|islem|3|fahriye-turkoglu",
+        "periodId": "2026-09",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|portfoy|1|ihsan-subayogullari",
+        "periodId": "2026-09",
+        "category": "portfoy",
+        "rank": 1,
+        "rawName": "İHSAN SUBAYOĞULLARI",
+        "people": [
+          {
+            "name": "İHSAN SUBAYOĞULLARI",
+            "key": "ihsan-subayogullari"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|portfoy|2|nurcan-guler",
+        "periodId": "2026-09",
+        "category": "portfoy",
+        "rank": 2,
+        "rawName": "NURCAN GÜLER",
+        "people": [
+          {
+            "name": "NURCAN GÜLER",
+            "key": "nurcan-guler"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|portfoy|3|ceyda-birdal-demirulus",
+        "periodId": "2026-09",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "CEYDA BİRDAL DEMİRULUS",
+        "people": [
+          {
+            "name": "CEYDA BİRDAL DEMİRULUS",
+            "key": "ceyda-birdal-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|takim|1|west-team",
+        "periodId": "2026-09",
+        "category": "takim",
+        "rank": 1,
+        "rawName": "WEST TEAM",
+        "people": [
+          {
+            "name": "WEST TEAM",
+            "key": "west-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|takim|2|prime-team",
+        "periodId": "2026-09",
+        "category": "takim",
+        "rank": 2,
+        "rawName": "PRIME TEAM",
+        "people": [
+          {
+            "name": "PRIME TEAM",
+            "key": "prime-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|takim|3|oz-team",
+        "periodId": "2026-09",
+        "category": "takim",
+        "rank": 3,
+        "rawName": "ÖZ TEAM",
+        "people": [
+          {
+            "name": "ÖZ TEAM",
+            "key": "oz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|takim|4|expertiz-team",
+        "periodId": "2026-09",
+        "category": "takim",
+        "rank": 4,
+        "rawName": "EXPERTİZ TEAM",
+        "people": [
+          {
+            "name": "EXPERTİZ TEAM",
+            "key": "expertiz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-09|takim|5|first-team",
+        "periodId": "2026-09",
+        "category": "takim",
+        "rank": 5,
+        "rawName": "FIRST TEAM",
+        "people": [
+          {
+            "name": "FIRST TEAM",
+            "key": "first-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|ciro|1|zeynep-eryilmaz",
+        "periodId": "2026-q2",
+        "category": "ciro",
+        "rank": 1,
+        "rawName": "ZEYNEP ERYILMAZ",
+        "people": [
+          {
+            "name": "ZEYNEP ERYILMAZ",
+            "key": "zeynep-eryilmaz"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|ciro|2|kagan-kaymaz",
+        "periodId": "2026-q2",
+        "category": "ciro",
+        "rank": 2,
+        "rawName": "KAĞAN KAYMAZ",
+        "people": [
+          {
+            "name": "KAĞAN KAYMAZ",
+            "key": "kagan-kaymaz"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|ciro|3|cahit-erez",
+        "periodId": "2026-q2",
+        "category": "ciro",
+        "rank": 3,
+        "rawName": "CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|ciro|4|cengiz-sengul",
+        "periodId": "2026-q2",
+        "category": "ciro",
+        "rank": 4,
+        "rawName": "CENGİZ ŞENGÜL",
+        "people": [
+          {
+            "name": "CENGİZ ŞENGÜL",
+            "key": "cengiz-sengul"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|ciro|5|serpil-guzelce",
+        "periodId": "2026-q2",
+        "category": "ciro",
+        "rank": 5,
+        "rawName": "SERPİL GÜZELCE",
+        "people": [
+          {
+            "name": "SERPİL GÜZELCE",
+            "key": "serpil-guzelce"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|1|cahit-erez",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 1,
+        "rawName": "CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|2|fahriye-turkoglu",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "FAHRİYE TÜRKOĞLU, GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|2|gonul-hanege",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "FAHRİYE TÜRKOĞLU, GÖNÜL HANEGE",
+        "people": [
+          {
+            "name": "GÖNÜL HANEGE",
+            "key": "gonul-hanege"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|3|kagan-kaymaz",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "KAĞAN KAYMAZ, YAVUZ DEMİRULUS",
+        "people": [
+          {
+            "name": "KAĞAN KAYMAZ",
+            "key": "kagan-kaymaz"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|3|yavuz-demirulus",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "KAĞAN KAYMAZ, YAVUZ DEMİRULUS",
+        "people": [
+          {
+            "name": "YAVUZ DEMİRULUS",
+            "key": "yavuz-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|4|alper-topbasoglu",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 4,
+        "rawName": "ALPER TOPBAŞOĞLU, CENGİZ ŞENGÜL, ESRA USLU, ÖZNUR KARA, SEMİH NİHAT UYSAL",
+        "people": [
+          {
+            "name": "ALPER TOPBAŞOĞLU",
+            "key": "alper-topbasoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|4|cengiz-sengul",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 4,
+        "rawName": "ALPER TOPBAŞOĞLU, CENGİZ ŞENGÜL, ESRA USLU, ÖZNUR KARA, SEMİH NİHAT UYSAL",
+        "people": [
+          {
+            "name": "CENGİZ ŞENGÜL",
+            "key": "cengiz-sengul"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|4|esra-uslu",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 4,
+        "rawName": "ALPER TOPBAŞOĞLU, CENGİZ ŞENGÜL, ESRA USLU, ÖZNUR KARA, SEMİH NİHAT UYSAL",
+        "people": [
+          {
+            "name": "ESRA USLU",
+            "key": "esra-uslu"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|4|oznur-kara",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 4,
+        "rawName": "ALPER TOPBAŞOĞLU, CENGİZ ŞENGÜL, ESRA USLU, ÖZNUR KARA, SEMİH NİHAT UYSAL",
+        "people": [
+          {
+            "name": "ÖZNUR KARA",
+            "key": "oznur-kara"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|4|semih-nihat-uysal",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 4,
+        "rawName": "ALPER TOPBAŞOĞLU, CENGİZ ŞENGÜL, ESRA USLU, ÖZNUR KARA, SEMİH NİHAT UYSAL",
+        "people": [
+          {
+            "name": "SEMİH NİHAT UYSAL",
+            "key": "semih-nihat-uysal"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|5|zeynep-eryilmaz",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 5,
+        "rawName": "ZEYNEP ERYILMAZ, SUAT ERİŞEN, SERPİL GÜZELCE, HASAN KORKMAZ",
+        "people": [
+          {
+            "name": "ZEYNEP ERYILMAZ",
+            "key": "zeynep-eryilmaz"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|5|suat-erisen",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 5,
+        "rawName": "ZEYNEP ERYILMAZ, SUAT ERİŞEN, SERPİL GÜZELCE, HASAN KORKMAZ",
+        "people": [
+          {
+            "name": "SUAT ERİŞEN",
+            "key": "suat-erisen"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|5|serpil-guzelce",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 5,
+        "rawName": "ZEYNEP ERYILMAZ, SUAT ERİŞEN, SERPİL GÜZELCE, HASAN KORKMAZ",
+        "people": [
+          {
+            "name": "SERPİL GÜZELCE",
+            "key": "serpil-guzelce"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|islem|5|hasan-korkmaz",
+        "periodId": "2026-q2",
+        "category": "islem",
+        "rank": 5,
+        "rawName": "ZEYNEP ERYILMAZ, SUAT ERİŞEN, SERPİL GÜZELCE, HASAN KORKMAZ",
+        "people": [
+          {
+            "name": "HASAN KORKMAZ",
+            "key": "hasan-korkmaz"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|portfoy|1|aynur-ozden",
+        "periodId": "2026-q2",
+        "category": "portfoy",
+        "rank": 1,
+        "rawName": "AYNUR ÖZDEN",
+        "people": [
+          {
+            "name": "AYNUR ÖZDEN",
+            "key": "aynur-ozden"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|portfoy|2|meltem-cumen",
+        "periodId": "2026-q2",
+        "category": "portfoy",
+        "rank": 2,
+        "rawName": "MELTEM ÇÜMEN, CAHİT EREZ",
+        "people": [
+          {
+            "name": "MELTEM ÇÜMEN",
+            "key": "meltem-cumen"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|portfoy|2|cahit-erez",
+        "periodId": "2026-q2",
+        "category": "portfoy",
+        "rank": 2,
+        "rawName": "MELTEM ÇÜMEN, CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|portfoy|3|senol-pehlivan",
+        "periodId": "2026-q2",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "ŞENOL PEHLİVAN",
+        "people": [
+          {
+            "name": "ŞENOL PEHLİVAN",
+            "key": "senol-pehlivan"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|portfoy|4|mustafa-karaboga",
+        "periodId": "2026-q2",
+        "category": "portfoy",
+        "rank": 4,
+        "rawName": "MUSTAFA KARABOĞA",
+        "people": [
+          {
+            "name": "MUSTAFA KARABOĞA",
+            "key": "mustafa-karaboga"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|portfoy|5|hasan-vacip-tekerbas",
+        "periodId": "2026-q2",
+        "category": "portfoy",
+        "rank": 5,
+        "rawName": "HASAN VACİP TEKERBAŞ",
+        "people": [
+          {
+            "name": "HASAN VACİP TEKERBAŞ",
+            "key": "hasan-vacip-tekerbas"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|takim|1|expertiz-team",
+        "periodId": "2026-q2",
+        "category": "takim",
+        "rank": 1,
+        "rawName": "EXPERTİZ TEAM",
+        "people": [
+          {
+            "name": "EXPERTİZ TEAM",
+            "key": "expertiz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|takim|2|best-sellers-team",
+        "periodId": "2026-q2",
+        "category": "takim",
+        "rank": 2,
+        "rawName": "BEST SELLERS TEAM",
+        "people": [
+          {
+            "name": "BEST SELLERS TEAM",
+            "key": "best-sellers-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|takim|3|west-team",
+        "periodId": "2026-q2",
+        "category": "takim",
+        "rank": 3,
+        "rawName": "WEST TEAM",
+        "people": [
+          {
+            "name": "WEST TEAM",
+            "key": "west-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|takim|4|first-team",
+        "periodId": "2026-q2",
+        "category": "takim",
+        "rank": 4,
+        "rawName": "FIRST TEAM",
+        "people": [
+          {
+            "name": "FIRST TEAM",
+            "key": "first-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q2|takim|5|sirius-team",
+        "periodId": "2026-q2",
+        "category": "takim",
+        "rank": 5,
+        "rawName": "SIRIUS TEAM",
+        "people": [
+          {
+            "name": "SIRIUS TEAM",
+            "key": "sirius-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|ciro|1|fahriye-turkoglu",
+        "periodId": "2026-q3",
+        "category": "ciro",
+        "rank": 1,
+        "rawName": "FAHRİYE TÜRKOĞLU",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|ciro|2|filiz-senol",
+        "periodId": "2026-q3",
+        "category": "ciro",
+        "rank": 2,
+        "rawName": "FİLİZ ŞENOL",
+        "people": [
+          {
+            "name": "FİLİZ ŞENOL",
+            "key": "filiz-senol"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|ciro|3|yavuz-demirulus",
+        "periodId": "2026-q3",
+        "category": "ciro",
+        "rank": 3,
+        "rawName": "YAVUZ DEMİRULUS",
+        "people": [
+          {
+            "name": "YAVUZ DEMİRULUS",
+            "key": "yavuz-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|ciro|4|ezgi-sezer",
+        "periodId": "2026-q3",
+        "category": "ciro",
+        "rank": 4,
+        "rawName": "EZGİ SEZER",
+        "people": [
+          {
+            "name": "EZGİ SEZER",
+            "key": "ezgi-sezer"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|ciro|5|hulya-kurt",
+        "periodId": "2026-q3",
+        "category": "ciro",
+        "rank": 5,
+        "rawName": "HÜLYA KURT",
+        "people": [
+          {
+            "name": "HÜLYA KURT",
+            "key": "hulya-kurt"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|ciro|10|umur-konuk",
+        "periodId": "2026-q3",
+        "category": "ciro",
+        "rank": 10,
+        "rawName": "UMUR KONUK",
+        "people": [
+          {
+            "name": "UMUR KONUK",
+            "key": "umur-konuk"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|islem|1|ezgi-sezer",
+        "periodId": "2026-q3",
+        "category": "islem",
+        "rank": 1,
+        "rawName": "EZGİ SEZER",
+        "people": [
+          {
+            "name": "EZGİ SEZER",
+            "key": "ezgi-sezer"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|islem|2|cahit-erez",
+        "periodId": "2026-q3",
+        "category": "islem",
+        "rank": 2,
+        "rawName": "CAHİT EREZ",
+        "people": [
+          {
+            "name": "CAHİT EREZ",
+            "key": "cahit-erez"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|islem|3|fahriye-turkoglu",
+        "periodId": "2026-q3",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "FAHRİYE TÜRKOĞLU, HÜLYA KURT",
+        "people": [
+          {
+            "name": "FAHRİYE TÜRKOĞLU",
+            "key": "fahriye-turkoglu"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|islem|3|hulya-kurt",
+        "periodId": "2026-q3",
+        "category": "islem",
+        "rank": 3,
+        "rawName": "FAHRİYE TÜRKOĞLU, HÜLYA KURT",
+        "people": [
+          {
+            "name": "HÜLYA KURT",
+            "key": "hulya-kurt"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|islem|4|cengiz-sengul",
+        "periodId": "2026-q3",
+        "category": "islem",
+        "rank": 4,
+        "rawName": "CENGİZ ŞENGÜL",
+        "people": [
+          {
+            "name": "CENGİZ ŞENGÜL",
+            "key": "cengiz-sengul"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|islem|5|yavuz-demirulus",
+        "periodId": "2026-q3",
+        "category": "islem",
+        "rank": 5,
+        "rawName": "YAVUZ DEMİRULUS, SEVİL CALIŞKAN POLAT",
+        "people": [
+          {
+            "name": "YAVUZ DEMİRULUS",
+            "key": "yavuz-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|islem|5|sevil-caliskan-polat",
+        "periodId": "2026-q3",
+        "category": "islem",
+        "rank": 5,
+        "rawName": "YAVUZ DEMİRULUS, SEVİL CALIŞKAN POLAT",
+        "people": [
+          {
+            "name": "SEVİL CALIŞKAN POLAT",
+            "key": "sevil-caliskan-polat"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|portfoy|1|arzu-erguven",
+        "periodId": "2026-q3",
+        "category": "portfoy",
+        "rank": 1,
+        "rawName": "ARZU ERGÜVEN",
+        "people": [
+          {
+            "name": "ARZU ERGÜVEN",
+            "key": "arzu-erguven"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|portfoy|2|ozkan-aydin+ecehan-kilic",
+        "periodId": "2026-q3",
+        "category": "portfoy",
+        "rank": 2,
+        "rawName": "ÖZKAN AYDIN & ECEHAN KILIÇ",
+        "people": [
+          {
+            "name": "ÖZKAN AYDIN",
+            "key": "ozkan-aydin"
+          },
+          {
+            "name": "ECEHAN KILIÇ",
+            "key": "ecehan-kilic"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|portfoy|3|ihsan-subayogullari",
+        "periodId": "2026-q3",
+        "category": "portfoy",
+        "rank": 3,
+        "rawName": "İHSAN SUBAYOĞULLARI",
+        "people": [
+          {
+            "name": "İHSAN SUBAYOĞULLARI",
+            "key": "ihsan-subayogullari"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|portfoy|4|ceyda-birdal-demirulus",
+        "periodId": "2026-q3",
+        "category": "portfoy",
+        "rank": 4,
+        "rawName": "CEYDA BİRDAL DEMİRULUS",
+        "people": [
+          {
+            "name": "CEYDA BİRDAL DEMİRULUS",
+            "key": "ceyda-birdal-demirulus"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|portfoy|5|ebru-bicer",
+        "periodId": "2026-q3",
+        "category": "portfoy",
+        "rank": 5,
+        "rawName": "EBRU BİÇER",
+        "people": [
+          {
+            "name": "EBRU BİÇER",
+            "key": "ebru-bicer"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|takim|1|west-team",
+        "periodId": "2026-q3",
+        "category": "takim",
+        "rank": 1,
+        "rawName": "WEST TEAM",
+        "people": [
+          {
+            "name": "WEST TEAM",
+            "key": "west-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|takim|2|first-team",
+        "periodId": "2026-q3",
+        "category": "takim",
+        "rank": 2,
+        "rawName": "FIRST TEAM",
+        "people": [
+          {
+            "name": "FIRST TEAM",
+            "key": "first-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|takim|3|expertiz-team",
+        "periodId": "2026-q3",
+        "category": "takim",
+        "rank": 3,
+        "rawName": "EXPERTİZ TEAM",
+        "people": [
+          {
+            "name": "EXPERTİZ TEAM",
+            "key": "expertiz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|takim|4|oz-team",
+        "periodId": "2026-q3",
+        "category": "takim",
+        "rank": 4,
+        "rawName": "ÖZ TEAM",
+        "people": [
+          {
+            "name": "ÖZ TEAM",
+            "key": "oz-team"
+          }
+        ]
+      },
+      {
+        "id": "2026-q3|takim|5|prime-team",
+        "periodId": "2026-q3",
+        "category": "takim",
+        "rank": 5,
+        "rawName": "PRIME TEAM",
+        "people": [
+          {
+            "name": "PRIME TEAM",
+            "key": "prime-team"
+          }
+        ]
+      }
+    ],
+    "sheets": [
+      {
+        "name": "Mayıs",
+        "periodId": "2026-05",
+        "count": 18
+      },
+      {
+        "name": "Haziran",
+        "periodId": "2026-06",
+        "count": 25
+      },
+      {
+        "name": "Temmuz",
+        "periodId": "2026-07",
+        "count": 19
+      },
+      {
+        "name": "Ağustos",
+        "periodId": "2026-08",
+        "count": 21
+      },
+      {
+        "name": "Eylül",
+        "periodId": "2026-09",
+        "count": 16
+      },
+      {
+        "name": "Ekim",
+        "periodId": "2026-10",
+        "count": 0
+      },
+      {
+        "name": "2. Çeyrek",
+        "periodId": "2026-q2",
+        "count": 30
+      },
+      {
+        "name": "3. Çeyrek",
+        "periodId": "2026-q3",
+        "count": 22
+      }
+    ],
+    "warnings": []
+  },
+  "savedAt": "2026-11-03T07:00:47.647Z"
+}
