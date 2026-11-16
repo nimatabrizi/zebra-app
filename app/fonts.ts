@@ -1,3 +1,4 @@
+import localFont from "next/font/local";
 import {
   Anton,
   Archivo_Black,
@@ -15,7 +16,6 @@ import {
   Poppins,
   Raleway,
   Roboto,
-  Teko,
 } from "next/font/google";
 
 export const geistSans = Geist({
@@ -106,10 +106,17 @@ export const inter = Inter({
   subsets: ["latin", "latin-ext"],
 });
 
-export const teko = Teko({
-  weight: ["400", "500", "600", "700"],
+/** Yerel Teko — Vercel Turbopack + fonts.gstatic çözümleme hatasını önler */
+export const teko = localFont({
+  src: [
+    {
+      path: "./fonts/teko/teko-latin-variable.woff2",
+      weight: "300 700",
+      style: "normal",
+    },
+  ],
   variable: "--font-teko",
-  subsets: ["latin", "latin-ext"],
+  display: "swap",
 });
 
 /** CSS variables for root <html> — used by studio font pickers + export */
