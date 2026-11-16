@@ -53,6 +53,34 @@ const LISTING_NO_RES = [
   /-(\d{8,12})(?:\/|$|\?|#)/,
 ];
 
+const TR_SLUG_MAP: Record<string, string> = {
+  ç: 'c',
+  Ç: 'c',
+  ğ: 'g',
+  Ğ: 'g',
+  ı: 'i',
+  I: 'i',
+  İ: 'i',
+  ö: 'o',
+  Ö: 'o',
+  ş: 's',
+  Ş: 's',
+  ü: 'u',
+  Ü: 'u',
+  â: 'a',
+  Â: 'a',
+  î: 'i',
+  Î: 'i',
+  û: 'u',
+  Û: 'u',
+};
+
+export type SahibindenUrlMeta = {
+  title?: string | null;
+  kind?: string | null;
+  status?: string | null;
+};
+
 export function extractSahibindenListingNo(input: string): string | null {
   const s = String(input || '').trim();
   if (!s) return null;
@@ -64,20 +92,138 @@ export function extractSahibindenListingNo(input: string): string | null {
   return null;
 }
 
+/** Slug’suz `/ilan/{no}` — Sahibinden’de 404. */
+export function isBareSahibindenListingUrl(url: string): boolean {
+  const path = String(url || '')
+    .trim()
+    .split(/[?#]/)[0]
+    .replace(/^https?:\/\/(?:www\.)?sahibinden\.com/i, '');
+  return /^\/ilan\/\d{8,12}\/?$/i.test(path);
+}
+
+function transliterateTr(s: string): string {
+  return String(s || '').replace(
+    /[çÇğĞıIİöÖşŞüÜâÂîÎûÛ]/g,
+    (ch) => TR_SLUG_MAP[ch] || ch
+  );
+}
+
+/** IVO / Sahibinden başlık slug’u (1+1 → 1-plus1, m² → m2, 2.045 korunur). */
+export function slugifySahibindenTitle(title: string): string {
+  const DOT = '\uE000';
+  return transliterateTr(title)
+    .toLowerCase()
+    .replace(/²/g, '2')
+    .replace(/\+/g, '-plus')
+    .replace(/['’]/g, '-')
+    .replace(/&/g, ' ')
+    .replace(/(\d+)\.(\d+)/g, (_, a: string, b: string) => `${a}${DOT}${b}`)
+    .replace(/[^a-z0-9\uE000]+/g, '-')
+    .replace(new RegExp(DOT, 'g'), '.')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function kindPathSegment(kind: string | null | undefined): string {
+  const k = transliterateTr(String(kind || ''))
+    .toLowerCase()
+    .trim();
+  if (!k) return 'konut';
+  if (k === 'arazi') return 'arsa';
+  if (k === 'is yeri') return 'is-yeri';
+  return k.replace(/\s+/g, '-') || 'konut';
+}
+
+function statusPathSegment(status: string | null | undefined): string {
+  const s = transliterateTr(String(status || '')).toLowerCase();
+  if (s.includes('kira')) return 'kiralik';
+  return 'satilik';
+}
+
+/**
+ * IVO’nun verdiği göreli path ile aynı format:
+ * `/ilan/emlak-{kind}-{status}-{title-slug}-{no}/detay`
+ */
+export function buildSahibindenListingPath(
+  listingNo: string | number,
+  meta?: SahibindenUrlMeta
+): string | null {
+  const no = String(listingNo ?? '')
+    .replace(/\D/g, '')
+    .trim();
+  if (no.length < 8) return null;
+  const titleSlug = slugifySahibindenTitle(String(meta?.title || '').trim());
+  if (!titleSlug) return null;
+  return `/ilan/emlak-${kindPathSegment(meta?.kind)}-${statusPathSegment(meta?.status)}-${titleSlug}-${no}/detay`;
+}
+
+export function buildSahibindenListingUrl(
+  listingNo: string | number,
+  meta?: SahibindenUrlMeta
+): string | null {
+  const path = buildSahibindenListingPath(listingNo, meta);
+  return path ? `https://www.sahibinden.com${path}` : null;
+}
+
 export function normalizeSahibindenUrl(input: string): string | null {
-  const no = extractSahibindenListingNo(input);
-  if (!no) return null;
   const raw = String(input || '').trim();
-  if (/^https?:\/\/([^/]*\.)?sahibinden\.com\//i.test(raw)) {
+  if (!raw) return null;
+
+  let abs: string | null = null;
+
+  // Göreli path: /ilan/baslik-slug-123…/detay
+  if (raw.startsWith('/')) {
+    abs = `https://www.sahibinden.com${raw.split(/[?#]/)[0]}`;
+  } else if (/^(?:www\.)?sahibinden\.com\//i.test(raw)) {
+    abs = `https://${raw.replace(/^https?:\/\//i, '').split(/[?#]/)[0]}`;
+  } else if (/^https?:\/\/([^/]*\.)?sahibinden\.com\//i.test(raw)) {
     try {
       const u = new URL(raw);
       u.hash = '';
-      return u.toString();
+      abs = u.toString();
     } catch {
-      /* fallthrough */
+      abs = null;
     }
   }
-  return `https://www.sahibinden.com/ilan/${no}`;
+
+  if (abs) {
+    if (isBareSahibindenListingUrl(abs)) return null;
+    return abs;
+  }
+
+  // Salt ilan no → slug’suz URL üretme (404)
+  return null;
+}
+
+/**
+ * IVO kart / satır URL’sini Sahibinden absolut linke çevir.
+ * Göreli `/ilan/…-no/detay` yollarını korur; slug yoksa başlıktan üretir.
+ * Asla slug’suz `/ilan/{no}` döndürmez (404).
+ */
+export function resolveSahibindenListingUrl(
+  url: string | null | undefined,
+  listingNo?: string | number | null,
+  meta?: SahibindenUrlMeta
+): string {
+  const raw = url != null ? String(url).trim() : '';
+  if (raw) {
+    const normalized = normalizeSahibindenUrl(raw);
+    if (normalized) return normalized;
+    if (raw.startsWith('/') && !isBareSahibindenListingUrl(raw)) {
+      return `https://www.sahibinden.com${raw.split(/[?#]/)[0]}`;
+    }
+    if (/^https?:\/\//i.test(raw) && !isBareSahibindenListingUrl(raw)) {
+      return raw.split(/[?#]/)[0];
+    }
+  }
+
+  const no = String(listingNo ?? '')
+    .replace(/\D/g, '')
+    .trim();
+  const built = no ? buildSahibindenListingUrl(no, meta) : null;
+  if (built) return built;
+
+  return 'https://www.sahibinden.com';
 }
 
 function parsePriceToTl(raw: string | null | undefined): number | null {

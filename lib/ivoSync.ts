@@ -6,7 +6,7 @@
 
 import { createServiceClient } from '../utils/supabase/admin';
 import { ivoRequest, getIvoSessionStatus } from './ivoApiClient';
-import { isFsboWhom } from './sahibindenListing';
+import { isFsboWhom, resolveSahibindenListingUrl } from './sahibindenListing';
 import type { IvoMapPoint } from './ivoMap';
 import { ivoMapSearch } from './ivoMap';
 
@@ -186,10 +186,15 @@ function cardToPayload(card: IvoCard, feed: IvoSyncFeed) {
   return {
     source: 'sahibinden' as const,
     listing_no: listingNo,
-    url:
-      card.url && String(card.url).startsWith('http')
-        ? String(card.url)
-        : `https://www.sahibinden.com/ilan/${listingNo}`,
+    url: resolveSahibindenListingUrl(
+      card.url ? String(card.url) : null,
+      listingNo,
+      {
+        title: card.title ? String(card.title) : null,
+        kind: card.kind ? String(card.kind) : null,
+        status: card.status ? String(card.status) : null,
+      }
+    ),
     title: card.title ? String(card.title) : null,
     price_tl: priceTl,
     price_m2:

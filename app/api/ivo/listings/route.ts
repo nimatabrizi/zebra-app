@@ -13,6 +13,22 @@ import {
 import { listComparableListings } from '../../../../lib/ivoComps';
 import { listOfficeListingsLive } from '../../../../lib/ivoOfficeLive';
 import {
+  listFsboLive,
+  listFsboSectionCounts,
+  parseFsboAge,
+  parseFsboSection,
+} from '../../../../lib/ivoFsboLive';
+import { fetchIvoPropertyDetail } from '../../../../lib/ivoPropertyDetail';
+import { fetchIvoDetailBundle } from '../../../../lib/ivoDetailBundle';
+import { fetchNearbyPois } from '../../../../lib/ivoNearbyPoi';
+import { ivoRequest } from '../../../../lib/ivoApiClient';
+import {
+  listPortfolioLive,
+  type PortfolioFilters,
+  type PortfolioPeriod,
+  type PortfolioScope,
+} from '../../../../lib/ivoPortfolioLive';
+import {
   fetchMapFacets,
   fetchMapRegionSummary,
   listMapListings,
@@ -144,6 +160,91 @@ export async function GET(request: Request) {
       return NextResponse.json(result);
     }
 
+    if (view === 'detail') {
+      const listingNo =
+        url.searchParams.get('listingNo') || url.searchParams.get('no') || '';
+      if (!listingNo.trim()) {
+        return NextResponse.json(
+          { error: 'listingNo gerekli' },
+          { status: 400 }
+        );
+      }
+      const rich = url.searchParams.get('rich') !== '0';
+      if (rich) {
+        const bundle = await fetchIvoDetailBundle(listingNo.trim());
+        return NextResponse.json({ view: 'detail', ...bundle });
+      }
+      const detail = await fetchIvoPropertyDetail(listingNo.trim());
+      return NextResponse.json({ view: 'detail', detail });
+    }
+
+    if (view === 'price-history') {
+      const listingNo =
+        url.searchParams.get('listingNo') || url.searchParams.get('no') || '';
+      if (!listingNo.trim()) {
+        return NextResponse.json(
+          { error: 'listingNo gerekli' },
+          { status: 400 }
+        );
+      }
+      const no = listingNo.trim().replace(/\D/g, '');
+      const raw = await ivoRequest<{
+        success?: boolean;
+        data?: unknown;
+      }>(`/properties/${no}/price-history`);
+      const data =
+        raw && typeof raw === 'object' && 'data' in raw
+          ? (raw as { data?: unknown }).data
+          : raw;
+      return NextResponse.json({ view: 'price-history', listingNo: no, data });
+    }
+
+    if (view === 'twins') {
+      const listingNo =
+        url.searchParams.get('listingNo') || url.searchParams.get('no') || '';
+      if (!listingNo.trim()) {
+        return NextResponse.json(
+          { error: 'listingNo gerekli' },
+          { status: 400 }
+        );
+      }
+      const no = listingNo.trim().replace(/\D/g, '');
+      const raw = await ivoRequest<{
+        success?: boolean;
+        data?: unknown[];
+        meta?: Record<string, unknown>;
+      }>(`/properties/${no}/twins?view=detail&limit=40`);
+      const items = Array.isArray(raw?.data) ? raw.data : [];
+      return NextResponse.json({
+        view: 'twins',
+        listingNo: no,
+        items,
+        meta: raw?.meta || null,
+      });
+    }
+
+    if (view === 'nearby-poi') {
+      const lat = Number(url.searchParams.get('lat'));
+      const lng = Number(url.searchParams.get('lng'));
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return NextResponse.json(
+          { error: 'lat/lng gerekli' },
+          { status: 400 }
+        );
+      }
+      const catsRaw = url.searchParams.get('cats');
+      const cats = catsRaw
+        ? (catsRaw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean) as Array<
+            'okul' | 'ulasim' | 'market' | 'saglik' | 'yesil'
+          >)
+        : undefined;
+      const items = await fetchNearbyPois({ lat, lng, categories: cats });
+      return NextResponse.json({ view: 'nearby-poi', items });
+    }
+
     if (view === 'comps') {
       const listingNo =
         url.searchParams.get('listingNo') || url.searchParams.get('no') || '';
@@ -202,6 +303,123 @@ export async function GET(request: Request) {
               : job.error || job.status
           : 'Kayıt yok',
         kalan_dk: 0,
+      });
+    }
+
+    if (view === 'my' || view === 'pool') {
+      const scope: PortfolioScope = view === 'my' ? 'my' : 'pool';
+      const statusParam = url.searchParams.get('status') || 'active';
+      const typeParam = url.searchParams.get('listingType') || 'all';
+      const sortParam = url.searchParams.get('sort') || 'seen';
+      const periodParam = url.searchParams.get('period') || 'all';
+      const priceModeParam = url.searchParams.get('priceMode') || 'total';
+      const csv = (key: string) => {
+        const v = url.searchParams.get(key);
+        if (!v?.trim()) return undefined;
+        return v
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+      };
+      const numOrUndef = (key: string) => {
+        const v = url.searchParams.get(key);
+        if (v == null || v === '') return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      const allowedPeriods: PortfolioPeriod[] = [
+        'all',
+        '7d',
+        '8-14d',
+        '15-30d',
+        '31-90d',
+        '90d-1y',
+        'custom',
+      ];
+      const period = (
+        allowedPeriods.includes(periodParam as PortfolioPeriod)
+          ? periodParam
+          : 'all'
+      ) as PortfolioPeriod;
+
+      const twinParam = url.searchParams.get('twinRelation');
+      const signals = csv('signals') as
+        | Array<'price_down' | 'price_up' | 'relisted'>
+        | undefined;
+      const features = csv('features') as
+        | Array<
+            | 'krediye_uygun'
+            | 'photo'
+            | 'esyali'
+            | 'takas'
+            | 'asansor'
+            | 'site'
+            | 'balkon'
+          >
+        | undefined;
+
+      const filters: PortfolioFilters = {
+        status:
+          statusParam === 'inactive' || statusParam === 'all'
+            ? statusParam
+            : 'active',
+        listingType:
+          typeParam === 'satilik' || typeParam === 'kiralik'
+            ? typeParam
+            : 'all',
+        q: url.searchParams.get('q') || undefined,
+        rooms: csv('rooms'),
+        cities: csv('cities'),
+        districts: csv('districts'),
+        neighborhoods: csv('neighborhoods'),
+        kinds: csv('kinds'),
+        priceMin: numOrUndef('priceMin'),
+        priceMax: numOrUndef('priceMax'),
+        priceMode: priceModeParam === 'm2' ? 'm2' : 'total',
+        m2Min: numOrUndef('m2Min'),
+        m2Max: numOrUndef('m2Max'),
+        period,
+        daysFrom: numOrUndef('daysFrom') ?? null,
+        daysTo: numOrUndef('daysTo') ?? null,
+        sort:
+          sortParam === 'price_asc' || sortParam === 'price_desc'
+            ? sortParam
+            : 'seen',
+        limit: Number(url.searchParams.get('limit') || 48) || 48,
+        offset: Number(url.searchParams.get('offset') || 0) || 0,
+        agentName:
+          scope === 'my' ? gate.caller.fullName || undefined : undefined,
+        agentIds: csv('agentIds'),
+        agencyNames: csv('agencyNames'),
+        signals,
+        features,
+        twinRelation:
+          twinParam === 'ikiz' ||
+          twinParam === 'kardes' ||
+          twinParam === 'benzer'
+            ? twinParam
+            : null,
+      };
+
+      const result = await listPortfolioLive(scope, filters);
+      return NextResponse.json({
+        listings: result.listings,
+        view,
+        scope,
+        total: result.total,
+        counts: result.counts,
+        facets: result.facets,
+        source: result.source,
+        feed: result.feed,
+        pencere: result.pencere,
+        postFiltered: result.postFiltered,
+        unmatchedAgent: result.unmatchedAgent === true,
+        matchedAgentName: result.matchedAgentName || null,
+        meta: {
+          count: result.listings.length,
+          total: result.total,
+          source: result.source,
+        },
       });
     }
 
@@ -273,9 +491,91 @@ export async function GET(request: Request) {
       });
     }
 
+    if (view === 'fsbo') {
+      const preferDb = url.searchParams.get('source') === 'db';
+      const countsOnly = url.searchParams.get('counts') === '1';
+      const section = parseFsboSection(url.searchParams.get('section'));
+      const age = parseFsboAge(url.searchParams.get('age'));
+      const typeParam = url.searchParams.get('listingType') || 'all';
+      const listingType =
+        typeParam === 'satilik' || typeParam === 'kiralik' ? typeParam : 'all';
+
+      if (countsOnly && !preferDb) {
+        try {
+          const counts = await listFsboSectionCounts();
+          return NextResponse.json({
+            view: 'fsbo',
+            counts,
+            source: 'live',
+          });
+        } catch (e) {
+          return NextResponse.json(
+            {
+              error: e instanceof Error ? e.message : 'FSBO sayaçları alınamadı',
+            },
+            { status: 502 }
+          );
+        }
+      }
+
+      if (!preferDb) {
+        try {
+          const result = await listFsboLive({
+            section,
+            age,
+            listingType,
+            q: url.searchParams.get('q') || undefined,
+            limit: Number(url.searchParams.get('limit') || 48) || 48,
+            offset: Number(url.searchParams.get('offset') || 0) || 0,
+            groupKey: url.searchParams.get('groupKey'),
+            withCounts: url.searchParams.get('withCounts') === '1',
+          });
+          return NextResponse.json({
+            listings: result.listings,
+            view: 'fsbo',
+            section: result.section,
+            feed: result.feed,
+            total: result.total,
+            counts: result.counts,
+            groups: result.groups || null,
+            groupKey: result.groupKey ?? null,
+            totalGroups: result.totalGroups ?? null,
+            totalCompetitors: result.totalCompetitors ?? null,
+            source: 'live',
+            meta: {
+              count: result.listings.length,
+              total: result.total,
+              source: 'live',
+            },
+          });
+        } catch (e) {
+          const liveError = e instanceof Error ? e.message : 'Canlı FSBO hatası';
+          const listings = await listFsboListings(60);
+          return NextResponse.json({
+            listings,
+            view: 'fsbo',
+            section,
+            total: listings.length,
+            source: 'db',
+            liveError,
+            meta: { count: listings.length, total: listings.length, source: 'db' },
+          });
+        }
+      }
+
+      const listings = await listFsboListings(60);
+      return NextResponse.json({
+        listings,
+        view: 'fsbo',
+        section,
+        total: listings.length,
+        source: 'db',
+        meta: { count: listings.length, total: listings.length, source: 'db' },
+      });
+    }
+
     let listings;
-    if (view === 'fsbo') listings = await listFsboListings(60);
-    else if (view === 'recent') listings = await listRecentListings(60);
+    if (view === 'recent') listings = await listRecentListings(60);
     else listings = await listTrackedListings(gate.caller.userId);
 
     return NextResponse.json({
@@ -321,7 +621,42 @@ export async function POST(request: Request) {
       html?: string;
       nolar?: string[];
       kaynak?: 'detay' | 'liste';
+      on?: boolean;
     };
+
+    if (body.action === 'favorite') {
+      const no = String(body.listingNo || body.url || '')
+        .replace(/\D/g, '')
+        .trim();
+      if (!no || no.length < 8) {
+        return NextResponse.json(
+          { error: 'listingNo gerekli' },
+          { status: 400 }
+        );
+      }
+      const on = body.on !== false;
+      try {
+        if (on) {
+          await ivoRequest(`/takip/kodlar/${no}`, { method: 'POST', body: {} });
+        } else {
+          await ivoRequest(`/takip/kodlar/${no}`, {
+            method: 'DELETE',
+            body: {},
+          });
+        }
+      } catch {
+        /* IVO takip uçları değişebilir — yine de Zebra track dene */
+      }
+      if (on) {
+        try {
+          const listing = await syncSahibindenListing(no);
+          await trackListingForUser(gate.caller.userId, listing.id);
+        } catch {
+          /* live-only listing may not sync */
+        }
+      }
+      return NextResponse.json({ action: 'favorite', listingNo: no, on });
+    }
 
     if (body.action === 'probe') {
       const probe = await probeSahibindenAccess(body.url || body.listingNo);

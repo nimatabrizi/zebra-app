@@ -4,7 +4,10 @@
  */
 
 import { ivoRequest } from './ivoApiClient';
-import { isFsboWhom } from './sahibindenListing';
+import {
+  isFsboWhom,
+  resolveSahibindenListingUrl,
+} from './sahibindenListing';
 import type { IvoCard } from './ivoSync';
 import type { IvoListingRow } from './ivoListingTypes';
 import type { OfficeListFilters, OfficeListResult } from './ivoListingsDb';
@@ -24,7 +27,10 @@ function listingTypeFromStatus(status?: string): string | null {
 }
 
 /** IVO kart → Radar’ın beklediği satır şekli (DB’siz). */
-export function ivoCardToListingRow(card: IvoCard): IvoListingRow | null {
+export function ivoCardToListingRow(
+  card: IvoCard,
+  feed = 'office-properties'
+): IvoListingRow | null {
   const listingNo = String(card.no ?? '').replace(/\D/g, '');
   if (!listingNo || listingNo.length < 8) return null;
 
@@ -41,15 +47,31 @@ export function ivoCardToListingRow(card: IvoCard): IvoListingRow | null {
   const whom = card.whom ? String(card.whom) : null;
   const active = card.is_active !== false;
   const now = new Date().toISOString();
+  const feedKey = feed || 'office-properties';
+  const forceFsbo =
+    feedKey === 'fsbo' ||
+    feedKey === 'catch-dropped' ||
+    feedKey === 'fsbo-aged' ||
+    feedKey === 'below-average' ||
+    feedKey === 'price-dropped' ||
+    feedKey === 'relisted' ||
+    feedKey === 'passive' ||
+    feedKey === 'competitor-fsbo' ||
+    feedKey === 'contact-properties';
 
   return {
     id: `live-${listingNo}`,
     source: 'sahibinden',
     listing_no: listingNo,
-    url:
-      card.url && String(card.url).startsWith('http')
-        ? String(card.url)
-        : `https://www.sahibinden.com/ilan/${listingNo}`,
+    url: resolveSahibindenListingUrl(
+      card.url ? String(card.url) : null,
+      listingNo,
+      {
+        title: card.title ? String(card.title) : null,
+        kind: card.kind ? String(card.kind) : null,
+        status: card.status ? String(card.status) : null,
+      }
+    ),
     title: card.title ? String(card.title) : null,
     price_tl: priceTl,
     price_m2:
@@ -66,16 +88,16 @@ export function ivoCardToListingRow(card: IvoCard): IvoListingRow | null {
     whom,
     kind: card.kind || card.type ? String(card.kind || card.type) : null,
     listing_type: listingTypeFromStatus(card.status),
-    is_fsbo: isFsboWhom(whom),
+    is_fsbo: forceFsbo || isFsboWhom(whom),
     status: active ? 'active' : 'inactive',
     first_seen_at: now,
     last_seen_at: now,
     last_price_tl: priceTl,
     image_url: card.image ? String(card.image) : null,
-    feeds: ['office-properties'],
+    feeds: [feedKey],
     raw: {
       ingest_via: 'ivo-live',
-      ingest_feed: 'office-properties',
+      ingest_feed: feedKey,
       card,
       image: card.image || null,
     },
@@ -142,7 +164,7 @@ export async function listOfficeListingsLive(
 
   const page = await fetchOfficePage(filters);
   const listings = page.cards
-    .map(ivoCardToListingRow)
+    .map((c) => ivoCardToListingRow(c, 'office-properties'))
     .filter((r): r is IvoListingRow => !!r);
 
   // Sayaçlar — mevcut filtre bağlamında (q taşınır)

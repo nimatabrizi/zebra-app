@@ -7,7 +7,10 @@ import type {
   MapListingPoint,
   MapRegionSummary,
 } from '../lib/ivoMapListings';
+import { resolveSahibindenListingUrl } from '../lib/sahibindenListing';
 import IvoCompsPanel from './IvoCompsPanel';
+import IvoListingDetailModal from './IvoListingDetailModal';
+import IvoPriceHistoryModal from './IvoPriceHistoryModal';
 
 type Props = {
   onNavigate: (tabId: string) => void;
@@ -134,7 +137,9 @@ export default function IvoMapStudio({ onNavigate }: Props) {
   const [points, setPoints] = useState<MapListingPoint[]>([]);
   const [radiusM, setRadiusM] = useState(1200);
   const [radiusOn, setRadiusOn] = useState(true);
+  const [detailNo, setDetailNo] = useState<string | null>(null);
   const [compsNo, setCompsNo] = useState<string | null>(null);
+  const [priceHistoryNo, setPriceHistoryNo] = useState<string | null>(null);
   const [center, setCenter] = useState(DEFAULT);
   const [layerMode, setLayerMode] = useState<LayerMode>('pin');
   const [baseMap, setBaseMap] = useState<BaseMap>('street');
@@ -677,18 +682,35 @@ export default function IvoMapStudio({ onNavigate }: Props) {
                   ? 'Fiyat arttı'
                   : ''
             : '';
+        const sahibindenUrl = resolveSahibindenListingUrl(null, p.listingNo, {
+          title: p.title,
+          kind: p.kind,
+          status: p.status,
+        });
         const html = `
           <div style="min-width:180px;font:12px/1.4 system-ui,sans-serif">
             <strong>${(p.title || '#' + p.listingNo).replace(/</g, '')}</strong>
             <div style="margin-top:4px">${formatPrice(p.price)}</div>
             <div style="color:#666;margin-top:2px">${[p.status, p.rooms, p.kind, p.whom, signal].filter(Boolean).join(' · ')}</div>
-            <div style="margin-top:6px;display:flex;gap:8px">
-              <a href="https://www.sahibinden.com/ilan/${p.listingNo}" target="_blank" rel="noreferrer">İlan</a>
-              <button type="button" data-comps="${p.listingNo}" style="cursor:pointer;border:0;background:none;padding:0;text-decoration:underline;color:inherit">Emsaller</button>
+            <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" data-detail="${p.listingNo}" style="cursor:pointer;border:0;background:none;padding:0;text-decoration:underline;color:inherit">Detay</button>
+              <button type="button" data-comps="${p.listingNo}" style="cursor:pointer;border:0;background:none;padding:0;text-decoration:underline;color:inherit">Rakipler</button>
+              <button type="button" data-price-hist="${p.listingNo}" style="cursor:pointer;border:0;background:none;padding:0;text-decoration:underline;color:inherit">Fiyat geçmişi</button>
+              <a href="${sahibindenUrl.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">Sahibinden</a>
             </div>
           </div>`;
         marker.bindPopup(html);
         marker.on('popupopen', () => {
+          const detailBtn = document.querySelector(
+            `button[data-detail="${p.listingNo}"]`
+          );
+          if (detailBtn) {
+            detailBtn.addEventListener(
+              'click',
+              () => setDetailNo(p.listingNo),
+              { once: true }
+            );
+          }
           const el = document.querySelector(
             `button[data-comps="${p.listingNo}"]`
           );
@@ -696,6 +718,16 @@ export default function IvoMapStudio({ onNavigate }: Props) {
             el.addEventListener(
               'click',
               () => setCompsNo(p.listingNo),
+              { once: true }
+            );
+          }
+          const histBtn = document.querySelector(
+            `button[data-price-hist="${p.listingNo}"]`
+          );
+          if (histBtn) {
+            histBtn.addEventListener(
+              'click',
+              () => setPriceHistoryNo(p.listingNo),
               { once: true }
             );
           }
@@ -954,18 +986,19 @@ export default function IvoMapStudio({ onNavigate }: Props) {
       <div className="flex flex-wrap gap-2">
         {(
           [
-            ['ivo-ofis', 'Ofis ilanları'],
             ['ivo-harita', 'Harita'],
-            ['ivo-ilan-takibi', 'İlan takibi'],
             ['ivo-fsbo', 'FSBO'],
-            ['ivo-ilanlar', 'Son ilanlar'],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
             type="button"
             onClick={() => onNavigate(id)}
-            className="z-btn-ghost px-3 py-1.5 text-[12px]"
+            className={`px-3 py-1.5 text-[12px] rounded-lg border transition-colors ${
+              id === 'ivo-harita'
+                ? 'border-[var(--z-border-strong)] bg-[var(--z-hover)] text-[var(--z-fg)]'
+                : 'border-[var(--z-border)] text-[var(--z-muted)]'
+            }`}
           >
             {label}
           </button>
@@ -1520,7 +1553,7 @@ export default function IvoMapStudio({ onNavigate }: Props) {
                       className="w-full text-left"
                       onClick={() => {
                         mapRef.current?.setView([p.lat, p.lng], 16);
-                        setCompsNo(p.listingNo);
+                        setDetailNo(p.listingNo);
                       }}
                     >
                       <p className="text-[12px] font-medium line-clamp-2">
@@ -1769,8 +1802,27 @@ export default function IvoMapStudio({ onNavigate }: Props) {
         ) : null}
       </div>
 
+      {detailNo ? (
+        <IvoListingDetailModal
+          listingNo={detailNo}
+          onClose={() => setDetailNo(null)}
+        />
+      ) : null}
       {compsNo ? (
-        <IvoCompsPanel listingNo={compsNo} onClose={() => setCompsNo(null)} />
+        <IvoCompsPanel
+          listingNo={compsNo}
+          onClose={() => setCompsNo(null)}
+          onOpenDetail={(no) => {
+            setCompsNo(null);
+            setDetailNo(no);
+          }}
+        />
+      ) : null}
+      {priceHistoryNo ? (
+        <IvoPriceHistoryModal
+          listingNo={priceHistoryNo}
+          onClose={() => setPriceHistoryNo(null)}
+        />
       ) : null}
     </section>
   );

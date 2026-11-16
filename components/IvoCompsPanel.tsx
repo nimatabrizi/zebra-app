@@ -21,9 +21,14 @@ type CompsPayload = {
 type Props = {
   listingNo: string;
   onClose: () => void;
+  onOpenDetail?: (listingNo: string) => void;
 };
 
-export default function IvoCompsPanel({ listingNo, onClose }: Props) {
+export default function IvoCompsPanel({
+  listingNo,
+  onClose,
+  onOpenDetail,
+}: Props) {
   const [data, setData] = useState<CompsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,7 +70,7 @@ export default function IvoCompsPanel({ listingNo, onClose }: Props) {
       className="fixed inset-0 z-[80] flex justify-end bg-black/35"
       role="dialog"
       aria-modal="true"
-      aria-label="Emsal karşılaştırması"
+      aria-label="Rakipler"
       onClick={onClose}
     >
       <div
@@ -75,7 +80,7 @@ export default function IvoCompsPanel({ listingNo, onClose }: Props) {
         <header className="flex items-start justify-between gap-3 border-b border-[var(--z-border)] px-4 py-3">
           <div className="min-w-0">
             <h2 className="text-[16px] font-semibold text-[var(--z-fg)]">
-              Emsaller
+              Rakipler
             </h2>
             <p className="mt-0.5 text-[12px] text-[var(--z-muted)] truncate">
               #{listingNo}
@@ -190,14 +195,27 @@ export default function IvoCompsPanel({ listingNo, onClose }: Props) {
                               {p.rank}. sıra
                               {p.isSubject ? ' · bu ilan' : ''}
                             </p>
-                            <a
-                              href={p.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-0.5 block text-[13px] font-medium text-[var(--z-fg)] hover:underline line-clamp-2"
-                            >
-                              {p.title}
-                            </a>
+                            {onOpenDetail ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onOpenDetail(p.listingNo);
+                                  onClose();
+                                }}
+                                className="mt-0.5 block w-full text-left text-[13px] font-medium text-[var(--z-fg)] hover:underline line-clamp-2"
+                              >
+                                {p.title}
+                              </button>
+                            ) : (
+                              <a
+                                href={p.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-0.5 block text-[13px] font-medium text-[var(--z-fg)] hover:underline line-clamp-2"
+                              >
+                                {p.title}
+                              </a>
+                            )}
                             <p className="mt-0.5 text-[11px] text-[var(--z-muted)] truncate">
                               {[p.rooms, p.areaM2 != null ? `${p.areaM2} m²` : null, loc]
                                 .filter(Boolean)
@@ -211,6 +229,16 @@ export default function IvoCompsPanel({ listingNo, onClose }: Props) {
                             <p className="text-[11px] tabular-nums text-[var(--z-muted)]">
                               {formatTl(p.priceM2)}/m²
                             </p>
+                            {p.priceUsd != null ? (
+                              <p className="text-[10px] tabular-nums text-[var(--z-muted)]">
+                                ≈ {Math.round(p.priceUsd).toLocaleString('en-US')} $
+                              </p>
+                            ) : null}
+                            {p.activeDays != null ? (
+                              <p className="text-[10px] tabular-nums text-[var(--z-muted)]">
+                                {p.activeDays} gün
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       </li>

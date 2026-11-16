@@ -73,11 +73,8 @@ export const CORE_LIVE_TABS = [
   'studio-hos-geldin',
   'islem-kapatma',
   'islemler',
-  'ivo-ofis',
   'ivo-harita',
-  'ivo-ilan-takibi',
   'ivo-fsbo',
-  'ivo-ilanlar',
   'users-overview',
   'users-add',
 ] as const;
@@ -103,11 +100,8 @@ function ivoNavItem(): SidebarItem {
     icon: 'Radar',
     isEnabled: true,
     children: [
-      { id: 'ivo-ofis', label: 'Ofis ilanları', isEnabled: true },
       { id: 'ivo-harita', label: 'Harita', isEnabled: true },
-      { id: 'ivo-ilan-takibi', label: 'İlan takibi', isEnabled: true },
       { id: 'ivo-fsbo', label: 'FSBO', isEnabled: true },
-      { id: 'ivo-ilanlar', label: 'Son ilanlar', isEnabled: true },
     ],
   };
 }
@@ -490,13 +484,10 @@ export function isLiveContentTab(
   if (id === 'islem-kapatma' || id === 'islemler') {
     return canSeeIslemKapatma(fullName);
   }
-  if (
-    id === 'ivo-ofis' ||
-    id === 'ivo-harita' ||
-    id === 'ivo-ilan-takibi' ||
-    id === 'ivo-fsbo' ||
-    id === 'ivo-ilanlar'
-  ) {
+  if (id === 'portfoylerim' || id === 'portfoy') {
+    return true;
+  }
+  if (id === 'ivo-harita' || id === 'ivo-fsbo') {
     return true;
   }
   if (id === 'users-overview' || id === 'users-add') {

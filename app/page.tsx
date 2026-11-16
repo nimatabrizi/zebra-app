@@ -91,7 +91,8 @@ import BadgeCardStudio from '../components/BadgeCardStudio';
 import RankingVisualsStudio from '../components/RankingVisualsStudio';
 import TeamVisualsStudio from '../components/TeamVisualsStudio';
 import IslemKapatmaStudio from '../components/IslemKapatmaStudio';
-import IvoListingsStudio from '../components/IvoListingsStudio';
+import IvoFsboStudio from '../components/IvoFsboStudio';
+import PortfolioStudio from '../components/PortfolioStudio';
 import IvoMapStudio from '../components/IvoMapStudio';
 import BirthdayStudio from '../components/BirthdayStudio';
 import AnniversaryStudio from '../components/AnniversaryStudio';
@@ -231,6 +232,17 @@ const [username, setUsername] = useState('');
     if (activeTab === 'cekim' && isPersonelRole(role)) {
       setActiveTab('takvim');
       persistActiveTab('takvim');
+      return;
+    }
+    // Radar sadeleştirme: ofis → Portföy Havuzu, son ilanlar → FSBO
+    if (activeTab === 'ivo-ofis') {
+      setActiveTab('portfoy');
+      persistActiveTab('portfoy');
+      return;
+    }
+    if (activeTab === 'ivo-ilanlar') {
+      setActiveTab('ivo-fsbo');
+      persistActiveTab('ivo-fsbo');
     }
   }, [activeTab, role]);
 
@@ -4037,20 +4049,17 @@ const [username, setUsername] = useState('');
               />
             )}
 
-            {activeTab === 'ivo-ofis' && (
-              <IvoListingsStudio mode="office" onNavigate={navigateToTab} />
+            {activeTab === 'portfoylerim' && (
+              <PortfolioStudio scope="my" onNavigate={navigateToTab} />
+            )}
+            {activeTab === 'portfoy' && (
+              <PortfolioStudio scope="pool" onNavigate={navigateToTab} />
             )}
             {activeTab === 'ivo-harita' && (
               <IvoMapStudio onNavigate={navigateToTab} />
             )}
-            {activeTab === 'ivo-ilan-takibi' && (
-              <IvoListingsStudio mode="tracked" onNavigate={navigateToTab} />
-            )}
             {activeTab === 'ivo-fsbo' && (
-              <IvoListingsStudio mode="fsbo" onNavigate={navigateToTab} />
-            )}
-            {activeTab === 'ivo-ilanlar' && (
-              <IvoListingsStudio mode="recent" onNavigate={navigateToTab} />
+              <IvoFsboStudio onNavigate={navigateToTab} />
             )}
 
             {/* --- ZEBRA STUDIO: Yeni Portföy (sekme değişince state korunur) --- */}
