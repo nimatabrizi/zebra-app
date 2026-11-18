@@ -11,7 +11,7 @@
     "test:cb360:integration": "tsx --test lib/cb360/__tests__/cb360.integration.test.ts",
     "test:cb360:integration:staging": "tsx --env-file=.env.cb360.staging.local --test lib/cb360/__tests__/cb360.integration.test.ts",
     "test:cb360:pg-contract": "tsx --test lib/cb360/__tests__/cb360.pg-contract.test.ts",
-    "test:cb360:all-offline": "tsx --test lib/cb360/__tests__/cb360.mock.test.ts lib/cb360/__tests__/cb360.runtimeGuard.test.ts lib/cb360/__tests__/cb360.pg-contract.test.ts lib/cb360/__tests__/cb360.integration.test.ts",
+    "test:cb360:all-offline": "tsx --test lib/cb360/__tests__/cb360.mock.test.ts lib/cb360/__tests__/cb360.runtimeGuard.test.ts lib/cb360/__tests__/cb360.pg-contract.test.ts lib/cb360/__tests__/cb360.integration.test.ts lib/cb360/__tests__/cb360.previewE2eCleanup.test.ts",
     "migrate:auth": "node scripts/migrate-auth-users.mjs",
     "upload:consultant-photos": "node scripts/upload-consultant-photos.mjs",
     "ivo:worker": "node scripts/ivo-listing-worker.mjs",
