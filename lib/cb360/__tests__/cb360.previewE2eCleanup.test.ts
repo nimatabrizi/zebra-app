@@ -12,6 +12,7 @@ import {
   cleanupPreviewE2eSession,
   PreviewE2eCleanupError,
   PreviewE2eCleanupGateError,
+  storageRemoveEntryMatchesPath,
   type PreviewE2eDbClient,
   type PreviewE2eSessionTracker,
 } from './previewE2eCleanup';
@@ -64,6 +65,20 @@ type FakeState = {
   failStorageOnce?: boolean;
   /** Fail run delete once, then succeed */
   failDeleteRunsOnce?: boolean;
+  /**
+   * Storage remove behavior override:
+   * - default: delete all requested paths and return matching data rows
+   * - empty-data-keep: error null, data [], keep objects
+   * - empty-data-delete: error null, data [], delete objects
+   * - data-keep: return data rows but keep objects
+   * - partial: delete/confirm only the first requested path
+   */
+  storageRemoveMode?:
+    | 'default'
+    | 'empty-data-keep'
+    | 'empty-data-delete'
+    | 'data-keep'
+    | 'partial';
 };
 
 function createFakeClient(state: FakeState): PreviewE2eDbClient {
@@ -252,6 +267,18 @@ function createFakeClient(state: FakeState): PreviewE2eDbClient {
     storage: {
       from(bucket: string) {
         return {
+          async download(objectPath: string) {
+            if (bucket !== CB360_BUCKET) {
+              return { data: null, error: { message: 'wrong bucket' } };
+            }
+            if (state.storagePaths.includes(objectPath)) {
+              return { data: Buffer.from('x'), error: null };
+            }
+            return {
+              data: null,
+              error: { message: 'Object not found' },
+            };
+          },
           async remove(paths: string[]) {
             if (bucket !== CB360_BUCKET) {
               return { data: null, error: { message: 'wrong bucket' } };
@@ -264,11 +291,42 @@ function createFakeClient(state: FakeState): PreviewE2eDbClient {
                 error: { message: 'simulated storage failure' },
               };
             }
+            const mode = state.storageRemoveMode ?? 'default';
             state.mutations.push(`storage_remove:${paths.join(',')}`);
+
+            if (mode === 'empty-data-keep') {
+              return { data: [], error: null };
+            }
+            if (mode === 'empty-data-delete') {
+              state.storagePaths = state.storagePaths.filter(
+                (p) => !paths.includes(p)
+              );
+              return { data: [], error: null };
+            }
+            if (mode === 'data-keep') {
+              return {
+                data: paths.map((p) => ({ name: p })),
+                error: null,
+              };
+            }
+            if (mode === 'partial') {
+              const first = paths[0];
+              if (first) {
+                state.storagePaths = state.storagePaths.filter((p) => p !== first);
+              }
+              return {
+                data: first ? [{ name: first }] : [],
+                error: null,
+              };
+            }
+
             state.storagePaths = state.storagePaths.filter(
               (p) => !paths.includes(p)
             );
-            return { data: paths, error: null };
+            return {
+              data: paths.map((p) => ({ name: p })),
+              error: null,
+            };
           },
         };
       },
@@ -297,6 +355,24 @@ function mutationClient(): {
     },
   };
 }
+
+describe('storageRemoveEntryMatchesPath', () => {
+  it('matches full path and basename FileObject.name forms', () => {
+    const tracked = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    assert.equal(
+      storageRemoveEntryMatchesPath({ name: tracked }, tracked),
+      true
+    );
+    assert.equal(
+      storageRemoveEntryMatchesPath({ name: 'source.xlsx' }, tracked),
+      true
+    );
+    assert.equal(
+      storageRemoveEntryMatchesPath({ name: 'other.xlsx' }, tracked),
+      false
+    );
+  });
+});
 
 describe('assertPreviewE2eCleanupEnvironment', () => {
   it('rejects wrong project ref with zero intention to mutate', () => {
@@ -586,3 +662,135 @@ describe('cleanupPreviewE2eSession (offline)', () => {
     assert.equal(state.storagePaths.length, 0);
   });
 });
+
+describe('cleanupPreviewE2eSession storage verification (offline)', () => {
+  function storageOnlyState(
+    paths: string[],
+    mode?: FakeState['storageRemoveMode']
+  ): FakeState {
+    return {
+      lease: { id: 1, run_id: null },
+      current: null,
+      runs: [],
+      versions: [],
+      storagePaths: [...paths],
+      mutations: [],
+      storageRemoveMode: mode,
+    };
+  }
+
+  function storageTracker(paths: string[]): PreviewE2eSessionTracker {
+    return baseTracker({
+      runIds: [],
+      versionIds: [],
+      expectedCurrentAfterPublish: null,
+      objectPaths: paths,
+    });
+  }
+
+  it('error:null + data:[] + object still present → FAIL', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path], 'empty-data-keep');
+    await assert.rejects(
+      () =>
+        cleanupPreviewE2eSession(
+          createFakeClient(state),
+          storageTracker([path]),
+          stagingEnv()
+        ),
+      (err: unknown) =>
+        err instanceof PreviewE2eCleanupError &&
+        /downloadable objects|storage_remove/.test(err.message)
+    );
+    assert.deepEqual(state.storagePaths, [path]);
+  });
+
+  it('error:null + data:[] + object absent → idempotent success', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([], 'empty-data-delete');
+    const result = await cleanupPreviewE2eSession(
+      createFakeClient(state),
+      storageTracker([path]),
+      stagingEnv()
+    );
+    assert.equal(result.ok, true);
+    assert.ok(
+      result.steps.some(
+        (s) =>
+          s.step === 'storage_remove' &&
+          s.status === 'ok' &&
+          /idempotent|absent/.test(s.detail)
+      )
+    );
+  });
+
+  it('data rows present but object still downloadable → FAIL', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path], 'data-keep');
+    await assert.rejects(
+      () =>
+        cleanupPreviewE2eSession(
+          createFakeClient(state),
+          storageTracker([path]),
+          stagingEnv()
+        ),
+      (err: unknown) => err instanceof PreviewE2eCleanupError
+    );
+    assert.deepEqual(state.storagePaths, [path]);
+  });
+
+  it('data matches tracked path and object gone → PASS', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path], 'default');
+    const result = await cleanupPreviewE2eSession(
+      createFakeClient(state),
+      storageTracker([path]),
+      stagingEnv()
+    );
+    assert.equal(result.ok, true);
+    assert.deepEqual(state.storagePaths, []);
+    assert.ok(
+      result.steps.some(
+        (s) =>
+          s.step === 'storage_remove' &&
+          s.status === 'ok' &&
+          /removed_confirmed/.test(s.detail)
+      )
+    );
+  });
+
+  it('storage API error → FAIL', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path]);
+    state.failStorageOnce = true;
+    await assert.rejects(
+      () =>
+        cleanupPreviewE2eSession(
+          createFakeClient(state),
+          storageTracker([path]),
+          stagingEnv()
+        ),
+      (err: unknown) =>
+        err instanceof PreviewE2eCleanupError &&
+        /storage_remove failed/.test(err.message)
+    );
+  });
+
+  it('multiple exact paths with partial delete → FAIL', async () => {
+    const a = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const b = 'snapshots/2026/11/18/run_bbb/source.xlsx';
+    const state = storageOnlyState([a, b], 'partial');
+    await assert.rejects(
+      () =>
+        cleanupPreviewE2eSession(
+          createFakeClient(state),
+          storageTracker([a, b]),
+          stagingEnv()
+        ),
+      (err: unknown) => err instanceof PreviewE2eCleanupError
+    );
+    assert.equal(state.storagePaths.includes(b), true);
+    assert.equal(state.storagePaths.includes(a), false);
+  });
+});
+

@@ -65,17 +65,63 @@ export class PreviewE2eCleanupGateError extends Error {
   }
 }
 
+/** Minimal shape from storage.remove() FileObject (name may be full path or basename). */
+export type PreviewE2eStorageRemoveEntry = {
+  name?: string | null;
+  id?: string | null;
+};
+
+export type PreviewE2eStorageRemoveResult = {
+  data: PreviewE2eStorageRemoveEntry[] | null;
+  error: { message: string } | null;
+};
+
 /** Minimal PostgREST/storage surface used by this cleanup (mockable offline). */
 export type PreviewE2eDbClient = {
   from: (table: string) => PreviewE2eQueryBuilder;
   storage: {
     from: (bucket: string) => {
-      remove: (
-        paths: string[]
+      remove: (paths: string[]) => Promise<PreviewE2eStorageRemoveResult>;
+      /** Used only to verify object absence after remove (read-only). */
+      download: (
+        objectPath: string
       ) => Promise<{ data: unknown; error: { message: string } | null }>;
     };
   };
 };
+
+/**
+ * Match a storage.remove() entry against a tracked exact object path.
+ * SDK FileObject.name is documented as relative to a prefix and may be:
+ * - the full object path, or
+ * - only the basename (e.g. source.xlsx).
+ */
+export function storageRemoveEntryMatchesPath(
+  entry: PreviewE2eStorageRemoveEntry,
+  trackedPath: string
+): boolean {
+  const tracked = trackedPath.replace(/^\/+/, '').trim();
+  if (!tracked) return false;
+  const raw = (entry.name ?? '').replace(/^\/+/, '').trim();
+  if (!raw) return false;
+  if (raw === tracked) return true;
+  // Basename-only responses: allow only when it matches the final segment.
+  const base = tracked.includes('/') ? tracked.slice(tracked.lastIndexOf('/') + 1) : tracked;
+  if (raw === base) return true;
+  // Rare: bucket-qualified or leading folder variants ending with the tracked path.
+  if (raw.endsWith(`/${tracked}`) || raw.endsWith(tracked)) return true;
+  return false;
+}
+
+export async function storageObjectExists(
+  client: PreviewE2eDbClient,
+  objectPath: string
+): Promise<boolean> {
+  const { data, error } = await client.storage
+    .from(CB360_BUCKET)
+    .download(objectPath);
+  return !error && data != null;
+}
 
 export type PreviewE2eQueryBuilder = {
   select: (columns?: string) => PreviewE2eQueryBuilder;
@@ -430,20 +476,95 @@ export async function cleanupPreviewE2eSession(
     step(steps, 'delete_versions', 'skipped', 'no tracked versionIds');
   }
 
-  // 6) Storage — exact tracked paths only
+  // 6) Storage — exact tracked paths only; error:null alone is not success
   if (objectPaths.length) {
-    const { error } = await client.storage.from(CB360_BUCKET).remove(objectPaths);
+    const existedBefore = new Map<string, boolean>();
+    for (const p of objectPaths) {
+      existedBefore.set(p, await storageObjectExists(client, p));
+    }
+
+    const { data, error } = await client.storage
+      .from(CB360_BUCKET)
+      .remove(objectPaths);
     if (error) {
       step(steps, 'storage_remove', 'failed', error.message);
       const result = { ok: false, aborted: false, steps };
       throw new PreviewE2eCleanupError('storage_remove failed', result);
     }
-    step(
-      steps,
-      'storage_remove',
-      'ok',
-      `removed_exact_paths=${objectPaths.length}`
-    );
+
+    const removedEntries: PreviewE2eStorageRemoveEntry[] = Array.isArray(data)
+      ? data
+      : [];
+    const confirmedByData = new Set<string>();
+    for (const entry of removedEntries) {
+      for (const tracked of objectPaths) {
+        if (storageRemoveEntryMatchesPath(entry, tracked)) {
+          confirmedByData.add(tracked);
+        }
+      }
+    }
+
+    const stillPresent: string[] = [];
+    for (const p of objectPaths) {
+      if (await storageObjectExists(client, p)) stillPresent.push(p);
+    }
+
+    // Existence is authoritative: error:null / data rows never prove deletion alone.
+    if (stillPresent.length) {
+      step(
+        steps,
+        'storage_remove',
+        'failed',
+        `object still downloadable after remove count=${stillPresent.length}; dataConfirmed=${confirmedByData.size}; dataRows=${removedEntries.length}`
+      );
+      const result = { ok: false, aborted: false, steps };
+      throw new PreviewE2eCleanupError(
+        'storage_remove left downloadable objects',
+        result
+      );
+    }
+
+    if (removedEntries.length === 0) {
+      // data:[] is acceptable only after independent absence verification (above).
+      const anyExisted = objectPaths.some((p) => existedBefore.get(p));
+      step(
+        steps,
+        'storage_remove',
+        'ok',
+        anyExisted
+          ? `absent verified after empty data rows; tracked=${objectPaths.length}`
+          : `idempotent already-absent paths=${objectPaths.length}`
+      );
+    } else {
+      // Non-empty data must map to tracked paths; unconfirmed previously-existing
+      // paths with objects now gone are OK only if every path is absent (checked).
+      // Partial deletion = some paths still present — already failed above.
+      const unmatchedEntries = removedEntries.filter(
+        (entry) =>
+          !objectPaths.some((tracked) =>
+            storageRemoveEntryMatchesPath(entry, tracked)
+          )
+      );
+      if (unmatchedEntries.length) {
+        step(
+          steps,
+          'storage_remove',
+          'failed',
+          `remove data contained unmatched entries=${unmatchedEntries.length}`
+        );
+        const result = { ok: false, aborted: false, steps };
+        throw new PreviewE2eCleanupError(
+          'storage_remove data did not match tracked paths',
+          result
+        );
+      }
+      step(
+        steps,
+        'storage_remove',
+        'ok',
+        `removed_confirmed=${confirmedByData.size} tracked=${objectPaths.length}`
+      );
+    }
   } else {
     step(steps, 'storage_remove', 'skipped', 'no tracked objectPaths');
   }

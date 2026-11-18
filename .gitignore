@@ -45,3 +45,6 @@ next-env.d.ts
 /scripts/.models/
 /scripts/.venv/
 /.tmp/
+
+# CB360 Preview HTTP E2E session trackers (ids/paths only; never commit)
+.cb360-preview-e2e/
