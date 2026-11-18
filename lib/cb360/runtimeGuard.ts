@@ -1,3 +1,4 @@
+import type { Cb360EnvBag } from './envBag';
 import { Cb360Error } from './types';
 
 const GENERIC_UNAVAILABLE = 'CB360 is unavailable in this environment';
@@ -52,7 +53,7 @@ function denyRuntime(
  * Call before any Supabase client / data access.
  */
 export function assertCb360RuntimeEnvironment(
-  env: NodeJS.ProcessEnv = process.env
+  env: Cb360EnvBag = process.env
 ): { projectRef: string } {
   if (env.VERCEL_ENV === 'production') {
     denyRuntime('environment_blocked');

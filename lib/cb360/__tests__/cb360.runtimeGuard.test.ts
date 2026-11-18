@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import type { Cb360EnvBag } from '../envBag';
 import {
   assertCb360RuntimeEnvironment,
   parseStrictSupabaseHttpsProjectRef,
@@ -13,8 +14,8 @@ import { Cb360Error } from '../types';
 
 const STAGING_REF = 'noagxyztimvefmewjybj';
 
-function env(partial: Record<string, string | undefined>): NodeJS.ProcessEnv {
-  return { ...partial } as NodeJS.ProcessEnv;
+function env(partial: Record<string, string | undefined>): Cb360EnvBag {
+  return partial;
 }
 
 describe('parseStrictSupabaseHttpsProjectRef', () => {

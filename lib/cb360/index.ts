@@ -1,4 +1,5 @@
 export * from './types';
+export * from './envBag';
 export * from './auth';
 export * from './integrity';
 export * from './paths';

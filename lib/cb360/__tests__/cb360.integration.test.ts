@@ -198,7 +198,7 @@ describe('CB360 staging guard (offline)', () => {
           CB360_STAGING_PROJECT_REF: 'abc',
           CB360_STAGING_SUPABASE_URL: 'https://abc.supabase.co',
           CB360_STAGING_SERVICE_ROLE_KEY: 'key',
-        } as NodeJS.ProcessEnv),
+        }),
       (err: unknown) => err instanceof Cb360StagingGuardError
     );
   });
@@ -213,7 +213,7 @@ describe('CB360 staging guard (offline)', () => {
           CB360_STAGING_PROJECT_REF: 'stagingref001',
           CB360_STAGING_SUPABASE_URL: 'https://otherref001.supabase.co',
           CB360_STAGING_SERVICE_ROLE_KEY: 'key',
-        } as NodeJS.ProcessEnv),
+        }),
       (err: unknown) => err instanceof Cb360StagingGuardError
     );
   });
@@ -229,7 +229,7 @@ describe('CB360 staging guard (offline)', () => {
           CB360_STAGING_SUPABASE_URL: 'https://prodlike00001.supabase.co',
           CB360_STAGING_SERVICE_ROLE_KEY: 'key',
           CB360_FORBIDDEN_PROJECT_REFS: 'prodlike00001,other',
-        } as NodeJS.ProcessEnv),
+        }),
       (err: unknown) => err instanceof Cb360StagingGuardError
     );
   });
@@ -244,7 +244,7 @@ describe('CB360 staging guard (offline)', () => {
           CB360_STAGING_PROJECT_REF: 'myprodproject1',
           CB360_STAGING_SUPABASE_URL: 'https://myprodproject1.supabase.co',
           CB360_STAGING_SERVICE_ROLE_KEY: 'key',
-        } as NodeJS.ProcessEnv),
+        }),
       (err: unknown) => err instanceof Cb360StagingGuardError
     );
   });
@@ -257,7 +257,7 @@ describe('CB360 staging guard (offline)', () => {
       CB360_STAGING_PROJECT_REF: 'cb360staging01',
       CB360_STAGING_SUPABASE_URL: 'https://cb360staging01.supabase.co',
       CB360_STAGING_SERVICE_ROLE_KEY: 'service-role-key',
-    } as NodeJS.ProcessEnv);
+    });
     assert.equal(target.projectRef, 'cb360staging01');
   });
 });
@@ -365,6 +365,7 @@ describe('CB360 staging live Postgres', { skip: !liveEnabled }, () => {
       .select('run_id, lease_generation')
       .eq('id', 1)
       .single();
+    assert.ok(lock);
     assert.equal(lock.run_id, winner.runId);
     assert.equal(lock.lease_generation, winner.leaseGeneration);
   });
@@ -375,8 +376,9 @@ describe('CB360 staging live Postgres', { skip: !liveEnabled }, () => {
       .select('run_id')
       .eq('id', 1)
       .single();
-    assert.ok(lock?.run_id);
-    const runId = lock.run_id as string;
+    assert.ok(lock);
+    assert.ok(lock.run_id);
+    const runId = lock.run_id;
 
     const { data: runRow } = await client
       .from('cb360_scan_runs')
@@ -596,6 +598,7 @@ describe('CB360 staging live Postgres', { skip: !liveEnabled }, () => {
       .select('source_version_id, updated_by_run_id')
       .eq('id', 1)
       .single();
+    assert.ok(current);
     assert.equal(current.source_version_id, first.outputVersionId);
     assert.equal(current.updated_by_run_id, started.runId);
 

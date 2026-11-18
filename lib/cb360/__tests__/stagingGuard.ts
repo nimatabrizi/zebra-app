@@ -1,3 +1,5 @@
+import type { Cb360EnvBag } from '../envBag';
+
 /**
  * CB360 staging live-test safety rail.
  * Prevents accidental use of production (or any non-staging) Supabase project.
@@ -70,7 +72,7 @@ export function isCb360StagingIntegrationRequested(): boolean {
  * Throws if target is missing, mismatched, or on the forbidden list.
  */
 export function assertCb360StagingTarget(
-  env: NodeJS.ProcessEnv = process.env
+  env: Cb360EnvBag = process.env
 ): Cb360StagingTarget {
   if (env.CB360_INTEGRATION !== '1') {
     throw new Cb360StagingGuardError('CB360_INTEGRATION must be 1');
