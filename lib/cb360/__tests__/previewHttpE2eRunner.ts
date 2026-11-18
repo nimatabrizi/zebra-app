@@ -17,6 +17,7 @@ import {
   assertPreviewE2eCleanupEnvironment,
   assertPreviewE2eTrackerHasNoSecrets,
   cleanupPreviewE2eSession,
+  PreviewE2eCleanupError,
   type PreviewE2eDbClient,
   type PreviewE2eSessionTracker,
 } from './previewE2eCleanup';
@@ -898,11 +899,34 @@ export async function runPreviewHttpE2e(input: {
     );
 
     tracker = await persist(deps.fs, tracker, steps, 'pending_cleanup', now);
-    const cleanupResult = await cleanupPreviewE2eSession(
-      deps.staging.asCleanupClient(),
-      asCleanupTracker(tracker),
-      deps.env
-    );
+    let cleanupResult;
+    try {
+      cleanupResult = await cleanupPreviewE2eSession(
+        deps.staging.asCleanupClient(),
+        asCleanupTracker(tracker),
+        deps.env
+      );
+    } catch (cleanupErr) {
+      const message =
+        cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr);
+      const detail =
+        cleanupErr instanceof PreviewE2eCleanupError && cleanupErr.code
+          ? `code=${cleanupErr.code}; ${message}`
+          : message;
+      tracker = await persist(deps.fs, tracker, steps, 'cleanup_failed', now, {
+        lastError: detail,
+      });
+      pushStep(steps, 'cleanup', 'failed', detail);
+      leaseToken = null;
+      return {
+        ok: false,
+        mode,
+        aborted: cleanupErr instanceof PreviewE2eCleanupError,
+        sessionId,
+        steps,
+        error: detail,
+      };
+    }
     if (!cleanupResult.ok || cleanupResult.aborted) {
       tracker = await persist(deps.fs, tracker, steps, 'cleanup_failed', now, {
         lastError: 'cleanupPreviewE2eSession aborted or failed',
@@ -975,7 +999,15 @@ export async function runPreviewHttpE2e(input: {
         steps: [...steps, ...err.result.steps],
       };
     }
+    // Cleanup-phase failures must not collapse into generic "failed".
+    const inCleanupPhase =
+      tracker.phase === 'pending_cleanup' ||
+      tracker.phase === 'cleanup_failed' ||
+      tracker.phase.startsWith('cleanup_');
     const message = err instanceof Error ? err.message : String(err);
+    if (inCleanupPhase || err instanceof PreviewE2eCleanupError) {
+      return await fail(message, 'cleanup_failed');
+    }
     return await fail(message, 'failed');
   }
 }

@@ -48,14 +48,74 @@ export type PreviewE2eCleanupResult = {
   steps: PreviewE2eCleanupStep[];
 };
 
+/** Classified Storage remove failures (exact-path cleanup only). */
+export type PreviewE2eStorageRemoveFailureCode =
+  | 'storage_remove_api_error'
+  | 'storage_remove_response_mismatch'
+  | 'storage_remove_visibility_timeout';
+
+/**
+ * Post-remove read-only existence re-check schedule (ms sleeps before each check).
+ * First entry 0 = immediate check; sum of sleeps ≈ 5s max.
+ */
+export const CB360_STORAGE_VISIBILITY_RECHECK_DELAYS_MS: readonly number[] = [
+  0, 500, 1500, 3000,
+];
+
 export class PreviewE2eCleanupError extends Error {
   readonly result: PreviewE2eCleanupResult;
+  readonly code?: PreviewE2eStorageRemoveFailureCode | string;
 
-  constructor(message: string, result: PreviewE2eCleanupResult) {
+  constructor(
+    message: string,
+    result: PreviewE2eCleanupResult,
+    code?: PreviewE2eStorageRemoveFailureCode | string
+  ) {
     super(message);
     this.name = 'PreviewE2eCleanupError';
     this.result = result;
+    this.code = code;
   }
+}
+
+export type PreviewE2eCleanupOptions = {
+  /** Injected for offline tests; default is real setTimeout sleep. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Override visibility re-check delays (ms). */
+  visibilityRecheckDelaysMs?: readonly number[];
+};
+
+async function defaultSleep(ms: number): Promise<void> {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Bounded read-only polls for exact-path absence after a single remove.
+ * Does not call remove again.
+ */
+export async function waitForExactPathsAbsent(
+  client: PreviewE2eDbClient,
+  objectPaths: readonly string[],
+  options: PreviewE2eCleanupOptions = {}
+): Promise<{ absent: boolean; checks: number; lastPresent: string[] }> {
+  const sleep = options.sleep ?? defaultSleep;
+  const delays =
+    options.visibilityRecheckDelaysMs ?? CB360_STORAGE_VISIBILITY_RECHECK_DELAYS_MS;
+  let checks = 0;
+  let lastPresent: string[] = [...objectPaths];
+  for (const delay of delays) {
+    await sleep(delay);
+    checks += 1;
+    lastPresent = [];
+    for (const p of objectPaths) {
+      if (await storageObjectExists(client, p)) lastPresent.push(p);
+    }
+    if (lastPresent.length === 0) {
+      return { absent: true, checks, lastPresent };
+    }
+  }
+  return { absent: false, checks, lastPresent };
 }
 
 export class PreviewE2eCleanupGateError extends Error {
@@ -242,7 +302,8 @@ async function awaitBuilder(
 export async function cleanupPreviewE2eSession(
   client: PreviewE2eDbClient,
   tracker: PreviewE2eSessionTracker,
-  env: Cb360EnvBag = process.env
+  env: Cb360EnvBag = process.env,
+  options: PreviewE2eCleanupOptions = {}
 ): Promise<PreviewE2eCleanupResult> {
   const steps: PreviewE2eCleanupStep[] = [];
 
@@ -476,20 +537,30 @@ export async function cleanupPreviewE2eSession(
     step(steps, 'delete_versions', 'skipped', 'no tracked versionIds');
   }
 
-  // 6) Storage — exact tracked paths only; error:null alone is not success
+  // 6) Storage — single exact-path remove + bounded read-only visibility re-check
   if (objectPaths.length) {
     const existedBefore = new Map<string, boolean>();
     for (const p of objectPaths) {
       existedBefore.set(p, await storageObjectExists(client, p));
     }
 
+    // Exactly one remove call for this cleanup session.
     const { data, error } = await client.storage
       .from(CB360_BUCKET)
       .remove(objectPaths);
     if (error) {
-      step(steps, 'storage_remove', 'failed', error.message);
+      step(
+        steps,
+        'storage_remove',
+        'failed',
+        `code=storage_remove_api_error; ${error.message}`
+      );
       const result = { ok: false, aborted: false, steps };
-      throw new PreviewE2eCleanupError('storage_remove failed', result);
+      throw new PreviewE2eCleanupError(
+        'storage_remove_api_error',
+        result,
+        'storage_remove_api_error'
+      );
     }
 
     const removedEntries: PreviewE2eStorageRemoveEntry[] = Array.isArray(data)
@@ -504,41 +575,7 @@ export async function cleanupPreviewE2eSession(
       }
     }
 
-    const stillPresent: string[] = [];
-    for (const p of objectPaths) {
-      if (await storageObjectExists(client, p)) stillPresent.push(p);
-    }
-
-    // Existence is authoritative: error:null / data rows never prove deletion alone.
-    if (stillPresent.length) {
-      step(
-        steps,
-        'storage_remove',
-        'failed',
-        `object still downloadable after remove count=${stillPresent.length}; dataConfirmed=${confirmedByData.size}; dataRows=${removedEntries.length}`
-      );
-      const result = { ok: false, aborted: false, steps };
-      throw new PreviewE2eCleanupError(
-        'storage_remove left downloadable objects',
-        result
-      );
-    }
-
-    if (removedEntries.length === 0) {
-      // data:[] is acceptable only after independent absence verification (above).
-      const anyExisted = objectPaths.some((p) => existedBefore.get(p));
-      step(
-        steps,
-        'storage_remove',
-        'ok',
-        anyExisted
-          ? `absent verified after empty data rows; tracked=${objectPaths.length}`
-          : `idempotent already-absent paths=${objectPaths.length}`
-      );
-    } else {
-      // Non-empty data must map to tracked paths; unconfirmed previously-existing
-      // paths with objects now gone are OK only if every path is absent (checked).
-      // Partial deletion = some paths still present — already failed above.
+    if (removedEntries.length > 0) {
       const unmatchedEntries = removedEntries.filter(
         (entry) =>
           !objectPaths.some((tracked) =>
@@ -550,19 +587,49 @@ export async function cleanupPreviewE2eSession(
           steps,
           'storage_remove',
           'failed',
-          `remove data contained unmatched entries=${unmatchedEntries.length}`
+          `code=storage_remove_response_mismatch; unmatched=${unmatchedEntries.length}`
         );
         const result = { ok: false, aborted: false, steps };
         throw new PreviewE2eCleanupError(
-          'storage_remove data did not match tracked paths',
-          result
+          'storage_remove_response_mismatch',
+          result,
+          'storage_remove_response_mismatch'
         );
       }
+    }
+
+    const visibility = await waitForExactPathsAbsent(client, objectPaths, options);
+    if (!visibility.absent) {
+      step(
+        steps,
+        'storage_remove',
+        'failed',
+        `code=storage_remove_visibility_timeout; stillPresent=${visibility.lastPresent.length}; checks=${visibility.checks}; dataConfirmed=${confirmedByData.size}; dataRows=${removedEntries.length}`
+      );
+      const result = { ok: false, aborted: false, steps };
+      throw new PreviewE2eCleanupError(
+        'storage_remove_visibility_timeout',
+        result,
+        'storage_remove_visibility_timeout'
+      );
+    }
+
+    if (removedEntries.length === 0) {
+      const anyExisted = objectPaths.some((p) => existedBefore.get(p));
       step(
         steps,
         'storage_remove',
         'ok',
-        `removed_confirmed=${confirmedByData.size} tracked=${objectPaths.length}`
+        anyExisted
+          ? `absent after visibility re-check; checks=${visibility.checks}; tracked=${objectPaths.length}`
+          : `idempotent already-absent paths=${objectPaths.length}`
+      );
+    } else {
+      step(
+        steps,
+        'storage_remove',
+        'ok',
+        `removed_confirmed=${confirmedByData.size}; visibility_checks=${visibility.checks}; tracked=${objectPaths.length}`
       );
     }
   } else {

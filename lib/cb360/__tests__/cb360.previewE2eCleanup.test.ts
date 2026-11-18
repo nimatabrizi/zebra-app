@@ -13,9 +13,16 @@ import {
   PreviewE2eCleanupError,
   PreviewE2eCleanupGateError,
   storageRemoveEntryMatchesPath,
+  type PreviewE2eCleanupOptions,
   type PreviewE2eDbClient,
   type PreviewE2eSessionTracker,
 } from './previewE2eCleanup';
+
+/** Fast offline visibility polls (no real waiting). */
+const FAST_VISIBILITY: PreviewE2eCleanupOptions = {
+  sleep: async () => {},
+  visibilityRecheckDelaysMs: [0, 0, 0, 0],
+};
 
 const STAGING_REF = 'noagxyztimvefmewjybj';
 
@@ -78,7 +85,14 @@ type FakeState = {
     | 'empty-data-keep'
     | 'empty-data-delete'
     | 'data-keep'
-    | 'partial';
+    | 'partial'
+    | 'mismatch';
+  /**
+   * After remove(), force download to report exists for N checks
+   * (even if path was deleted from storagePaths). Used for visibility lag tests.
+   */
+  postRemoveForceExistsChecks?: number;
+  removeCallCount?: number;
 };
 
 function createFakeClient(state: FakeState): PreviewE2eDbClient {
@@ -271,6 +285,14 @@ function createFakeClient(state: FakeState): PreviewE2eDbClient {
             if (bucket !== CB360_BUCKET) {
               return { data: null, error: { message: 'wrong bucket' } };
             }
+            if (
+              typeof state.postRemoveForceExistsChecks === 'number' &&
+              state.postRemoveForceExistsChecks > 0 &&
+              (state.removeCallCount ?? 0) > 0
+            ) {
+              state.postRemoveForceExistsChecks -= 1;
+              return { data: Buffer.from('x'), error: null };
+            }
             if (state.storagePaths.includes(objectPath)) {
               return { data: Buffer.from('x'), error: null };
             }
@@ -292,6 +314,7 @@ function createFakeClient(state: FakeState): PreviewE2eDbClient {
               };
             }
             const mode = state.storageRemoveMode ?? 'default';
+            state.removeCallCount = (state.removeCallCount ?? 0) + 1;
             state.mutations.push(`storage_remove:${paths.join(',')}`);
 
             if (mode === 'empty-data-keep') {
@@ -316,6 +339,15 @@ function createFakeClient(state: FakeState): PreviewE2eDbClient {
               }
               return {
                 data: first ? [{ name: first }] : [],
+                error: null,
+              };
+            }
+            if (mode === 'mismatch') {
+              state.storagePaths = state.storagePaths.filter(
+                (p) => !paths.includes(p)
+              );
+              return {
+                data: [{ name: 'totally-other.xlsx' }],
                 error: null,
               };
             }
@@ -453,7 +485,8 @@ describe('cleanupPreviewE2eSession (offline)', () => {
     const result = await cleanupPreviewE2eSession(
       client,
       baseTracker(),
-      stagingEnv()
+      stagingEnv(),
+      FAST_VISIBILITY
     );
     assert.equal(result.ok, false);
     assert.equal(result.aborted, true);
@@ -491,7 +524,8 @@ describe('cleanupPreviewE2eSession (offline)', () => {
     const result = await cleanupPreviewE2eSession(
       createFakeClient(state),
       baseTracker({ objectPaths: [path] }),
-      stagingEnv()
+      stagingEnv(),
+      FAST_VISIBILITY
     );
     assert.equal(result.ok, true);
     assert.equal(result.aborted, false);
@@ -536,7 +570,8 @@ describe('cleanupPreviewE2eSession (offline)', () => {
         expectedCurrentAfterPublish: null,
         objectPaths: [path],
       }),
-      stagingEnv()
+      stagingEnv(),
+      FAST_VISIBILITY
     );
     assert.equal(result.ok, false);
     assert.equal(result.aborted, true);
@@ -571,7 +606,8 @@ describe('cleanupPreviewE2eSession (offline)', () => {
         objectPaths: [tracked],
         expectedCurrentAfterPublish: null,
       }),
-      stagingEnv()
+      stagingEnv(),
+      FAST_VISIBILITY
     );
     assert.equal(result.ok, true);
     assert.deepEqual(state.storagePaths, [other]);
@@ -600,10 +636,12 @@ describe('cleanupPreviewE2eSession (offline)', () => {
     };
     const client = createFakeClient(state);
     const tracker = baseTracker({ objectPaths: [path] });
-    const first = await cleanupPreviewE2eSession(client, tracker, stagingEnv());
+    const first = await cleanupPreviewE2eSession(client, tracker, stagingEnv(),
+      FAST_VISIBILITY);
     assert.equal(first.ok, true);
     state.mutations = [];
-    const second = await cleanupPreviewE2eSession(client, tracker, stagingEnv());
+    const second = await cleanupPreviewE2eSession(client, tracker, stagingEnv(),
+      FAST_VISIBILITY);
     assert.equal(second.ok, true);
     assert.equal(second.aborted, false);
     assert.ok(
@@ -640,7 +678,8 @@ describe('cleanupPreviewE2eSession (offline)', () => {
     const tracker = baseTracker({ objectPaths: [path] });
 
     await assert.rejects(
-      () => cleanupPreviewE2eSession(client, tracker, stagingEnv()),
+      () => cleanupPreviewE2eSession(client, tracker, stagingEnv(),
+      FAST_VISIBILITY),
       (err: unknown) => err instanceof PreviewE2eCleanupError
     );
     // Current already deleted on first attempt; runs/versions/storage remain
@@ -649,7 +688,8 @@ describe('cleanupPreviewE2eSession (offline)', () => {
     assert.equal(state.versions.length, 1);
     assert.equal(state.storagePaths.length, 1);
 
-    const retry = await cleanupPreviewE2eSession(client, tracker, stagingEnv());
+    const retry = await cleanupPreviewE2eSession(client, tracker, stagingEnv(),
+      FAST_VISIBILITY);
     assert.equal(retry.ok, true);
     assert.ok(
       retry.steps.some(
@@ -696,13 +736,15 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
         cleanupPreviewE2eSession(
           createFakeClient(state),
           storageTracker([path]),
-          stagingEnv()
+          stagingEnv(),
+      FAST_VISIBILITY
         ),
       (err: unknown) =>
         err instanceof PreviewE2eCleanupError &&
-        /downloadable objects|storage_remove/.test(err.message)
+        err.code === 'storage_remove_visibility_timeout'
     );
     assert.deepEqual(state.storagePaths, [path]);
+    assert.equal(state.removeCallCount, 1);
   });
 
   it('error:null + data:[] + object absent → idempotent success', async () => {
@@ -711,7 +753,8 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
     const result = await cleanupPreviewE2eSession(
       createFakeClient(state),
       storageTracker([path]),
-      stagingEnv()
+      stagingEnv(),
+      FAST_VISIBILITY
     );
     assert.equal(result.ok, true);
     assert.ok(
@@ -732,11 +775,15 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
         cleanupPreviewE2eSession(
           createFakeClient(state),
           storageTracker([path]),
-          stagingEnv()
+          stagingEnv(),
+          FAST_VISIBILITY
         ),
-      (err: unknown) => err instanceof PreviewE2eCleanupError
+      (err: unknown) =>
+        err instanceof PreviewE2eCleanupError &&
+        err.code === 'storage_remove_visibility_timeout'
     );
     assert.deepEqual(state.storagePaths, [path]);
+    assert.equal(state.removeCallCount, 1);
   });
 
   it('data matches tracked path and object gone → PASS', async () => {
@@ -745,7 +792,8 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
     const result = await cleanupPreviewE2eSession(
       createFakeClient(state),
       storageTracker([path]),
-      stagingEnv()
+      stagingEnv(),
+      FAST_VISIBILITY
     );
     assert.equal(result.ok, true);
     assert.deepEqual(state.storagePaths, []);
@@ -768,12 +816,67 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
         cleanupPreviewE2eSession(
           createFakeClient(state),
           storageTracker([path]),
-          stagingEnv()
+          stagingEnv(),
+      FAST_VISIBILITY
         ),
       (err: unknown) =>
         err instanceof PreviewE2eCleanupError &&
-        /storage_remove failed/.test(err.message)
+        err.code === 'storage_remove_api_error'
     );
+  });
+
+  it('delayed disappearance after single remove → PASS', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path], 'default');
+    state.postRemoveForceExistsChecks = 2; // visible for 2 post-remove polls, then gone
+    const result = await cleanupPreviewE2eSession(
+      createFakeClient(state),
+      storageTracker([path]),
+      stagingEnv(),
+      FAST_VISIBILITY
+    );
+    assert.equal(result.ok, true);
+    assert.equal(state.removeCallCount, 1);
+    assert.equal(
+      state.mutations.filter((m) => m.startsWith('storage_remove:')).length,
+      1
+    );
+  });
+
+  it('visibility timeout after single remove → FAIL with classified code', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path], 'empty-data-keep');
+    await assert.rejects(
+      () =>
+        cleanupPreviewE2eSession(
+          createFakeClient(state),
+          storageTracker([path]),
+          stagingEnv(),
+          FAST_VISIBILITY
+        ),
+      (err: unknown) =>
+        err instanceof PreviewE2eCleanupError &&
+        err.code === 'storage_remove_visibility_timeout'
+    );
+    assert.equal(state.removeCallCount, 1);
+  });
+
+  it('response mismatch unmatched data entry → FAIL', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path], 'mismatch');
+    await assert.rejects(
+      () =>
+        cleanupPreviewE2eSession(
+          createFakeClient(state),
+          storageTracker([path]),
+          stagingEnv(),
+          FAST_VISIBILITY
+        ),
+      (err: unknown) =>
+        err instanceof PreviewE2eCleanupError &&
+        err.code === 'storage_remove_response_mismatch'
+    );
+    assert.equal(state.removeCallCount, 1);
   });
 
   it('multiple exact paths with partial delete → FAIL', async () => {
@@ -785,12 +888,16 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
         cleanupPreviewE2eSession(
           createFakeClient(state),
           storageTracker([a, b]),
-          stagingEnv()
+          stagingEnv(),
+          FAST_VISIBILITY
         ),
-      (err: unknown) => err instanceof PreviewE2eCleanupError
+      (err: unknown) =>
+        err instanceof PreviewE2eCleanupError &&
+        err.code === 'storage_remove_visibility_timeout'
     );
     assert.equal(state.storagePaths.includes(b), true);
     assert.equal(state.storagePaths.includes(a), false);
+    assert.equal(state.removeCallCount, 1);
   });
 });
 

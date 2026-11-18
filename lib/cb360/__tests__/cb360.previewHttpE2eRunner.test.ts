@@ -6,7 +6,10 @@ import { describe, it } from 'node:test';
 
 import type { Cb360EnvBag } from '../envBag';
 import { CB360_BUCKET } from '../paths';
-import type { PreviewE2eDbClient } from './previewE2eCleanup';
+import {
+  PreviewE2eCleanupError,
+  type PreviewE2eDbClient,
+} from './previewE2eCleanup';
 import {
   assertPreviewHttpE2eFailClosed,
   assertPreviewHttpE2eHost,
@@ -759,6 +762,22 @@ describe('previewHttpE2eRunner execute (offline mocked)', () => {
     assert.equal(world.snap.current?.sourceVersionId, 'ver_FOREIGN');
     // Our published version/run may still exist — no broad wipe
     assert.ok(world.runs.size >= 1 || world.versions.size >= 1);
+  });
+
+  it('PreviewE2eCleanupError during cleanup → tracker cleanup_failed', async () => {
+    const { deps, fs } = createDeps();
+    deps.staging.asCleanupClient = () => {
+      throw new PreviewE2eCleanupError(
+        'storage_remove_visibility_timeout',
+        { ok: false, aborted: false, steps: [] },
+        'storage_remove_visibility_timeout'
+      );
+    };
+    const result = await runPreviewHttpE2e({ mode: 'execute', deps });
+    assert.equal(result.ok, false);
+    assert.match(String(result.error), /storage_remove_visibility_timeout/);
+    const tracker = await fs.readTracker('pe2e_fixed_session');
+    assert.equal(tracker?.phase, 'cleanup_failed');
   });
 
   it('inspect is read-only and reports incomplete session', async () => {
