@@ -442,6 +442,19 @@ function createDeps(opts?: {
               }
               return { data: null, error: { message: 'Object not found' } };
             },
+            async list(folderPath: string) {
+              assert.equal(bucket, CB360_BUCKET);
+              const entries = [...world.objects]
+                .filter((p) => {
+                  const i = p.lastIndexOf('/');
+                  const folder = i >= 0 ? p.slice(0, i) : '';
+                  return folder === folderPath;
+                })
+                .map((p) => ({
+                  name: p.slice(p.lastIndexOf('/') + 1),
+                }));
+              return { data: entries, error: null };
+            },
             async remove(paths: string[]) {
               assert.equal(bucket, CB360_BUCKET);
               world.mutations.push(`cleanup_storage:${paths.join(',')}`);
@@ -768,14 +781,14 @@ describe('previewHttpE2eRunner execute (offline mocked)', () => {
     const { deps, fs } = createDeps();
     deps.staging.asCleanupClient = () => {
       throw new PreviewE2eCleanupError(
-        'storage_remove_visibility_timeout',
+        'storage_remove_visibility_pending',
         { ok: false, aborted: false, steps: [] },
-        'storage_remove_visibility_timeout'
+        'storage_remove_visibility_pending'
       );
     };
     const result = await runPreviewHttpE2e({ mode: 'execute', deps });
     assert.equal(result.ok, false);
-    assert.match(String(result.error), /storage_remove_visibility_timeout/);
+    assert.match(String(result.error), /storage_remove_visibility_pending/);
     const tracker = await fs.readTracker('pe2e_fixed_session');
     assert.equal(tracker?.phase, 'cleanup_failed');
   });

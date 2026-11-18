@@ -52,15 +52,35 @@ export type PreviewE2eCleanupResult = {
 export type PreviewE2eStorageRemoveFailureCode =
   | 'storage_remove_api_error'
   | 'storage_remove_response_mismatch'
-  | 'storage_remove_visibility_timeout';
+  | 'storage_remove_visibility_timeout'
+  /** Timed out with list absent but download still present (Cell C pattern). */
+  | 'storage_remove_visibility_pending';
 
 /**
- * Post-remove read-only existence re-check schedule (ms sleeps before each check).
- * First entry 0 = immediate check; sum of sleeps ≈ 5s max.
+ * Absolute elapsed ms after remove for dual-channel (list+download) checks.
+ * Cap ≈ 90s — informed by Staging Cell C (download lag past 30s, clear by 60s).
  */
-export const CB360_STORAGE_VISIBILITY_RECHECK_DELAYS_MS: readonly number[] = [
-  0, 500, 1500, 3000,
+export const CB360_STORAGE_VISIBILITY_RECHECK_ELAPSED_MS: readonly number[] = [
+  0, 500, 1500, 3000, 5000, 10000, 30000, 60000, 90000,
 ];
+
+/** @deprecated Prefer CB360_STORAGE_VISIBILITY_RECHECK_ELAPSED_MS */
+export const CB360_STORAGE_VISIBILITY_RECHECK_DELAYS_MS: readonly number[] =
+  CB360_STORAGE_VISIBILITY_RECHECK_ELAPSED_MS;
+
+export type PreviewE2eVisibilityClassification =
+  | 'absent'
+  | 'visibility_pending'
+  | 'visible';
+
+export type PreviewE2eVisibilityObservation = {
+  elapsedMs: number;
+  listExists: boolean;
+  downloadExists: boolean;
+  classification: PreviewE2eVisibilityClassification;
+  /** Exact paths still visible on either channel. */
+  presentPaths: string[];
+};
 
 export class PreviewE2eCleanupError extends Error {
   readonly result: PreviewE2eCleanupResult;
@@ -81,7 +101,14 @@ export class PreviewE2eCleanupError extends Error {
 export type PreviewE2eCleanupOptions = {
   /** Injected for offline tests; default is real setTimeout sleep. */
   sleep?: (ms: number) => Promise<void>;
-  /** Override visibility re-check delays (ms). */
+  /**
+   * Absolute elapsed-ms schedule after remove (preferred).
+   * Overrides delays when set.
+   */
+  visibilityRecheckElapsedMs?: readonly number[];
+  /**
+   * Legacy inter-check sleep schedule. Used only when elapsed schedule omitted.
+   */
   visibilityRecheckDelaysMs?: readonly number[];
 };
 
@@ -90,32 +117,147 @@ async function defaultSleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function classifyVisibilityChannels(
+  listExists: boolean,
+  downloadExists: boolean
+): PreviewE2eVisibilityClassification {
+  if (!listExists && !downloadExists) return 'absent';
+  if (!listExists && downloadExists) return 'visibility_pending';
+  return 'visible';
+}
+
+export function objectFolderAndBasename(objectPath: string): {
+  folder: string;
+  basename: string;
+} {
+  const p = objectPath.replace(/^\/+/, '').trim();
+  const i = p.lastIndexOf('/');
+  if (i < 0) return { folder: '', basename: p };
+  return { folder: p.slice(0, i), basename: p.slice(i + 1) };
+}
+
 /**
- * Bounded read-only polls for exact-path absence after a single remove.
- * Does not call remove again.
+ * Exact-path list presence via folder list + basename match.
+ * List API error → treat as present (fail-closed; do not claim absent).
+ */
+export async function storageObjectListed(
+  client: PreviewE2eDbClient,
+  objectPath: string
+): Promise<boolean> {
+  const { folder, basename } = objectFolderAndBasename(objectPath);
+  if (!basename) return true;
+  const listApi = client.storage.from(CB360_BUCKET);
+  if (typeof listApi.list !== 'function') {
+    // Older mocks without list: fall back to download-only (visible if downloadable).
+    return storageObjectExists(client, objectPath);
+  }
+  const { data, error } = await listApi.list(folder, { limit: 100 });
+  if (error) return true;
+  if (!Array.isArray(data)) return true;
+  return data.some((entry) => {
+    const name = String(entry?.name ?? '')
+      .replace(/^\/+/, '')
+      .trim();
+    return name === basename || name.endsWith(`/${basename}`);
+  });
+}
+
+/**
+ * Bounded dual-channel (list + download) polls after a single remove.
+ * Does not call remove again. Max elapsed ≈ 90s by default.
  */
 export async function waitForExactPathsAbsent(
   client: PreviewE2eDbClient,
   objectPaths: readonly string[],
   options: PreviewE2eCleanupOptions = {}
-): Promise<{ absent: boolean; checks: number; lastPresent: string[] }> {
+): Promise<{
+  absent: boolean;
+  checks: number;
+  lastPresent: string[];
+  lastClassification: PreviewE2eVisibilityClassification;
+  observations: PreviewE2eVisibilityObservation[];
+}> {
   const sleep = options.sleep ?? defaultSleep;
-  const delays =
-    options.visibilityRecheckDelaysMs ?? CB360_STORAGE_VISIBILITY_RECHECK_DELAYS_MS;
+  const observations: PreviewE2eVisibilityObservation[] = [];
+
+  const useElapsed = options.visibilityRecheckElapsedMs
+    ? options.visibilityRecheckElapsedMs
+    : options.visibilityRecheckDelaysMs
+      ? null
+      : CB360_STORAGE_VISIBILITY_RECHECK_ELAPSED_MS;
+
   let checks = 0;
   let lastPresent: string[] = [...objectPaths];
-  for (const delay of delays) {
-    await sleep(delay);
+  let lastClassification: PreviewE2eVisibilityClassification = 'visible';
+
+  const runCheck = async (elapsedMs: number): Promise<boolean> => {
     checks += 1;
-    lastPresent = [];
+    let anyList = false;
+    let anyDownload = false;
+    const presentPaths: string[] = [];
     for (const p of objectPaths) {
-      if (await storageObjectExists(client, p)) lastPresent.push(p);
+      const listExists = await storageObjectListed(client, p);
+      const downloadExists = await storageObjectExists(client, p);
+      if (listExists) anyList = true;
+      if (downloadExists) anyDownload = true;
+      if (listExists || downloadExists) presentPaths.push(p);
     }
-    if (lastPresent.length === 0) {
-      return { absent: true, checks, lastPresent };
+    const classification = classifyVisibilityChannels(anyList, anyDownload);
+    lastClassification = classification;
+    lastPresent = presentPaths;
+    observations.push({
+      elapsedMs,
+      listExists: anyList,
+      downloadExists: anyDownload,
+      classification,
+      presentPaths: [...presentPaths],
+    });
+    return classification === 'absent';
+  };
+
+  if (useElapsed) {
+    let previous = 0;
+    for (const elapsedMs of useElapsed) {
+      const waitMs = Math.max(0, elapsedMs - previous);
+      await sleep(waitMs);
+      previous = elapsedMs;
+      if (await runCheck(elapsedMs)) {
+        return {
+          absent: true,
+          checks,
+          lastPresent,
+          lastClassification,
+          observations,
+        };
+      }
+    }
+  } else {
+    const delays =
+      options.visibilityRecheckDelaysMs ??
+      CB360_STORAGE_VISIBILITY_RECHECK_ELAPSED_MS;
+    let elapsedMs = 0;
+    for (const delay of delays) {
+      await sleep(delay);
+      elapsedMs += delay;
+      if (await runCheck(elapsedMs)) {
+        return {
+          absent: true,
+          checks,
+          lastPresent,
+          lastClassification,
+          observations,
+        };
+      }
     }
   }
-  return { absent: false, checks, lastPresent };
+
+  return {
+    absent: false,
+    checks,
+    lastPresent,
+    lastClassification,
+    observations,
+  };
 }
 
 export class PreviewE2eCleanupGateError extends Error {
@@ -146,6 +288,14 @@ export type PreviewE2eDbClient = {
       download: (
         objectPath: string
       ) => Promise<{ data: unknown; error: { message: string } | null }>;
+      /** Exact-folder list for dual-channel visibility (read-only). */
+      list?: (
+        folderPath: string,
+        options?: { limit?: number }
+      ) => Promise<{
+        data: Array<{ name?: string | null }> | null;
+        error: { message: string } | null;
+      }>;
     };
   };
 };
@@ -598,20 +748,35 @@ export async function cleanupPreviewE2eSession(
       }
     }
 
-    const visibility = await waitForExactPathsAbsent(client, objectPaths, options);
+    const visibility = await waitForExactPathsAbsent(
+      client,
+      objectPaths,
+      options
+    );
+
+    // Safe observation summary (ids/paths/booleans only — no URLs/tokens).
+    for (const obs of visibility.observations) {
+      step(
+        steps,
+        'storage_visibility',
+        'ok',
+        `elapsedMs=${obs.elapsedMs}; listExists=${obs.listExists}; downloadExists=${obs.downloadExists}; classification=${obs.classification}`
+      );
+    }
+
     if (!visibility.absent) {
+      const code: PreviewE2eStorageRemoveFailureCode =
+        visibility.lastClassification === 'visibility_pending'
+          ? 'storage_remove_visibility_pending'
+          : 'storage_remove_visibility_timeout';
       step(
         steps,
         'storage_remove',
         'failed',
-        `code=storage_remove_visibility_timeout; stillPresent=${visibility.lastPresent.length}; checks=${visibility.checks}; dataConfirmed=${confirmedByData.size}; dataRows=${removedEntries.length}`
+        `code=${code}; stillPresent=${visibility.lastPresent.length}; checks=${visibility.checks}; lastClassification=${visibility.lastClassification}; dataConfirmed=${confirmedByData.size}; dataRows=${removedEntries.length}`
       );
       const result = { ok: false, aborted: false, steps };
-      throw new PreviewE2eCleanupError(
-        'storage_remove_visibility_timeout',
-        result,
-        'storage_remove_visibility_timeout'
-      );
+      throw new PreviewE2eCleanupError(code, result, code);
     }
 
     if (removedEntries.length === 0) {
@@ -621,7 +786,7 @@ export async function cleanupPreviewE2eSession(
         'storage_remove',
         'ok',
         anyExisted
-          ? `absent after visibility re-check; checks=${visibility.checks}; tracked=${objectPaths.length}`
+          ? `absent after dual-channel visibility; checks=${visibility.checks}; tracked=${objectPaths.length}`
           : `idempotent already-absent paths=${objectPaths.length}`
       );
     } else {

@@ -10,6 +10,7 @@ import {
   assertPreviewE2eCleanupEnvironment,
   assertPreviewE2eTrackerHasNoSecrets,
   cleanupPreviewE2eSession,
+  classifyVisibilityChannels,
   PreviewE2eCleanupError,
   PreviewE2eCleanupGateError,
   storageRemoveEntryMatchesPath,
@@ -18,13 +19,18 @@ import {
   type PreviewE2eSessionTracker,
 } from './previewE2eCleanup';
 
-/** Fast offline visibility polls (no real waiting). */
+/** Fast offline visibility polls (no real waiting). Enough ticks for lag tests. */
 const FAST_VISIBILITY: PreviewE2eCleanupOptions = {
   sleep: async () => {},
-  visibilityRecheckDelaysMs: [0, 0, 0, 0],
+  visibilityRecheckElapsedMs: [0, 0, 0, 0, 0, 0],
 };
 
 const STAGING_REF = 'noagxyztimvefmewjybj';
+
+function objectFolder(objectPath: string): string {
+  const i = objectPath.lastIndexOf('/');
+  return i >= 0 ? objectPath.slice(0, i) : '';
+}
 
 function stagingEnv(
   partial: Record<string, string | undefined> = {}
@@ -89,9 +95,12 @@ type FakeState = {
     | 'mismatch';
   /**
    * After remove(), force download to report exists for N checks
-   * (even if path was deleted from storagePaths). Used for visibility lag tests.
+   * (even if path was deleted from storagePaths). Used for visibility lag /
+   * visibility_pending tests (list follows storagePaths).
    */
   postRemoveForceExistsChecks?: number;
+  /** After remove(), force list to report exists for N checks. */
+  postRemoveForceListExistsChecks?: number;
   removeCallCount?: number;
 };
 
@@ -300,6 +309,31 @@ function createFakeClient(state: FakeState): PreviewE2eDbClient {
               data: null,
               error: { message: 'Object not found' },
             };
+          },
+          async list(folderPath: string) {
+            if (bucket !== CB360_BUCKET) {
+              return { data: null, error: { message: 'wrong bucket' } };
+            }
+            if (
+              typeof state.postRemoveForceListExistsChecks === 'number' &&
+              state.postRemoveForceListExistsChecks > 0 &&
+              (state.removeCallCount ?? 0) > 0
+            ) {
+              state.postRemoveForceListExistsChecks -= 1;
+              const match = state.storagePaths.find(
+                (p) => objectFolder(p) === folderPath
+              );
+              const name = match
+                ? match.slice(match.lastIndexOf('/') + 1)
+                : folderPath.startsWith('pe2e_probe/')
+                  ? 'probe.bin'
+                  : 'source.xlsx';
+              return { data: [{ name }], error: null };
+            }
+            const entries = state.storagePaths
+              .filter((p) => objectFolder(p) === folderPath)
+              .map((p) => ({ name: p.slice(p.lastIndexOf('/') + 1) }));
+            return { data: entries, error: null };
           },
           async remove(paths: string[]) {
             if (bucket !== CB360_BUCKET) {
@@ -825,10 +859,11 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
     );
   });
 
-  it('delayed disappearance after single remove → PASS', async () => {
+  it('delayed download disappearance (list already absent) → PASS', async () => {
     const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
     const state = storageOnlyState([path], 'default');
-    state.postRemoveForceExistsChecks = 2; // visible for 2 post-remove polls, then gone
+    // Remove clears list; download lags for 2 polls → visibility_pending then absent.
+    state.postRemoveForceExistsChecks = 2;
     const result = await cleanupPreviewE2eSession(
       createFakeClient(state),
       storageTracker([path]),
@@ -841,6 +876,72 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
       state.mutations.filter((m) => m.startsWith('storage_remove:')).length,
       1
     );
+    assert.ok(
+      result.steps.some(
+        (s) =>
+          s.step === 'storage_visibility' &&
+          /classification=visibility_pending/.test(s.detail)
+      )
+    );
+    assert.ok(
+      result.steps.some(
+        (s) =>
+          s.step === 'storage_visibility' &&
+          /classification=absent/.test(s.detail)
+      )
+    );
+  });
+
+  it('list/download divergence timeout → visibility_pending code', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path], 'default');
+    state.postRemoveForceExistsChecks = 100; // download never clears within budget
+    await assert.rejects(
+      () =>
+        cleanupPreviewE2eSession(
+          createFakeClient(state),
+          storageTracker([path]),
+          stagingEnv(),
+          FAST_VISIBILITY
+        ),
+      (err: unknown) =>
+        err instanceof PreviewE2eCleanupError &&
+        err.code === 'storage_remove_visibility_pending'
+    );
+    assert.equal(state.removeCallCount, 1);
+  });
+
+  it('90s elapsed schedule honored (offline, no real wait)', async () => {
+    const path = 'snapshots/2026/11/18/run_aaa/source.xlsx';
+    const state = storageOnlyState([path], 'empty-data-keep');
+    const elapsed: number[] = [];
+    await assert.rejects(
+      () =>
+        cleanupPreviewE2eSession(
+          createFakeClient(state),
+          storageTracker([path]),
+          stagingEnv(),
+          {
+            sleep: async () => {},
+            visibilityRecheckElapsedMs: [0, 30000, 60000, 90000],
+          }
+        ),
+      (err: unknown) => {
+        if (!(err instanceof PreviewE2eCleanupError)) return false;
+        for (const s of err.result.steps) {
+          if (s.step === 'storage_visibility') {
+            const m = /elapsedMs=(\d+)/.exec(s.detail);
+            if (m) elapsed.push(Number(m[1]));
+          }
+        }
+        return (
+          err.code === 'storage_remove_visibility_timeout' &&
+          elapsed.includes(0) &&
+          elapsed.includes(90000)
+        );
+      }
+    );
+    assert.equal(state.removeCallCount, 1);
   });
 
   it('visibility timeout after single remove → FAIL with classified code', async () => {
@@ -893,11 +994,22 @@ describe('cleanupPreviewE2eSession storage verification (offline)', () => {
         ),
       (err: unknown) =>
         err instanceof PreviewE2eCleanupError &&
-        err.code === 'storage_remove_visibility_timeout'
+        (err.code === 'storage_remove_visibility_timeout' ||
+          err.code === 'storage_remove_visibility_pending')
     );
     assert.equal(state.storagePaths.includes(b), true);
     assert.equal(state.storagePaths.includes(a), false);
     assert.equal(state.removeCallCount, 1);
+  });
+
+  it('classifyVisibilityChannels maps pending vs absent', () => {
+    assert.equal(classifyVisibilityChannels(false, false), 'absent');
+    assert.equal(
+      classifyVisibilityChannels(false, true),
+      'visibility_pending'
+    );
+    assert.equal(classifyVisibilityChannels(true, true), 'visible');
+    assert.equal(classifyVisibilityChannels(true, false), 'visible');
   });
 });
 
