@@ -50,9 +50,12 @@ export function authSupabaseProjectRef(
  * Server-side only — does not change Rakip UUID allowlist.
  */
 export function isNameBasedUserAdminBlockedForAuthEnv(
-  env: AdminGateEnvBag = process.env
+  env?: AdminGateEnvBag
 ): boolean {
-  const ref = authSupabaseProjectRef(env.NEXT_PUBLIC_SUPABASE_URL);
+  // Optional bag for tests; omit to read process.env at call time.
+  // Avoid `env = process.env` default — ProcessEnv is not assignable to AdminGateEnvBag (TS2559).
+  const source: AdminGateEnvBag | NodeJS.ProcessEnv = env ?? process.env;
+  const ref = authSupabaseProjectRef(source.NEXT_PUBLIC_SUPABASE_URL);
   if (!ref) return true;
   return ref === RAKIP_INVENTORY_STAGING_REF;
 }
