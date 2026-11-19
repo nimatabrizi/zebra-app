@@ -15,7 +15,6 @@ import {
   Playfair_Display,
   Poppins,
   Raleway,
-  Roboto,
 } from "next/font/google";
 
 export const geistSans = Geist({
@@ -51,10 +50,45 @@ export const poppins = Poppins({
   subsets: ["latin", "latin-ext"],
 });
 
-export const roboto = Roboto({
-  weight: ["400", "500", "700"],
+/**
+ * Yerel Roboto — Turbopack + Google Fonts kit URL (&skey=) hatasını önler
+ * (next/font/google: "queries have exactly one entry").
+ */
+export const roboto = localFont({
+  src: [
+    {
+      path: "./fonts/roboto/latin-ext-400.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/roboto/latin-ext-500.woff2",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "./fonts/roboto/latin-ext-700.woff2",
+      weight: "700",
+      style: "normal",
+    },
+    {
+      path: "./fonts/roboto/latin-400.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/roboto/latin-500.woff2",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "./fonts/roboto/latin-700.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
   variable: "--font-roboto",
-  subsets: ["latin", "latin-ext"],
+  display: "swap",
 });
 
 export const openSans = Open_Sans({
