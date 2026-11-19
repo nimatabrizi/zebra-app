@@ -1,8 +1,11 @@
 -- =============================================================================
 -- DRAFT ONLY — CB360 Rakip inventory snapshot tables (Staging review)
--- DO NOT apply to Production. Do not run without explicit Staging approval.
--- NOT marked applied/verified: PostgREST schema-cache drift was FAIL on last
--- read-only preflight (table presence ≠ schema match). Re-validate before apply.
+-- Staging pg_catalog (ref noagxyztimvefmewjybj): SUCCESS, 0 rows — the three
+-- cb360_inventory_* tables are not present yet. This migration is NOT applied.
+-- Prepared ONLY for CB360 Staging project ref noagxyztimvefmewjybj.
+-- DO NOT apply to Production. Production apply is forbidden.
+-- Requires a separate explicit operator approval.
+-- Snapshot upload, current publish, and deploy are out of scope for this file.
 -- People/office rows are PII-minimized JSON snapshots; no phone/email columns.
 -- Snapshot JSON blobs live in private bucket cb360-private (object_path).
 -- This migration does NOT publish current bundles and does NOT touch
@@ -90,23 +93,23 @@ DROP POLICY IF EXISTS "cb360_inventory_review_anon_deny" ON public.cb360_invento
 
 CREATE POLICY "cb360_inventory_snapshots_deny"
   ON public.cb360_inventory_snapshots FOR ALL TO authenticated
-  USING (false);
+  USING (false) WITH CHECK (false);
 CREATE POLICY "cb360_inventory_snapshots_anon_deny"
   ON public.cb360_inventory_snapshots FOR ALL TO anon
-  USING (false);
+  USING (false) WITH CHECK (false);
 
 CREATE POLICY "cb360_inventory_latest_deny"
   ON public.cb360_inventory_latest FOR ALL TO authenticated
-  USING (false);
+  USING (false) WITH CHECK (false);
 CREATE POLICY "cb360_inventory_latest_anon_deny"
   ON public.cb360_inventory_latest FOR ALL TO anon
-  USING (false);
+  USING (false) WITH CHECK (false);
 
 CREATE POLICY "cb360_inventory_review_deny"
   ON public.cb360_inventory_review_items FOR ALL TO authenticated
-  USING (false);
+  USING (false) WITH CHECK (false);
 CREATE POLICY "cb360_inventory_review_anon_deny"
   ON public.cb360_inventory_review_items FOR ALL TO anon
-  USING (false);
+  USING (false) WITH CHECK (false);
 
 -- Fail-closed: no anon/authenticated GRANT or permissive policies in this draft.
