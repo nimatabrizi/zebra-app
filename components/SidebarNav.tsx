@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Aperture,
   BarChart3,
+  Binoculars,
   Briefcase,
   Building2,
   CalendarCheck,
@@ -41,6 +42,7 @@ export const SIDEBAR_ICONS: Record<SidebarItem['icon'], LucideIcon> = {
   BarChart3,
   ClipboardCheck,
   Radar,
+  Binoculars,
 };
 
 type SidebarNavProps = {
@@ -49,6 +51,8 @@ type SidebarNavProps = {
   activeTab: string;
   badgeCounts?: Record<string, number>;
   onNavigate: (tabId: string) => void;
+  /** UUID allowlist sonucu — menüde Rakip İstihbaratı göster */
+  includeRakip?: boolean;
 };
 
 function childHasNested(
@@ -68,9 +72,11 @@ export default function SidebarNav({
   activeTab,
   badgeCounts = {},
   onNavigate,
+  includeRakip = false,
 }: SidebarNavProps) {
   const adminOpts = {
     includeUserAdmin: isUserAdmin(fullName, role),
+    includeRakip,
     fullName,
   };
   const items = usesManagerShell(role)
@@ -89,8 +95,10 @@ export default function SidebarNav({
     return null;
   });
 
+  /* Accordion open state mirrors activeTab (existing nav pattern). */
   useEffect(() => {
     const parent = findParentNavId(items, activeTab);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync open group to active tab
     if (parent) setOpenGroupId(parent);
     let nested: string | null = null;
     for (const item of items) {
@@ -103,7 +111,7 @@ export default function SidebarNav({
       if (nested) break;
     }
     if (nested) setOpenNestedId(nested);
-  }, [activeTab, role, fullName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab, role, fullName, includeRakip]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleGroup = (groupId: string) => {
     setOpenGroupId((prev) => (prev === groupId ? null : groupId));

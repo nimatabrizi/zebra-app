@@ -23,6 +23,8 @@ type MobileMenuSheetProps = {
   onNavigate: (tabId: string) => void;
   onClose: () => void;
   onLogout: () => void;
+  /** UUID allowlist sonucu — menüde Rakip İstihbaratı göster */
+  includeRakip?: boolean;
 };
 
 type Tile = {
@@ -55,10 +57,15 @@ export default function MobileMenuSheet({
   onNavigate,
   onClose,
   onLogout,
+  includeRakip = false,
 }: MobileMenuSheetProps) {
   const [path, setPath] = useState<string[]>([]);
 
-  const adminOpts = { includeUserAdmin: isUserAdmin(fullName, role), fullName };
+  const adminOpts = {
+    includeUserAdmin: isUserAdmin(fullName, role),
+    includeRakip,
+    fullName,
+  };
   const items: SidebarItem[] = usesManagerShell(role)
     ? buildManagerNav(role, adminOpts)
     : buildConsultantNav(adminOpts);

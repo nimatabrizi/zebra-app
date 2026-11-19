@@ -100,6 +100,7 @@ import EntryVisualsStudio from '../components/EntryVisualsStudio';
 import CondolenceStudio from '../components/CondolenceStudio';
 import WelcomeStudio from '../components/WelcomeStudio';
 import UserManagement from '../components/UserManagement';
+import RakipStudio from '../components/rakip/RakipStudio';
 import {
   buildConsultantNav,
   buildManagerNav,
@@ -108,6 +109,7 @@ import {
   collectNavTabIds,
   isLiveContentTab,
 } from '../lib/sidebarNav';
+import { isRakipTabId } from '../lib/rakipUiMeta';
 import { canSaveVisualAdjustments } from '../lib/visualAdjustments';
 import {
   appointmentToCalendarEvent,
@@ -132,6 +134,8 @@ const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState(''); // Gerçek isim veritabanından çekilip buraya yazılacak
   const [currentUserId, setCurrentUserId] = useState(''); // Auth / profiles UUID
   const [isPilot, setIsPilot] = useState(false); // YENİ: Pilot yetkisi
+  /** Rakip İstihbaratı — /api/rakip-ui/access (UUID allowlist); varsayılan kapalı */
+  const [canAccessRakip, setCanAccessRakip] = useState(false);
   const isLoggedInRef = useRef(false);
   const currentUserIdRef = useRef('');
   const rememberMeRef = useRef(false);
@@ -153,6 +157,34 @@ const [username, setUsername] = useState('');
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !currentUserId) {
+      setCanAccessRakip(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/rakip-ui/access');
+        const json = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setCanAccessRakip(res.ok && json.allowed === true);
+      } catch {
+        if (!cancelled) setCanAccessRakip(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn, currentUserId]);
+
+  useEffect(() => {
+    if (!canAccessRakip && isRakipTabId(activeTab)) {
+      setActiveTab('genel');
+      persistActiveTab('genel');
+    }
+  }, [canAccessRakip, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const REMEMBER_ME_KEY = 'zebra_remember_me';
   const TAB_SESSION_KEY = 'zebra_session_active';
@@ -1637,6 +1669,7 @@ const [username, setUsername] = useState('');
     if (!options.preserveTab) {
       const adminOpts = {
         includeUserAdmin: isUserAdmin(profile.tam_isim, appRole),
+        includeRakip: false,
         fullName: profile.tam_isim,
       };
       const navItems = usesManagerShell(appRole)
@@ -1826,6 +1859,7 @@ const [username, setUsername] = useState('');
     sessionStorage.removeItem(TAB_SESSION_KEY);
     setIsLoggedIn(false);
     setIsPilot(false);
+    setCanAccessRakip(false);
     setIsMobileMenuOpen(false);
     setIsNotificationOpen(false);
     setActiveTab('genel');
@@ -3906,6 +3940,7 @@ const [username, setUsername] = useState('');
           activeTab={activeTab}
           badgeCounts={menuBadgeCounts}
           onNavigate={navigateToTab}
+          includeRakip={canAccessRakip}
         />
 
         <div className="p-4 shrink-0 space-y-3">
@@ -4013,8 +4048,12 @@ const [username, setUsername] = useState('');
             )}
 
             {/* Henüz yayında olmayan sayfalar */}
-            {!isLiveContentTab(activeTab, role, fullName) && (
-              <ComingSoonPlaceholder />
+            {!isLiveContentTab(activeTab, role, fullName, {
+              canAccessRakip,
+            }) && <ComingSoonPlaceholder />}
+
+            {canAccessRakip && isRakipTabId(activeTab) && (
+              <RakipStudio activeTab={activeTab} onNavigate={navigateToTab} />
             )}
 
             {(activeTab === 'users-overview' || activeTab === 'users-add') &&
@@ -5413,6 +5452,7 @@ const [username, setUsername] = useState('');
           onNavigate={navigateToTab}
           onClose={closeMobileMenu}
           onLogout={handleLogout}
+          includeRakip={canAccessRakip}
         />
       ) : null}
 

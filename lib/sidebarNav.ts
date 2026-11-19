@@ -47,7 +47,8 @@ export type SidebarItem = {
     | 'Newspaper'
     | 'BarChart3'
     | 'ClipboardCheck'
-    | 'Radar';
+    | 'Radar'
+    | 'Binoculars';
   isEnabled: boolean;
   children?: SidebarChild[];
 };
@@ -75,6 +76,11 @@ export const CORE_LIVE_TABS = [
   'islemler',
   'ivo-harita',
   'ivo-fsbo',
+  'rakip-ozet',
+  'rakip-inceleme',
+  'rakip-danismanlar',
+  'rakip-ofisler',
+  'rakip-taramalar',
   'users-overview',
   'users-add',
 ] as const;
@@ -106,6 +112,23 @@ function ivoNavItem(): SidebarItem {
   };
 }
 
+/** Rakip İstihbaratı (CB360) — erişim UUID allowlist ile (includeRakip) */
+function rakipNavItem(): SidebarItem {
+  return {
+    id: 'rakip',
+    label: 'Rakip İstihbaratı',
+    icon: 'Binoculars',
+    isEnabled: true,
+    children: [
+      { id: 'rakip-ozet', label: 'Özet', isEnabled: true },
+      { id: 'rakip-inceleme', label: 'İnceleme Kuyruğu', isEnabled: true },
+      { id: 'rakip-danismanlar', label: 'Danışmanlar', isEnabled: true },
+      { id: 'rakip-ofisler', label: 'Ofisler', isEnabled: true },
+      { id: 'rakip-taramalar', label: 'Taramalar', isEnabled: true },
+    ],
+  };
+}
+
 /** Toplu Üretim, Sıralama, Hoş Geldin Görseli, Kullanıcı Yönetimi */
 export function canSeeNimaOnlyTools(fullName?: string | null): boolean {
   return isNimaTabrizi(fullName);
@@ -123,6 +146,8 @@ export function canSeePersonelStudios(
 
 export type NavAccessOptions = {
   includeUserAdmin?: boolean;
+  /** Rakip İstihbaratı — server UUID allowlist sonucu (isimle açılmaz) */
+  includeRakip?: boolean;
   fullName?: string | null;
 };
 
@@ -345,6 +370,7 @@ export function buildConsultantNav(options?: NavAccessOptions): SidebarItem[] {
     },
     ...(canSeeIslemKapatma(options?.fullName) ? [islemNavItem()] : []),
     ivoNavItem(),
+    ...(options?.includeRakip === true ? [rakipNavItem()] : []),
     ...(includeUserAdmin ? [userAdminNavItem] : []),
     ...productTreeTail(),
   ];
@@ -396,6 +422,7 @@ export function buildManagerNav(
     },
     ...(canSeeIslemKapatma(options?.fullName) ? [islemNavItem()] : []),
     ivoNavItem(),
+    ...(options?.includeRakip === true ? [rakipNavItem()] : []),
     ...(includeUserAdmin ? [userAdminNavItem] : []),
     ...productTreeTail({ includeMarketingAnalytics: false }),
   ];
@@ -441,6 +468,11 @@ export function findParentNavId(
   return null;
 }
 
+export type LiveContentOptions = {
+  /** Server UUID allowlist sonucu — isimle açılmaz */
+  canAccessRakip?: boolean;
+};
+
 /**
  * Canlı içerik mi, yoksa "Yakında" mı?
  * Rol yetkisi olmayan core sekmeler de Yakında gösterir.
@@ -448,7 +480,8 @@ export function findParentNavId(
 export function isLiveContentTab(
   tabId: string,
   role: string,
-  fullName?: string
+  fullName?: string,
+  options?: LiveContentOptions
 ): boolean {
   const id = migrateStudioTabId(tabId);
   if (id === 'genel') return true;
@@ -489,6 +522,15 @@ export function isLiveContentTab(
   }
   if (id === 'ivo-harita' || id === 'ivo-fsbo') {
     return true;
+  }
+  if (
+    id === 'rakip-ozet' ||
+    id === 'rakip-inceleme' ||
+    id === 'rakip-danismanlar' ||
+    id === 'rakip-ofisler' ||
+    id === 'rakip-taramalar'
+  ) {
+    return options?.canAccessRakip === true;
   }
   if (id === 'users-overview' || id === 'users-add') {
     return isUserAdmin(fullName, role);

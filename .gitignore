@@ -48,3 +48,6 @@ next-env.d.ts
 
 # CB360 Preview HTTP E2E session trackers (ids/paths only; never commit)
 .cb360-preview-e2e/
+
+# Local Rakip inventory snapshots (may contain professional identifiers; never commit)
+.rakip-local/
