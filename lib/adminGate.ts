@@ -3,6 +3,7 @@ import {
   type AppRole,
 } from './authIdentity';
 import { createClient } from '../utils/supabase/server';
+import { RAKIP_INVENTORY_STAGING_REF } from './rakip/inventory/stagingEnv';
 
 export const ADMIN_ALLOWED_ROLES: AppRole[] = [
   'danisman',
@@ -23,9 +24,51 @@ export type AdminGateFail = {
   message: string;
 };
 
+export type AdminGateEnvBag = {
+  NEXT_PUBLIC_SUPABASE_URL?: string;
+};
+
+/** Extract https://<ref>.supabase.co project ref (fail-closed on bad URL). */
+export function authSupabaseProjectRef(
+  url: string | null | undefined
+): string | null {
+  if (!url || !String(url).trim()) return null;
+  try {
+    const parsed = new URL(String(url).trim());
+    const match = parsed.hostname.match(/^([a-z0-9]+)\.supabase\.co$/i);
+    return match?.[1]?.toLowerCase() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Name-based user-admin is blocked when:
+ * - Auth URL is the CB360 Staging project, or
+ * - Auth project identity is missing/unparseable (fail closed — no bypass).
+ * Known non-Staging refs (e.g. Production) keep existing isUserAdmin(name) behavior.
+ * Server-side only — does not change Rakip UUID allowlist.
+ */
+export function isNameBasedUserAdminBlockedForAuthEnv(
+  env: AdminGateEnvBag = process.env
+): boolean {
+  const ref = authSupabaseProjectRef(env.NEXT_PUBLIC_SUPABASE_URL);
+  if (!ref) return true;
+  return ref === RAKIP_INVENTORY_STAGING_REF;
+}
+
 export async function assertCallerIsUserAdmin(): Promise<
   AdminGateOk | AdminGateFail
 > {
+  // Staging Auth Preview: never elevate via display name alone.
+  if (isNameBasedUserAdminBlockedForAuthEnv()) {
+    return {
+      ok: false,
+      status: 403,
+      message: 'Bu işlem için yetkiniz yok',
+    };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
